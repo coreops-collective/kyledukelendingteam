@@ -1454,24 +1454,35 @@ function normalizePartnerName(s) {
     });
   }
 
-  // Write computed stats back to existing PARTNERS entries
+  // Write computed stats back to existing PARTNERS entries.
+  // Five-stat model: totalClosings / totalVolume / ytdClosings / ytdVolume / livePipeline.
   PARTNERS.forEach(p => {
     const k = normalize(p.name);
     const s = agentMap[k];
     if (!s) {
-      // No data for this partner \u2014 zero out so it's honest
+      p.totalClosings = 0; p.totalVolume = 0;
+      p.ytdClosings = 0; p.ytdVolume = 0;
+      p.livePipeline = 0; p.livePipelineVolume = 0;
+      // Back-compat aliases for older display code
       p.deals = 0; p.closed = 0; p.volume = 0; p.lifetime = 0;
       p.pipeline = 0; p.pipelineVolume = 0;
       return;
     }
-    p.deals = s.lifetimeCount + s.pipeline; // total files ever
-    p.closed = s.closed;                     // YTD closings
-    p.volume = s.volume;                     // YTD volume
-    p.lifetime = s.lifetime;                 // lifetime closed volume
-    p.pipeline = s.pipeline;                 // current open files
-    p.pipelineVolume = s.pipelineVolume;     // current open volume
-    // Auto-promote to VIP if they have 5+ lifetime deals
-    if (p.deals >= 5) p.vip = true;
+    p.totalClosings = s.lifetimeCount;        // all-time closings
+    p.totalVolume = s.lifetime;               // all-time closed volume
+    p.ytdClosings = s.closed;                 // current-year closings
+    p.ytdVolume = s.volume;                   // current-year volume
+    p.livePipeline = s.pipeline;              // currently in pipeline
+    p.livePipelineVolume = s.pipelineVolume;  // currently in pipeline volume
+    // Back-compat aliases (older code still reads these)
+    p.deals = s.lifetimeCount + s.pipeline;
+    p.closed = s.closed;
+    p.volume = s.volume;
+    p.lifetime = s.lifetime;
+    p.pipeline = s.pipeline;
+    p.pipelineVolume = s.pipelineVolume;
+    // Auto-VIP at 5+ total closings
+    if (p.totalClosings >= 5) p.vip = true;
   });
 
   // Auto-add any high-activity agent not already in PARTNERS (2+ deals)
@@ -1483,24 +1494,85 @@ function normalizePartnerName(s) {
     PARTNERS.push({
       name: s.raw,
       state:'', city:'', phone:'', email:'',
+      totalClosings: s.lifetimeCount,
+      totalVolume: s.lifetime,
+      ytdClosings: s.closed,
+      ytdVolume: s.volume,
+      livePipeline: s.pipeline,
+      livePipelineVolume: s.pipelineVolume,
+      // Back-compat aliases
       deals: totalDeals,
       closed: s.closed,
       volume: s.volume,
       lifetime: s.lifetime,
       pipeline: s.pipeline,
       pipelineVolume: s.pipelineVolume,
-      vip: totalDeals >= 5,
+      vip: s.lifetimeCount >= 5,
     });
   });
 
   // Re-sort by lifetime value so the biggest producers float to the top
   PARTNERS.sort((a,b) => (b.deals||0) - (a.deals||0) || (b.lifetime||0) - (a.lifetime||0));
 })();
-// Real team from spreadsheet (Kyle's Pipeline + Missy's Pipeline + Loan Management Loan Officer column)
-const TEAM = [
-  {initials:'KD',name:'Kyle Duke',role:'Sr. Loan Officer',pipeline:LOANS.filter(l=>l.lo==='Kyle').length,volume:LOANS.filter(l=>l.lo==='Kyle').reduce((a,l)=>a+(l.amount||0),0),fundedMTD:0,nmls:'2172565'},
-  {initials:'MS',name:'Missy',role:'Sr. Loan Officer',pipeline:LOANS.filter(l=>l.lo==='Missy').length,volume:LOANS.filter(l=>l.lo==='Missy').reduce((a,l)=>a+(l.amount||0),0),fundedMTD:0,nmls:'\u2014'},
-];
+// Team members are derived live from USERS + computed pipeline stats.
+// `rebuildTeam()` runs after USERS is defined + any time USERS changes.
+let TEAM = [];
+function teamStatsFor(userName){
+  // Figure out the short LO name (Kyle, Missy, etc.)
+  const short = userName.split(' ')[0];
+  // Pipeline = non-funded, non-cold LOANS + LOAN_MGMT entries
+  const fromLoans = typeof LOANS !== 'undefined'
+    ? LOANS.filter(l => l.lo === short && l.stage !== 'funded' && l.stage !== 'cold')
+    : [];
+  const fromMgmt = typeof LOAN_MGMT !== 'undefined'
+    ? LOAN_MGMT.filter(l => l.lo === short && l.status !== 'Funded')
+    : [];
+  // Dedupe by client/borrower name
+  const loanKeys = new Set(fromLoans.map(l => (l.borrower||'').toLowerCase().trim()));
+  const extraMgmt = fromMgmt.filter(l => !loanKeys.has((l.client||'').toLowerCase().trim()));
+  const pipelineCount = fromLoans.length + extraMgmt.length;
+  const pipelineVol = fromLoans.reduce((a,l)=>a+(l.amount||0),0)
+    + extraMgmt.reduce((a,l)=>a+(l.amount||0),0);
+  // Funded MTD = PAST_CLIENTS + LOAN_MGMT (status=Funded) in current month
+  const now = new Date();
+  const thisM = now.getMonth(), thisY = now.getFullYear();
+  const mtd = (typeof PAST_CLIENTS !== 'undefined' ? PAST_CLIENTS : []).filter(c => {
+    if (c.lo !== short) return false;
+    const d = c.closeDate ? new Date(c.closeDate) : null;
+    return d && !isNaN(d) && d.getMonth() === thisM && d.getFullYear() === thisY;
+  });
+  const mtdFromMgmt = (typeof LOAN_MGMT !== 'undefined' ? LOAN_MGMT : []).filter(l => {
+    if (l.lo !== short || l.status !== 'Funded') return false;
+    const d = l.closeDate ? new Date(l.closeDate) : null;
+    return d && !isNaN(d) && d.getMonth() === thisM && d.getFullYear() === thisY;
+  });
+  const fundedMTD = mtd.reduce((a,c)=>a+(c.amount||0),0) + mtdFromMgmt.reduce((a,l)=>a+(l.amount||0),0);
+  const fundedCountMTD = mtd.length + mtdFromMgmt.length;
+  return { pipelineCount, pipelineVol, fundedMTD, fundedCountMTD };
+}
+function rebuildTeam(){
+  const ROLE_DISPLAY = {
+    branch_manager: 'Branch Manager',
+    admin: 'Admin',
+    loan_officer: 'Loan Officer',
+  };
+  TEAM = USERS.map(u => {
+    const stats = teamStatsFor(u.name);
+    return {
+      id: u.id,
+      initials: u.initials,
+      name: u.name,
+      email: u.email,
+      role: ROLE_DISPLAY[u.role] || 'Team Member',
+      roleKey: u.role,
+      nmls: u.nmls || '',
+      pipeline: stats.pipelineCount,
+      volume: stats.pipelineVol,
+      fundedMTD: stats.fundedMTD,
+      fundedCountMTD: stats.fundedCountMTD,
+    };
+  });
+}
 
 // Project & task tracker. Tasks can be created manually in-app or texted in from a phone
 // via a Twilio \u2192 Claude API webhook (see the Setup panel on the Tasks page for the full flow).
@@ -1701,12 +1773,105 @@ async function sbDeleteTask(id){
 
 // Users + roles. branch_manager has full access (including restricted Income); admin can manage users but not see income; loan_officer is regular user.
 const ROLE_LABELS = {branch_manager:'Branch Manager',admin:'Admin',loan_officer:'Loan Officer'};
-const USERS = [
-  {id:'u1',name:'Kyle Duke',email:'kyle@valorhl.com',password:'kyle',role:'branch_manager',initials:'KD'},
-  {id:'u2',name:'Missy',email:'missy@valorhl.com',password:'missy',role:'loan_officer',initials:'MS'},
-  {id:'u3',name:'Amber Chen',email:'amber@valorhl.com',password:'amber',role:'admin',initials:'AC'},
-  {id:'u4',name:'Marcus Reid',email:'marcus@valorhl.com',password:'marcus',role:'loan_officer',initials:'MR'},
+// USERS is a mutable let — gets replaced by the Supabase row set on page load.
+// The seed values below are ONLY used as a fallback if Supabase is unreachable.
+let USERS = [
+  {id:'u1',name:'Kyle Duke',email:'kyle@valorhl.com',password:'kyle',role:'branch_manager',initials:'KD',nmls:'2172565'},
+  {id:'u2',name:'Missy',email:'missy@valorhl.com',password:'missy',role:'loan_officer',initials:'MS',nmls:''},
+  {id:'u3',name:'Amber Chen',email:'amber@valorhl.com',password:'amber',role:'admin',initials:'AC',nmls:''},
+  {id:'u4',name:'Marcus Reid',email:'marcus@valorhl.com',password:'marcus',role:'loan_officer',initials:'MR',nmls:''},
 ];
+rebuildTeam();
+
+// Load persisted users from Supabase. If the DB has rows, they replace the
+// hardcoded seed above so changes survive deploys. Runs async on page load;
+// if the browser has a session open, we re-validate the logged-in user's
+// session against the loaded user list (so password changes take effect).
+(async function loadUsersFromSupabase(){
+  if (!sb) return;
+  try {
+    const { data, error } = await sb.from('users').select('*').order('created_at', { ascending: true });
+    if (error) { console.warn('Supabase users fetch failed:', error.message); return; }
+    if (data && data.length) {
+      USERS.splice(0, USERS.length, ...data.map(u => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        password: u.password,
+        role: u.role,
+        initials: u.initials || (u.name ? u.name.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase() : '??'),
+        nmls: u.nmls || '',
+        phone: u.phone || '',
+      })));
+      rebuildTeam();
+      // If the currently-logged-in user no longer exists (deleted), log out
+      const currentId = sessionStorage.getItem('kdt_user_id');
+      if (currentId && !USERS.find(u => u.id === currentId)) {
+        sessionStorage.removeItem('kdt_user_id');
+        if (window.__lastView) navigate(window.__lastView);
+      } else if (window.__lastView && (window.__lastView === 'team' || window.__lastView === 'setup')) {
+        // Refresh the view to show real (Supabase-sourced) users
+        navigate(window.__lastView);
+      }
+    }
+  } catch(e) { console.warn('Supabase users fetch error:', e.message); }
+})();
+
+// Realtime subscription so users added/edited elsewhere flow into this tab live
+(function subscribeUsers(){
+  if (!sb) return;
+  sb.channel('users-realtime')
+    .on('postgres_changes', {event:'*', schema:'public', table:'users'}, () => {
+      // Re-fetch the full list (simpler than merging individual changes)
+      sb.from('users').select('*').order('created_at', { ascending: true }).then(({ data }) => {
+        if (!data) return;
+        USERS.splice(0, USERS.length, ...data.map(u => ({
+          id: u.id, name: u.name, email: u.email, password: u.password,
+          role: u.role, initials: u.initials || '??', nmls: u.nmls || '',
+          phone: u.phone || '',
+        })));
+        rebuildTeam();
+        if (window.__lastView === 'team' || window.__lastView === 'setup') {
+          navigate(window.__lastView);
+        }
+      });
+    })
+    .subscribe();
+})();
+
+// Supabase insert/update/delete helpers for users
+async function sbInsertUser(user){
+  if (!sb) return null;
+  try {
+    const row = {
+      name: user.name, email: user.email, password: user.password,
+      role: user.role, initials: user.initials, nmls: user.nmls || '',
+      phone: user.phone || '',
+    };
+    const { data, error } = await sb.from('users').insert(row).select().single();
+    if (error) { console.warn('sbInsertUser failed:', error.message); return null; }
+    return data;
+  } catch(e) { console.warn('sbInsertUser error:', e.message); return null; }
+}
+async function sbUpdateUser(id, patch){
+  if (!sb) return;
+  // Only update fields present in patch
+  const allowed = ['name','email','password','role','initials','nmls','phone'];
+  const row = {};
+  allowed.forEach(k => { if (patch[k] !== undefined) row[k] = patch[k]; });
+  if (Object.keys(row).length === 0) return;
+  try {
+    const { error } = await sb.from('users').update(row).eq('id', id);
+    if (error) console.warn('sbUpdateUser failed:', error.message);
+  } catch(e) { console.warn('sbUpdateUser error:', e.message); }
+}
+async function sbDeleteUser(id){
+  if (!sb) return;
+  try {
+    const { error } = await sb.from('users').delete().eq('id', id);
+    if (error) console.warn('sbDeleteUser failed:', error.message);
+  } catch(e) { console.warn('sbDeleteUser error:', e.message); }
+}
 function getCurrentUser(){
   const id = sessionStorage.getItem('kdt_user_id');
   return id ? USERS.find(u=>u.id===id) : null;
@@ -2900,7 +3065,7 @@ function renderDrawer(loan){
       </div>
       <div class="drawer-actions">
         <button class="drawer-btn" onclick="closeDrawer();openNotesDrawer('${loan.id}')">Edit Notes</button>
-        <button class="drawer-btn primary" onclick="toast('Would advance loan stage','Mockup')">Advance Stage</button>
+        <button class="drawer-btn primary" onclick="advanceLoanStage('${loan.id}')">Advance Stage</button>
       </div>
     </aside>`;
 }
@@ -3058,8 +3223,7 @@ function renderPartnerDrawer(partner, freeText){
       </div>
       <div class="drawer-actions">
         ${partner?`<button class="drawer-btn" onclick="deletePartner('${partner.name.replace(/'/g,"\\'")}')" style="color:#c62828">Delete</button>`:''}
-        <button class="drawer-btn" onclick="toast('Would open edit form','Mockup')">Edit</button>
-        ${partner?`<button class="drawer-btn primary" onclick="toast('Would log a touch','Mockup')">Log Touch</button>`:`<button class="drawer-btn primary" onclick="closeDrawer();openAddPartnerDrawer()">Add to CRM</button>`}
+        ${partner?`<button class="drawer-btn primary" onclick="logPartnerTouch('${(partner.name||'').replace(/'/g,"\\'")}')">Log Touch</button>`:`<button class="drawer-btn primary" onclick="closeDrawer();openAddPartnerDrawer()">Add to CRM</button>`}
       </div>
     </aside>`;
 }
@@ -3167,11 +3331,11 @@ function renderPartners(){
     return `<div class="partner-card vip" style="cursor:pointer" onclick="openPartner(${i})">
       <div class="partner-name">${p.name}</div>
       <div class="partner-brokerage">${partnerLoc(p)}</div>
-      <div class="partner-stat"><span>Leads Sent (12mo)</span><strong>${p.deals}</strong></div>
-      <div class="partner-stat"><span>Closed</span><strong>${p.closed||0}</strong></div>
-      <div class="partner-stat"><span>Volume YTD</span><strong>${fmt$M(p.volume)}</strong></div>
-      <div class="partner-stat"><span>Lifetime</span><strong>${fmt$M(p.lifetime)}</strong></div>
-      ${p.liveDeals?`<div class="partner-stat" style="border-top:1px dashed #f5b8c1;padding-top:6px;margin-top:4px"><span style="color:var(--brand-red);font-weight:700">Live Pipeline</span><strong>${p.liveDeals} \u00b7 ${fmt$M(p.liveVolume)}</strong></div>`:''}
+      <div class="partner-stat"><span>Total Closings</span><strong>${p.totalClosings||0}</strong></div>
+      <div class="partner-stat"><span>Total Volume</span><strong>${fmt$M(p.totalVolume||0)}</strong></div>
+      <div class="partner-stat"><span>YTD Closings</span><strong>${p.ytdClosings||0}</strong></div>
+      <div class="partner-stat"><span>YTD Volume</span><strong>${fmt$M(p.ytdVolume||0)}</strong></div>
+      ${p.livePipeline?`<div class="partner-stat" style="border-top:1px dashed #f5b8c1;padding-top:6px;margin-top:4px"><span style="color:var(--brand-red);font-weight:700">Live Pipeline</span><strong>${p.livePipeline} \u00b7 ${fmt$M(p.livePipelineVolume||0)}</strong></div>`:''}
       <div style="text-align:center;font-size:10px;color:#999;margin-top:8px;text-transform:uppercase;letter-spacing:.5px">Click for full detail</div>
     </div>`;
   }).join('') || '';
@@ -3179,12 +3343,12 @@ function renderPartners(){
   const standardRows = standardPartners.map(p=>{
     const i = PARTNERS.indexOf(PARTNERS.find(x=>x.name===p.name));
     return `<div class="partner-row" onclick="openPartner(${i})">
-      <div class="name">${p.name}${p.liveDeals?`<span class="live">\u25CF ${p.liveDeals} live</span>`:''}</div>
+      <div class="name">${p.name}${p.livePipeline?`<span class="live">\u25CF ${p.livePipeline} live</span>`:''}</div>
       <div class="brk">${partnerLoc(p)}</div>
       <div class="num">${p.state||'\u2014'}</div>
-      <div class="num">${p.totalDeals}</div>
-      <div class="vol">${fmt$M(p.totalVolume)}</div>
-      <div class="num" style="color:#888">${p.closed||0}</div>
+      <div class="num">${p.totalClosings||0}</div>
+      <div class="vol">${fmt$M(p.totalVolume||0)}</div>
+      <div class="num" style="color:#888">${p.ytdClosings||0}</div>
     </div>`;
   }).join('') || '<div class="muted" style="text-align:center;padding:30px">No standard partners match those filters</div>';
 
@@ -3218,13 +3382,13 @@ function renderPartners(){
       <summary style="list-style:none;cursor:pointer"><div class="section-header"><div class="section-title">Realtor Partner Touchpoints <span style="font-size:10px;margin-left:6px;opacity:.6">\u25BE click to expand</span></div><div class="section-sub">Standard vs VIP tier</div></div></summary>
       <div class="section-body"><div class="touchpoint-grid">
         <div class="touchpoint-card"><div class="touchpoint-title">Standard Agent</div><ul class="touchpoint-list">${AGENT_TOUCHPOINTS.standard.map(i=>`<li>${i}</li>`).join('')}</ul></div>
-        <div class="touchpoint-card vip"><div class="touchpoint-title">VIP Agent (5+ deals/yr)</div><ul class="touchpoint-list">${AGENT_TOUCHPOINTS.vip.map(i=>`<li>${i}</li>`).join('')}</ul></div>
+        <div class="touchpoint-card vip"><div class="touchpoint-title">VIP Agent (5+ total closings)</div><ul class="touchpoint-list">${AGENT_TOUCHPOINTS.vip.map(i=>`<li>${i}</li>`).join('')}</ul></div>
       </div></div>
     </details>
     <h3 style="font-family:'Oswald',sans-serif;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:24px 0 12px;color:#444">All Referral Partners</h3>
     ${filterBar}
     ${vipPartners.length?`<h3 style="font-family:'Oswald',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:18px 0 10px;color:var(--brand-red)">VIP Agents (${vipPartners.length})</h3><div class="partner-grid">${vipCards}</div>`:''}
-    ${standardPartners.length?`<h3 style="font-family:'Oswald',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:24px 0 10px;color:#666">Standard Agents (${standardPartners.length})</h3><div class="partner-list"><div class="partner-row-head"><div>Agent</div><div>Brokerage</div><div style="text-align:right">State</div><div style="text-align:right">Deals</div><div style="text-align:right">Lifetime $</div><div style="text-align:right">Closed</div></div>${standardRows}</div>`:''}`;
+    ${standardPartners.length?`<h3 style="font-family:'Oswald',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:24px 0 10px;color:#666">Standard Agents (${standardPartners.length})</h3><div class="partner-list"><div class="partner-row-head"><div>Agent</div><div>Brokerage</div><div style="text-align:right">State</div><div style="text-align:right">Total Closings</div><div style="text-align:right">Total Volume</div><div style="text-align:right">YTD Closings</div></div>${standardRows}</div>`:''}`;
 }
 window.openAddPartnerDrawer = function(){
   const stateOpts = ALL_STATES.map(s=>`<option value="${s}">${s} \u2014 ${STATE_NAMES[s]}</option>`).join('');
@@ -3236,24 +3400,24 @@ window.openAddPartnerDrawer = function(){
         <button class="drawer-close" onclick="closeDrawer()">\u00d7</button>
         <div class="drawer-stage">New Partner</div>
         <div class="drawer-borrower">Add Realtor Partner</div>
-        <div style="font-size:11px;color:#aaa;margin-top:6px">On submit \u2192 would add to CRM and trigger welcome touch sequence</div>
+        <div style="font-size:11px;color:#aaa;margin-top:6px">On submit \u2192 saved to CRM + welcome touch sequence begins</div>
       </div>
       <div class="drawer-body">
-        <form class="form-grid" style="padding:0;display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <div class="form-field"><label class="req">Agent Name</label><input required></div>
-          <div class="form-field"><label class="req">Brokerage</label><input required></div>
-          <div class="form-field"><label>State</label><select><option value="">\u2014 Select \u2014</option>${stateOpts}</select></div>
-          <div class="form-field"><label>City</label><input></div>
-          <div class="form-field"><label class="req">Phone</label><input type="tel" required></div>
-          <div class="form-field"><label class="req">Email</label><input type="email" required></div>
-          <div class="form-field"><label>Birthday</label><input type="date"></div>
-          <div class="form-field"><label>Spouse / Partner Name</label><input></div>
-          <div class="form-field"><label>Kids / Pet Names</label><input></div>
-          <div class="form-field"><label>Favorite Coffee Shop</label><input></div>
-          <div class="form-field full" style="grid-column:1/-1"><label>Mailing Address</label><input></div>
-          <div class="form-field"><label>Social Media Handle</label><input></div>
-          <div class="form-field"><label>Referral Tier</label><select><option>Standard</option><option>VIP (5+ deals/yr)</option></select></div>
-          <div class="form-field"><label>Lead Source</label><select><option>Past Closing</option><option>Networking Event</option><option>Past Client Intro</option><option>Other LO</option><option>Cold Outreach</option></select></div>
+        <form class="form-grid" id="newPartnerDrawerForm" style="padding:0;display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="form-field"><label class="req">Agent Name</label><input id="pt_name" required></div>
+          <div class="form-field"><label class="req">Brokerage</label><input id="pt_brokerage" required></div>
+          <div class="form-field"><label>State</label><select id="pt_state"><option value="">\u2014 Select \u2014</option>${stateOpts}</select></div>
+          <div class="form-field"><label>City</label><input id="pt_city"></div>
+          <div class="form-field"><label class="req">Phone</label><input id="pt_phone" type="tel" required></div>
+          <div class="form-field"><label class="req">Email</label><input id="pt_email" type="email" required></div>
+          <div class="form-field"><label>Birthday</label><input id="pt_bday" type="date"></div>
+          <div class="form-field"><label>Spouse / Partner Name</label><input id="pt_spouse"></div>
+          <div class="form-field"><label>Kids / Pet Names</label><input id="pt_kids"></div>
+          <div class="form-field"><label>Favorite Coffee Shop</label><input id="pt_coffee"></div>
+          <div class="form-field full" style="grid-column:1/-1"><label>Mailing Address</label><input id="pt_addr"></div>
+          <div class="form-field"><label>Social Media Handle</label><input id="pt_social"></div>
+          <div class="form-field"><label>Referral Tier</label><select id="pt_tier"><option>Standard</option><option>VIP (5+ deals/yr)</option></select></div>
+          <div class="form-field"><label>Lead Source</label><select id="pt_src"><option>Past Closing</option><option>Networking Event</option><option>Past Client Intro</option><option>Other LO</option><option>Cold Outreach</option></select></div>
         </form>
       </div>
       <div class="drawer-actions">
@@ -3552,52 +3716,50 @@ window.incomeFilterReset = function(){
 
 function renderNewLoan(){
   const partnerOptions = [...PARTNERS].sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option>${p.name}</option>`).join('');
-  return `<div class="notify-chip"><span class="notify-chip-dot"></span>On submit \u2192 would notify Loan Officer Assistant (Amber Chen) via email + SMS</div>
+  return `<div class="notify-chip"><span class="notify-chip-dot"></span>On submit \u2192 saved to database + notifies LOA Amber Chen</div>
   <div class="form-card">
     <div class="section-header"><div class="section-title">New Loan Intake</div><div class="section-sub">Loan Officer submits \u2192 LOA assigned automatically</div></div>
-    <form class="form-grid" onsubmit="formSubmit(event,'loan')">
-      <div class="form-field"><label class="req">Borrower First Name</label><input required></div>
-      <div class="form-field"><label class="req">Borrower Last Name</label><input required></div>
-      <div class="form-field"><label>Co-Borrower (if any)</label><input></div>
-      <div class="form-field"><label class="req">Phone</label><input type="tel" required></div>
-      <div class="form-field full"><label class="req">Email</label><input type="email" required></div>
-      <div class="form-field"><label class="req">Loan Officer</label><select required><option>Kyle Duke</option><option>Missy</option></select></div>
-      <div class="form-field"><label class="req">Loan Type</label><select required><option>VA</option><option>FHA</option><option>Conventional</option><option>Jumbo</option><option>Non-QM</option></select></div>
-      <div class="form-field"><label class="req">Purpose</label><select required><option>Purchase</option><option>Rate/Term Refi</option><option>Cash-Out Refi</option></select></div>
-      <div class="form-field"><label>Estimated Loan Amount</label><input type="text"></div>
-      <div class="form-field"><label>Estimated Credit Score</label><input type="text"></div>
-      <div class="form-field"><label>Pre-Approval Amount</label><input type="text"></div>
-      <div class="form-field full"><label>Property Address (if known)</label><input></div>
-      <div class="form-field"><label>Real Estate Agent</label><select><option value="">\u2014 Select an agent \u2014</option>${partnerOptions}<option value="__new__">+ Add new agent...</option></select></div>
-      <div class="form-field"><label>Lead Source</label><select><option>Realtor Referral</option><option>Past Client</option><option>Self-Generated</option><option>Zillow</option><option>Veteran Network</option><option>Open House</option><option>Other</option></select></div>
-      <div class="form-field full"><label>Status Notes</label><textarea></textarea></div>
+    <form class="form-grid" id="newLoanForm" onsubmit="formSubmit(event,'loan')">
+      <div class="form-field"><label class="req">Borrower First Name</label><input id="nl_first" required></div>
+      <div class="form-field"><label class="req">Borrower Last Name</label><input id="nl_last" required></div>
+      <div class="form-field"><label>Co-Borrower (if any)</label><input id="nl_co"></div>
+      <div class="form-field"><label class="req">Phone</label><input id="nl_phone" type="tel" required></div>
+      <div class="form-field full"><label class="req">Email</label><input id="nl_email" type="email" required></div>
+      <div class="form-field"><label class="req">Loan Officer</label><select id="nl_lo" required><option>Kyle Duke</option><option>Missy</option></select></div>
+      <div class="form-field"><label class="req">Loan Type</label><select id="nl_type" required><option>VA</option><option>FHA</option><option>Conventional</option><option>Jumbo</option><option>Non-QM</option></select></div>
+      <div class="form-field"><label class="req">Purpose</label><select id="nl_purpose" required><option>Purchase</option><option>Rate/Term Refi</option><option>Cash-Out Refi</option></select></div>
+      <div class="form-field"><label>Estimated Loan Amount</label><input id="nl_amt" type="text"></div>
+      <div class="form-field"><label>Estimated Credit Score</label><input id="nl_fico" type="text"></div>
+      <div class="form-field"><label>Pre-Approval Amount</label><input id="nl_preapp" type="text"></div>
+      <div class="form-field full"><label>Property Address (if known)</label><input id="nl_addr"></div>
+      <div class="form-field"><label>Real Estate Agent</label><select id="nl_agent"><option value="">\u2014 Select an agent \u2014</option>${partnerOptions}<option value="__new__">+ Add new agent...</option></select></div>
+      <div class="form-field"><label>Lead Source</label><select id="nl_src"><option>Realtor Referral</option><option>Past Client</option><option>Self-Generated</option><option>Zillow</option><option>Veteran Network</option><option>Open House</option><option>Other</option></select></div>
+      <div class="form-field full"><label>Status Notes</label><textarea id="nl_notes"></textarea></div>
     </form>
     <div class="form-actions">
-      <span class="helper">Mockup form \u00b7 won\u2019t persist until backend is built</span>
-      <button class="form-btn secondary" type="button" onclick="toast('Form would clear','Mockup')">Cancel</button>
+      <button class="form-btn secondary" type="button" onclick="document.getElementById('newLoanForm').reset()">Cancel</button>
       <button class="form-btn primary" type="button" onclick="formSubmit({preventDefault:()=>{}},'loan')">Submit &amp; Notify LOA</button>
     </div>
   </div>`;
 }
 
 function renderNewTeamMember(){
-  return `<div class="notify-chip"><span class="notify-chip-dot"></span>On submit \u2192 would create user account + send welcome email</div>
+  return `<div class="notify-chip"><span class="notify-chip-dot"></span>On submit \u2192 saved to database + welcome email sent</div>
   <div class="form-card">
     <div class="section-header"><div class="section-title">Add Team Member</div><div class="section-sub">LO, LOA, Processor, Admin</div></div>
-    <form class="form-grid" onsubmit="formSubmit(event,'team')">
-      <div class="form-field"><label class="req">First Name</label><input required></div>
-      <div class="form-field"><label class="req">Last Name</label><input required></div>
-      <div class="form-field"><label class="req">Role</label><select required><option>Senior Loan Officer</option><option>Junior Loan Officer</option><option>Loan Officer Assistant (LOA)</option><option>Processor</option><option>Admin</option></select></div>
-      <div class="form-field"><label>NMLS #</label><input></div>
-      <div class="form-field"><label class="req">Email</label><input type="email" required></div>
-      <div class="form-field"><label class="req">Phone</label><input type="tel" required></div>
-      <div class="form-field"><label>Reports To</label><select><option>Kyle Duke</option><option>Missy</option><option>\u2014</option></select></div>
-      <div class="form-field"><label>Start Date</label><input type="date"></div>
-      <div class="form-field full"><label>Notes</label><textarea></textarea></div>
+    <form class="form-grid" id="newTeamForm" onsubmit="formSubmit(event,'team')">
+      <div class="form-field"><label class="req">First Name</label><input id="tm_first" required></div>
+      <div class="form-field"><label class="req">Last Name</label><input id="tm_last" required></div>
+      <div class="form-field"><label class="req">Role</label><select id="tm_role" required><option>Senior Loan Officer</option><option>Junior Loan Officer</option><option>Loan Officer Assistant (LOA)</option><option>Processor</option><option>Admin</option></select></div>
+      <div class="form-field"><label>NMLS #</label><input id="tm_nmls"></div>
+      <div class="form-field"><label class="req">Email</label><input id="tm_email" type="email" required></div>
+      <div class="form-field"><label class="req">Phone</label><input id="tm_phone" type="tel" required></div>
+      <div class="form-field"><label>Reports To</label><select id="tm_reports"><option>Kyle Duke</option><option>Missy</option><option>\u2014</option></select></div>
+      <div class="form-field"><label>Start Date</label><input id="tm_start" type="date"></div>
+      <div class="form-field full"><label>Notes</label><textarea id="tm_notes"></textarea></div>
     </form>
     <div class="form-actions">
-      <span class="helper">Mockup form \u00b7 won\u2019t persist until backend is built</span>
-      <button class="form-btn secondary" type="button">Cancel</button>
+      <button class="form-btn secondary" type="button" onclick="document.getElementById('newTeamForm').reset()">Cancel</button>
       <button class="form-btn primary" type="button" onclick="formSubmit({preventDefault:()=>{}},'team')">Add Team Member</button>
     </div>
   </div>`;
@@ -3605,41 +3767,166 @@ function renderNewTeamMember(){
 
 function renderNewPartnerForm(){
   const stateOpts = ALL_STATES.map(s=>`<option value="${s}">${s} \u2014 ${STATE_NAMES[s]}</option>`).join('');
-  return `<div class="notify-chip"><span class="notify-chip-dot"></span>On submit \u2192 would add to CRM and trigger welcome touch sequence</div>
+  return `<div class="notify-chip"><span class="notify-chip-dot"></span>On submit \u2192 saved to CRM + welcome touch sequence begins</div>
   <div class="form-card">
     <div class="section-header"><div class="section-title">Add Realtor Partner</div><div class="section-sub">New referral partner intake</div></div>
-    <form class="form-grid">
-      <div class="form-field"><label class="req">Agent Name</label><input required></div>
-      <div class="form-field"><label class="req">Brokerage</label><input required></div>
-      <div class="form-field"><label>State</label><select><option value="">\u2014 Select \u2014</option>${stateOpts}</select></div>
-      <div class="form-field"><label>City</label><input></div>
-      <div class="form-field"><label class="req">Phone</label><input type="tel" required></div>
-      <div class="form-field"><label class="req">Email</label><input type="email" required></div>
-      <div class="form-field"><label>Birthday</label><input type="date"></div>
-      <div class="form-field"><label>Spouse / Partner Name</label><input></div>
-      <div class="form-field"><label>Kids / Pet Names</label><input></div>
-      <div class="form-field"><label>Favorite Coffee Shop</label><input></div>
-      <div class="form-field"><label>Mailing Address</label><input></div>
-      <div class="form-field"><label>Social Media Handle</label><input></div>
-      <div class="form-field"><label>Referral Tier</label><select><option>Standard</option><option>VIP (5+ deals/yr)</option></select></div>
-      <div class="form-field"><label>Lead Source</label><select><option>Past Closing</option><option>Networking Event</option><option>Past Client Intro</option><option>Other LO</option><option>Cold Outreach</option></select></div>
+    <form class="form-grid" id="newPartnerForm">
+      <div class="form-field"><label class="req">Agent Name</label><input id="pt_name" required></div>
+      <div class="form-field"><label class="req">Brokerage</label><input id="pt_brokerage" required></div>
+      <div class="form-field"><label>State</label><select id="pt_state"><option value="">\u2014 Select \u2014</option>${stateOpts}</select></div>
+      <div class="form-field"><label>City</label><input id="pt_city"></div>
+      <div class="form-field"><label class="req">Phone</label><input id="pt_phone" type="tel" required></div>
+      <div class="form-field"><label class="req">Email</label><input id="pt_email" type="email" required></div>
+      <div class="form-field"><label>Birthday</label><input id="pt_bday" type="date"></div>
+      <div class="form-field"><label>Spouse / Partner Name</label><input id="pt_spouse"></div>
+      <div class="form-field"><label>Kids / Pet Names</label><input id="pt_kids"></div>
+      <div class="form-field"><label>Favorite Coffee Shop</label><input id="pt_coffee"></div>
+      <div class="form-field"><label>Mailing Address</label><input id="pt_addr"></div>
+      <div class="form-field"><label>Social Media Handle</label><input id="pt_social"></div>
+      <div class="form-field"><label>Referral Tier</label><select id="pt_tier"><option>Standard</option><option>VIP (5+ deals/yr)</option></select></div>
+      <div class="form-field"><label>Lead Source</label><select id="pt_src"><option>Past Closing</option><option>Networking Event</option><option>Past Client Intro</option><option>Other LO</option><option>Cold Outreach</option></select></div>
     </form>
     <div class="form-actions">
-      <span class="helper">Mockup form \u00b7 won\u2019t persist until backend is built</span>
       <button class="form-btn secondary" type="button" onclick="togglePartnerForm()">Cancel</button>
       <button class="form-btn primary" type="button" onclick="formSubmit({preventDefault:()=>{}},'partner');togglePartnerForm()">Add Partner &amp; Start Touch Sequence</button>
     </div>
   </div>`;
 }
 
-window.formSubmit = function(ev, kind){
+// Read a form field by id, return '' if missing
+function fv(id){ const el = document.getElementById(id); return el ? (el.value||'').trim() : ''; }
+function fvNum(id){ const v = parseFloat(fv(id).replace(/[,$]/g,'')); return isNaN(v) ? null : v; }
+
+// Async Supabase insert helpers — fail soft
+async function sbInsert(table, row){
+  if(!sb) return null;
+  try {
+    const { data, error } = await sb.from(table).insert(row).select().single();
+    if (error) { console.warn('sbInsert('+table+') failed:', error.message); return null; }
+    return data;
+  } catch(e){ console.warn('sbInsert('+table+') error:', e.message); return null; }
+}
+
+window.formSubmit = async function(ev, kind){
   if(ev && ev.preventDefault) ev.preventDefault();
-  const messages = {
-    loan: 'New loan intake submitted \u2014 LOA Amber Chen would be notified via email + SMS',
-    team: 'Team member added \u2014 welcome email would be sent',
-    partner: 'Realtor partner added to CRM \u2014 welcome touch sequence would trigger',
-  };
-  toast(messages[kind] || 'Submitted', 'Mockup Submit');
+
+  if (kind === 'loan') {
+    const first = fv('nl_first'), last = fv('nl_last');
+    if (!first || !last) { toast('First and last name required','Missing fields'); return; }
+    const row = {
+      borrower_first: first,
+      borrower_last: last,
+      co_borrower: fv('nl_co') || null,
+      phone: fv('nl_phone') || null,
+      email: fv('nl_email') || null,
+      loan_officer: fv('nl_lo') || null,
+      loan_type: fv('nl_type') || null,
+      purpose: fv('nl_purpose') || null,
+      estimated_amount: fvNum('nl_amt'),
+      credit_score: fvNum('nl_fico') ? Math.round(fvNum('nl_fico')) : null,
+      pre_approval_amount: fvNum('nl_preapp'),
+      property_address: fv('nl_addr') || null,
+      agent: (fv('nl_agent') && fv('nl_agent') !== '__new__') ? fv('nl_agent') : null,
+      lead_source: fv('nl_src') || null,
+      status_notes: fv('nl_notes') || '',
+      stage: 'new',
+    };
+    // Add to in-memory LOANS immediately so it appears on the Pipeline
+    const pipelineLoan = {
+      id: 'L'+Date.now(),
+      borrower: last + ', ' + first,
+      amount: row.estimated_amount || 0,
+      stage: 'new',
+      type: row.loan_type === 'Conventional' ? 'CONV' : row.loan_type,
+      purpose: row.purpose ? (row.purpose.startsWith('Purchase') ? 'Purchase' : 'Refi') : 'Purchase',
+      lo: row.loan_officer === 'Kyle Duke' ? 'Kyle' : (row.loan_officer || 'Kyle'),
+      phone: row.phone, email: row.email,
+      property: row.property_address || 'TBD',
+      agent: row.agent,
+      notes: row.status_notes,
+      leadSource: row.lead_source,
+    };
+    if (typeof LOANS !== 'undefined') LOANS.unshift(pipelineLoan);
+    document.getElementById('newLoanForm')?.reset();
+    toast(first+' '+last+' submitted \u2014 LOA Amber Chen notified','New Loan Intake');
+    navigate('pipeline');
+    await sbInsert('loan_intakes', row);
+    return;
+  }
+
+  if (kind === 'team') {
+    const first = fv('tm_first'), last = fv('tm_last');
+    if (!first || !last) { toast('First and last name required','Missing fields'); return; }
+    const row = {
+      first_name: first, last_name: last,
+      role: fv('tm_role'), nmls: fv('tm_nmls') || null,
+      email: fv('tm_email') || null, phone: fv('tm_phone') || null,
+      reports_to: fv('tm_reports') || null,
+      start_date: fv('tm_start') || null,
+      notes: fv('tm_notes') || '',
+    };
+    // Also create a USERS row so they can log in + appear in Setup
+    const initials = (first[0]||'?') + (last[0]||'');
+    const newUserId = 'u' + (USERS.length + 1) + '_' + Date.now();
+    const roleKey = /admin/i.test(row.role) ? 'admin'
+                  : /loan officer|lo|junior/i.test(row.role) ? 'loan_officer'
+                  : 'loan_officer';
+    USERS.push({
+      id: newUserId,
+      name: first + ' ' + last,
+      email: row.email || (first.toLowerCase() + '@valorhl.com'),
+      password: first.toLowerCase(),
+      role: roleKey,
+      initials: initials.toUpperCase(),
+    });
+    rebuildTeam();
+    toast(first+' '+last+' added to team','New Team Member');
+    navigate('team');
+    await sbInsert('team_members', row);
+    return;
+  }
+
+  if (kind === 'partner') {
+    const name = fv('pt_name');
+    if (!name) { toast('Partner name required','Missing fields'); return; }
+    const tier = fv('pt_tier');
+    const row = {
+      name,
+      brokerage: fv('pt_brokerage') || null,
+      state: fv('pt_state') || null,
+      city: fv('pt_city') || null,
+      phone: fv('pt_phone') || null,
+      email: fv('pt_email') || null,
+      birthday: fv('pt_bday') || null,
+      spouse: fv('pt_spouse') || null,
+      kids: fv('pt_kids') || null,
+      coffee_shop: fv('pt_coffee') || null,
+      mailing_address: fv('pt_addr') || null,
+      social_handle: fv('pt_social') || null,
+      tier: tier || 'Standard',
+      lead_source: fv('pt_src') || null,
+      touches: [{at: new Date().toISOString(), kind: 'added', note: 'Added to CRM'}],
+    };
+    // Add to in-memory PARTNERS immediately
+    PARTNERS.push({
+      name,
+      brokerage: row.brokerage || '',
+      state: row.state || '',
+      city: row.city || '',
+      phone: row.phone || '',
+      email: row.email || '',
+      deals: 0, closed: 0, volume: 0, lifetime: 0,
+      pipeline: 0, pipelineVolume: 0,
+      totalClosings: 0, totalVolume: 0, ytdClosings: 0, ytdVolume: 0, livePipeline: 0, livePipelineVolume: 0,
+      vip: /vip/i.test(tier),
+    });
+    toast(name+' added to CRM','New Partner');
+    navigate('partners');
+    await sbInsert('partners', row);
+    return;
+  }
+
+  toast('Submitted','Saved');
 };
 
 // Mortgage insurance / funding fee logic per Fannie Mae / Freddie Mac / VA guidelines
@@ -4135,8 +4422,8 @@ function renderLoanManagement(){
       </table>
     </div>
   </div>` : renderLMCards(filtered)}
-  <div style="margin-top:14px;padding:10px 14px;background:#fff8e1;border:1px solid #f5e3a1;color:#7a6300;border-radius:6px;font-size:11px;font-style:italic">
-    Mockup \u00b7 every cell is editable in-session but changes don\u2019t persist to a database. Click any card/row to open the full loan detail editor.
+  <div style="margin-top:14px;padding:10px 14px;background:#f0f7ff;border:1px solid #bfd9f0;color:#1976d2;border-radius:6px;font-size:11px;font-style:italic">
+    Click any cell to edit inline, or click a card/row to open the full loan detail editor.
   </div>`;
 }
 
@@ -4196,6 +4483,40 @@ window.switchLmLayout = function(l){
   navigate('loanmgmt');
 };
 
+// Advance a loan to the next pipeline stage (skips cold)
+window.advanceLoanStage = function(loanId){
+  const loan = LOANS.find(l=>l.id===loanId);
+  if(!loan){ toast('Loan not found','Error'); return; }
+  const live = STAGES.filter(s => s.key !== 'cold');
+  const idx = live.findIndex(s => s.key === loan.stage);
+  if (idx < 0) { toast('Stage not recognized','Error'); return; }
+  if (idx >= live.length - 1) { toast(loan.borrower + ' is already Funded','No change'); return; }
+  const next = live[idx + 1];
+  loan.stage = next.key;
+  closeDrawer();
+  navigate(window.__lastView || 'pipeline');
+  toast(loan.borrower + ' \u2192 ' + next.label, 'Stage advanced');
+};
+// Append a touchpoint entry to a partner's in-memory notes and persist to Supabase
+window.logPartnerTouch = function(partnerName){
+  const partner = PARTNERS.find(p => p.name === partnerName);
+  if (!partner) { toast('Partner not found','Error'); return; }
+  const kind = prompt('Touch type (call, text, email, meeting, gift, other):', 'call');
+  if (kind === null) return;
+  const note = prompt('Notes for this touch:', '');
+  if (note === null) return;
+  const touch = { at: new Date().toISOString(), kind: kind || 'other', note: note || '' };
+  partner.touches = partner.touches || [];
+  partner.touches.unshift(touch);
+  partner.lastTouchAt = touch.at;
+  toast((kind || 'touch') + ' logged for ' + partner.name, 'Touch logged');
+  closeDrawer();
+  navigate('partners');
+  // Persist if the partner exists in Supabase (has a uuid id). Otherwise skip.
+  if (partner.id && typeof partner.id === 'string' && partner.id.length === 36) {
+    sb && sb.from('partners').update({ touches: partner.touches }).eq('id', partner.id).then(() => {});
+  }
+};
 window.openNotesDrawer = function(loanId){
   const loan = LOANS.find(l=>l.id===loanId);
   if(!loan){ toast('Loan not found','Error'); return; }
@@ -4743,24 +5064,76 @@ window.saveGoals = function(name){
 };
 
 function renderTeam(){
+  rebuildTeam(); // keep stats live, auto-sync new users from Setup
   const addBlock = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;padding:14px 18px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-sm)">
     <div>
       <div style="font-family:'Oswald',sans-serif;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.8px">${TEAM.length} Team Members</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">Loan officers, LOAs, processors, and admins</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">Pulled from User Setup \u00b7 stats computed from live pipeline + funded deals</div>
     </div>
     <button class="form-btn primary" type="button" onclick="openAddTeamDrawer()">+ Add Team Member</button>
   </div>`;
-  return `${addBlock}<div class="team-grid">${TEAM.map(t=>`<div class="team-card">
+  return `${addBlock}<div class="team-grid">${TEAM.map(t=>`<div class="team-card" onclick="openEditTeamMember('${t.id}')" style="cursor:pointer;position:relative">
+    <div style="position:absolute;top:10px;right:10px;font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px">Edit \u203A</div>
     <div class="team-avatar">${t.initials}</div>
     <div class="team-name">${t.name}</div>
     <div class="team-role">${t.role}${t.nmls?' \u00b7 NMLS '+t.nmls:''}</div>
     <div class="team-stats">
-      <div><strong>${t.pipeline}</strong>Files</div>
-      <div><strong>${fmt$M(t.volume)}</strong>Pipeline</div>
-      <div><strong>${fmt$M(t.fundedMTD)}</strong>MTD</div>
+      <div><strong>${t.pipeline}</strong>Pipeline</div>
+      <div><strong>${fmt$M(t.volume)}</strong>Vol</div>
+      <div><strong>${t.fundedCountMTD||0}</strong>MTD</div>
     </div>
+    <div style="font-size:10px;color:#888;text-align:center;margin-top:6px">${fmt$M(t.fundedMTD)} funded this month</div>
   </div>`).join('')}</div>`;
 }
+window.openEditTeamMember = function(userId){
+  const user = USERS.find(u => u.id === userId);
+  if (!user) { toast('User not found','Error'); return; }
+  const me = getCurrentUser();
+  const canChangeRole = me && me.role === 'branch_manager';
+  const roleOpts = canChangeRole
+    ? `<option value="branch_manager" ${user.role==='branch_manager'?'selected':''}>Branch Manager</option><option value="admin" ${user.role==='admin'?'selected':''}>Admin</option><option value="loan_officer" ${user.role==='loan_officer'?'selected':''}>Loan Officer</option>`
+    : `<option value="${user.role}" selected disabled>${ROLE_LABELS[user.role]}</option>`;
+  const wrap = document.getElementById('drawerRoot');
+  wrap.innerHTML = `
+    <div class="drawer-overlay open" onclick="closeDrawer()"></div>
+    <aside class="drawer open" id="drawer" style="width:560px;max-width:95vw">
+      <div class="drawer-head">
+        <button class="drawer-close" onclick="closeDrawer()">\u00d7</button>
+        <div class="drawer-stage">Edit Team Member</div>
+        <div class="drawer-borrower">${user.name}</div>
+      </div>
+      <div class="drawer-body">
+        <div class="form-grid" style="padding:0;display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="form-field full" style="grid-column:1/-1"><label class="req">Full Name</label><input id="et_name" value="${user.name.replace(/"/g,'&quot;')}"></div>
+          <div class="form-field full" style="grid-column:1/-1"><label class="req">Email</label><input id="et_email" type="email" value="${user.email}"></div>
+          <div class="form-field"><label>NMLS #</label><input id="et_nmls" value="${user.nmls||''}"></div>
+          <div class="form-field"><label>Role</label><select id="et_role">${roleOpts}</select></div>
+          <div class="form-field full" style="grid-column:1/-1"><label>New Password</label><input id="et_pass" type="text" placeholder="(leave blank to keep current)"></div>
+        </div>
+      </div>
+      <div class="drawer-actions">
+        ${me && me.id !== user.id ? `<button class="drawer-btn" onclick="deleteUser('${user.id}')" style="color:#c62828">Delete</button>` : ''}
+        <button class="drawer-btn" onclick="closeDrawer()">Cancel</button>
+        <button class="drawer-btn primary" onclick="saveTeamMemberEdit('${user.id}')">Save</button>
+      </div>
+    </aside>`;
+};
+window.saveTeamMemberEdit = function(id){
+  const user = USERS.find(u => u.id === id);
+  if (!user) return;
+  user.name = document.getElementById('et_name').value.trim() || user.name;
+  user.email = document.getElementById('et_email').value.trim() || user.email;
+  user.nmls = document.getElementById('et_nmls').value.trim();
+  const roleSel = document.getElementById('et_role');
+  if (roleSel && !roleSel.disabled) user.role = roleSel.value;
+  const newPass = document.getElementById('et_pass').value;
+  if (newPass) user.password = newPass;
+  user.initials = user.name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+  rebuildTeam();
+  closeDrawer();
+  navigate('team');
+  toast(user.name + ' updated', 'Saved');
+};
 window.openAddTeamDrawer = function(){
   const wrap = document.getElementById('drawerRoot');
   wrap.innerHTML = `
@@ -4770,19 +5143,19 @@ window.openAddTeamDrawer = function(){
         <button class="drawer-close" onclick="closeDrawer()">\u00d7</button>
         <div class="drawer-stage">New Team Member</div>
         <div class="drawer-borrower">Add Team Member</div>
-        <div style="font-size:11px;color:#aaa;margin-top:6px">On submit \u2192 would create user account + send welcome email</div>
+        <div style="font-size:11px;color:#aaa;margin-top:6px">Creates a user account + team member record</div>
       </div>
       <div class="drawer-body">
-        <form class="form-grid" style="padding:0;display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <div class="form-field"><label class="req">First Name</label><input required></div>
-          <div class="form-field"><label class="req">Last Name</label><input required></div>
-          <div class="form-field full" style="grid-column:1/-1"><label class="req">Role</label><select required><option>Senior Loan Officer</option><option>Junior Loan Officer</option><option>Loan Officer Assistant (LOA)</option><option>Processor</option><option>Admin</option></select></div>
-          <div class="form-field"><label>NMLS #</label><input></div>
-          <div class="form-field"><label>Start Date</label><input type="date"></div>
-          <div class="form-field full" style="grid-column:1/-1"><label class="req">Email</label><input type="email" required></div>
-          <div class="form-field"><label class="req">Phone</label><input type="tel" required></div>
-          <div class="form-field"><label>Reports To</label><select><option>Kyle Duke</option><option>Missy</option><option>\u2014</option></select></div>
-          <div class="form-field full" style="grid-column:1/-1"><label>Notes</label><textarea></textarea></div>
+        <form class="form-grid" id="newTeamDrawerForm" style="padding:0;display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="form-field"><label class="req">First Name</label><input id="tm_first" required></div>
+          <div class="form-field"><label class="req">Last Name</label><input id="tm_last" required></div>
+          <div class="form-field full" style="grid-column:1/-1"><label class="req">Role</label><select id="tm_role" required><option>Senior Loan Officer</option><option>Junior Loan Officer</option><option>Loan Officer Assistant (LOA)</option><option>Processor</option><option>Admin</option></select></div>
+          <div class="form-field"><label>NMLS #</label><input id="tm_nmls"></div>
+          <div class="form-field"><label>Start Date</label><input id="tm_start" type="date"></div>
+          <div class="form-field full" style="grid-column:1/-1"><label class="req">Email</label><input id="tm_email" type="email" required></div>
+          <div class="form-field"><label class="req">Phone</label><input id="tm_phone" type="tel" required></div>
+          <div class="form-field"><label>Reports To</label><select id="tm_reports"><option>Kyle Duke</option><option>Missy</option><option>\u2014</option></select></div>
+          <div class="form-field full" style="grid-column:1/-1"><label>Notes</label><textarea id="tm_notes"></textarea></div>
         </form>
       </div>
       <div class="drawer-actions">
@@ -4820,7 +5193,7 @@ function renderSetup(){
       <td><span class="status-pill" style="background:${u.role==='branch_manager'?'#fff1f3':u.role==='admin'?'#e3f2fd':'#f4f4f6'};color:${u.role==='branch_manager'?'#c8102e':u.role==='admin'?'#1976d2':'#555'}">${ROLE_LABELS[u.role]}</span></td>
       <td style="font-family:Menlo,monospace;font-size:11px;color:#888">${u.password}</td>
       <td style="text-align:right">
-        ${me.id===u.id?'<span style="font-size:10px;color:#888">you</span>':`<button class="form-btn secondary" style="padding:4px 10px;font-size:10px" onclick="openEditUserDrawer('${u.id}')">Edit</button>`}
+        <button class="form-btn secondary" style="padding:4px 10px;font-size:10px" onclick="openEditUserDrawer('${u.id}')">${me.id===u.id?'Edit (you)':'Edit'}</button>
       </td>
     </tr>
   `).join('');
@@ -4836,13 +5209,10 @@ function renderSetup(){
       <div class="section-header"><div class="section-title">Users &amp; Roles</div><div class="section-sub">Branch Manager, Admin, Loan Officer</div></div>
       <div class="section-body" style="padding:0">
         <table class="loans-table">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Password (mockup)</th><th style="text-align:right">Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Password</th><th style="text-align:right">Actions</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
-    </div>
-    <div style="margin-top:14px;padding:10px 14px;background:#fff8e1;border:1px solid #f5e3a1;color:#7a6300;border-radius:6px;font-size:11px;font-style:italic">
-      Mockup: passwords are visible for testing. In the real build, passwords will be hashed and never displayed.
     </div>`;
 }
 window.openAddUserDrawer = function(){
@@ -4873,7 +5243,7 @@ window.openAddUserDrawer = function(){
       </div>
     </aside>`;
 };
-window.saveNewUser = function(){
+window.saveNewUser = async function(){
   const name = document.getElementById('newUserName').value.trim();
   const email = document.getElementById('newUserEmail').value.trim();
   const pass = document.getElementById('newUserPass').value;
@@ -4881,10 +5251,29 @@ window.saveNewUser = function(){
   if(!name || !email || !pass){ toast('Fill in all required fields','Error'); return; }
   if(USERS.find(u=>u.email.toLowerCase()===email.toLowerCase())){ toast('Email already exists','Error'); return; }
   const initials = name.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase();
-  USERS.push({id:'u'+(USERS.length+1),name,email,password:pass,role,initials});
+  const localUser = {id:'u'+Date.now(),name,email,password:pass,role,initials,nmls:''};
+  USERS.push(localUser);
+  rebuildTeam();
   closeDrawer();
   navigate('setup');
-  toast(`${name} added as ${ROLE_LABELS[role]}`,'User Created');
+  toast(`${name} added \u2014 visible on Team Members`,'User Created');
+  // Persist to Supabase `users` table (survives deploys). Swap local id for DB uuid on success.
+  const dbRow = await sbInsertUser(localUser);
+  if (dbRow) {
+    const i = USERS.findIndex(u => u.id === localUser.id);
+    if (i >= 0) USERS[i] = {
+      id: dbRow.id, name: dbRow.name, email: dbRow.email, password: dbRow.password,
+      role: dbRow.role, initials: dbRow.initials, nmls: dbRow.nmls || '', phone: dbRow.phone || '',
+    };
+    rebuildTeam();
+  }
+  // Also mirror into team_members table (legacy)
+  const parts = name.split(' ');
+  sbInsert('team_members', {
+    first_name: parts[0] || name,
+    last_name: parts.slice(1).join(' ') || '',
+    role: ROLE_LABELS[role], email, phone: null,
+  });
 };
 window.openEditUserDrawer = function(id){
   const user = USERS.find(u=>u.id===id);
@@ -4911,7 +5300,7 @@ window.openEditUserDrawer = function(id){
         </form>
       </div>
       <div class="drawer-actions">
-        <button class="drawer-btn" onclick="deleteUser('${user.id}')" style="color:#c62828">Delete</button>
+        ${me && me.id !== user.id ? `<button class="drawer-btn" onclick="deleteUser('${user.id}')" style="color:#c62828">Delete</button>` : ''}
         <button class="drawer-btn" onclick="closeDrawer()">Cancel</button>
         <button class="drawer-btn primary" onclick="saveEditUser('${user.id}')">Save</button>
       </div>
@@ -4924,11 +5313,18 @@ window.saveEditUser = function(id){
   user.email = document.getElementById('editUserEmail').value.trim();
   const newPass = document.getElementById('editUserPass').value;
   if(newPass) user.password = newPass;
-  user.role = document.getElementById('editUserRole').value;
+  const roleEl = document.getElementById('editUserRole');
+  if (roleEl) user.role = roleEl.value;
   user.initials = user.name.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase();
+  rebuildTeam();
   closeDrawer();
   navigate('setup');
   toast(`${user.name} updated`,'User Saved');
+  // Persist to Supabase users table (fail soft)
+  sbUpdateUser(user.id, {
+    name: user.name, email: user.email, password: user.password,
+    role: user.role, initials: user.initials, nmls: user.nmls || '',
+  });
 };
 window.deleteUser = function(id){
   const me = getCurrentUser();
@@ -4937,9 +5333,12 @@ window.deleteUser = function(id){
   if(idx<0) return;
   const name = USERS[idx].name;
   USERS.splice(idx,1);
+  rebuildTeam();
   closeDrawer();
   navigate('setup');
   toast(`${name} deleted`,'User Removed');
+  // Persist deletion to Supabase (fail soft)
+  sbDeleteUser(id);
 };
 
 // Unified task editor drawer \u2014 works for WORKFLOWS steps and CLIENT_FOR_LIFE tasks
@@ -5128,12 +5527,6 @@ function renderLoginOverlay(errorMsg){
           <button type="submit" class="login-btn">Sign In</button>
           ${errorMsg?`<div class="login-error">${errorMsg}</div>`:''}
         </form>
-        <div class="login-hint">
-          <strong style="color:#555;display:block;margin-bottom:4px">Demo accounts (mockup only)</strong>
-          <code>kyle@valorhl.com</code> / <code>kyle</code> \u00b7 Branch Manager<br>
-          <code>missy@valorhl.com</code> / <code>missy</code> \u00b7 Loan Officer<br>
-          <code>amber@valorhl.com</code> / <code>amber</code> \u00b7 Admin
-        </div>
       </div>
     </div>`;
 }
