@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { USERS, ROLE_LABELS, sbInsertUser, sbUpdateUser, sbDeleteUser } from '../data/users.js';
 import { getCurrentUser } from '../lib/auth.js';
+import EmailDeliverySettings from './EmailDeliverySettings.jsx';
+import NotificationRules from './NotificationRules.jsx';
 
 function roleOptions(me, currentRole) {
   if (me?.role === 'branch_manager') {
@@ -241,6 +243,9 @@ export default function Setup() {
           </table>
         </div>
       </div>
+
+      <EmailDeliverySettings />
+      <NotificationRules />
 
       {add && <AddUserDrawer me={me} onClose={() => setAdd(false)} onSaved={rerender} toast={setToast} />}
       {edit && <EditUserDrawer me={me} user={edit} onClose={() => setEdit(null)} onSaved={rerender} toast={setToast} />}

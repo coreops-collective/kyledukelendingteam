@@ -89,8 +89,14 @@ export default function NewLoan() {
       underwriting_path: isContract ? (form.uwPath || null) : null,
       borrower_story: isContract ? (form.story || null) : null,
     };
-    setToast({ title: 'New Loan Intake', msg: `${form.first} ${form.last} submitted — LOA Amber Chen notified` });
+    setToast({ title: 'New Loan Intake', msg: `${form.first} ${form.last} submitted — notifying recipients` });
     await sbInsert('loan_intakes', row);
+    // Fire-and-forget notification (email rules configured in Setup).
+    fetch('/.netlify/functions/send-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_type: 'loan.created', context: row }),
+    }).catch(() => { /* silent */ });
   }
 
   return (
