@@ -14,10 +14,19 @@ const MONTH_NAMES = [
 ];
 
 const loBpsFor = (lo) => (lo === 'Missy' ? 1.2 : 1.3);
-const BRANCH_GROSS_BPS = 0.1;
+// Branch gross bumps from 10 bps → 30 bps for loans closing Apr 2026 and later.
+const BRANCH_GROSS_BPS_LEGACY = 0.1;
+const BRANCH_GROSS_BPS_NEW = 0.3;
+const BRANCH_GROSS_CUTOVER = new Date('2026-04-01');
 const KYLE_OVERRIDE_BPS = 0.1;
-const computeBranchGross = (amt) =>
-  Math.round(((amt || 0) * BRANCH_GROSS_BPS) / 100 * 100) / 100;
+function branchGrossBpsFor(closeDate) {
+  if (!closeDate) return BRANCH_GROSS_BPS_LEGACY;
+  const d = new Date(closeDate);
+  if (isNaN(d)) return BRANCH_GROSS_BPS_LEGACY;
+  return d >= BRANCH_GROSS_CUTOVER ? BRANCH_GROSS_BPS_NEW : BRANCH_GROSS_BPS_LEGACY;
+}
+const computeBranchGross = (amt, closeDate) =>
+  Math.round(((amt || 0) * branchGrossBpsFor(closeDate)) / 100 * 100) / 100;
 
 const RATE_BUCKETS = [
   { label: 'All', min: null, max: null },
@@ -54,7 +63,7 @@ function buildIncome() {
       amount: pc.amount || 0,
       bps: loBpsFor(lo),
       loGross: null,
-      branchGross: computeBranchGross(pc.amount),
+      branchGross: computeBranchGross(pc.amount, pc.closeDate),
       loaFee: 0,
       concessions: 0,
       loNet: null,
@@ -356,7 +365,7 @@ export default function Income() {
         <strong>LO Gross</strong> = Loan Amount × BPs% (Kyle 130 bps · Missy 120 bps) — editable.{' '}
         <strong>LO Net</strong> = LO Gross − LOA Fee − Concessions.
         <br />
-        <strong>Branch Gross</strong> = 10 bps × Loan Amount (branch-level revenue, <em>not</em>{' '}
+        <strong>Branch Gross</strong> = 10 bps × Loan Amount (30 bps for closings on/after Apr 2026; branch-level revenue, <em>not</em>{' '}
         Kyle's personal pay).{' '}
         <strong style={{ color: '#1976d2' }}>Branch Mgr Override</strong> ={' '}
         <strong>Kyle's personal pay</strong>, 10 bps × Missy's loan amount (not paid on his own

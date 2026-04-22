@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { WORKFLOWS, TASK_ROLES, newTaskId } from '../data/workflows.js';
+import TaskDrawer from '../components/TaskDrawer.jsx';
 
 // Port of renderWorkflows() from legacy/index.html. Uses the .wf-* classes
 // from styles.css verbatim. Inline styles are copied verbatim from the legacy
@@ -9,6 +10,7 @@ export default function Workflows() {
   const [layout, setLayout] = useState('checklist'); // 'checklist' | 'swim'
   // Shallow copy so we can mutate step list via +Add Step without touching module
   const [workflows, setWorkflows] = useState(() => WORKFLOWS.map(w => ({...w, steps:[...w.steps]})));
+  const [openTask, setOpenTask] = useState(null);
 
   const wf = workflows[active] || workflows[0];
   const total = wf.steps.length;
@@ -19,8 +21,9 @@ export default function Workflows() {
     setWorkflows(copy);
   };
 
-  const openTaskDrawer = (kind, id) => {
-    console.log('[stub] openTaskDrawer', kind, id);
+  const openTaskDrawer = (_kind, id) => {
+    const step = wf.steps.find(s => s.id === id);
+    if (step) setOpenTask(step);
   };
 
   const renderChecklist = () => (
@@ -130,6 +133,14 @@ export default function Workflows() {
         </div>
       </div>
       {layout === 'checklist' ? renderChecklist() : renderSwim()}
+      {openTask && (
+        <TaskDrawer
+          task={openTask}
+          kind="workflow"
+          parentTitle={wf.title}
+          onClose={() => setOpenTask(null)}
+        />
+      )}
     </>
   );
 }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { CLIENT_FOR_LIFE, TASK_ROLES } from '../data/cfl.js';
+import TaskDrawer from '../components/TaskDrawer.jsx';
 
 export default function CFL() {
   const cats = useMemo(
@@ -7,7 +8,7 @@ export default function CFL() {
     []
   );
   const [active, setActive] = useState(0);
-  const [openId, setOpenId] = useState(null);
+  const [openTask, setOpenTask] = useState(null);
 
   const activeCat = cats[active] || cats[0];
   const tasksInCat = CLIENT_FOR_LIFE.filter((c) => c.cat === activeCat);
@@ -15,10 +16,6 @@ export default function CFL() {
 
   return (
     <div>
-      <div className="page-title" style={{ marginBottom: 18 }}>
-        Clients for Life
-      </div>
-
       <div className="wf-tabs">
         {cats.map((cat, i) => {
           const catTasks = CLIENT_FOR_LIFE.filter((c) => c.cat === cat);
@@ -28,7 +25,7 @@ export default function CFL() {
               className={`wf-tab ${i === active ? 'active' : ''}`}
               onClick={() => {
                 setActive(i);
-                setOpenId(null);
+                setOpenTask(null);
               }}
             >
               {cat}
@@ -88,19 +85,25 @@ export default function CFL() {
               key={t.id}
               task={t}
               index={idx}
-              open={openId === t.id}
-              onToggle={() =>
-                setOpenId(openId === t.id ? null : t.id)
-              }
+              onOpen={() => setOpenTask(t)}
             />
           ))
         )}
       </div>
+
+      {openTask && (
+        <TaskDrawer
+          task={openTask}
+          kind="cfl"
+          parentTitle={activeCat}
+          onClose={() => setOpenTask(null)}
+        />
+      )}
     </div>
   );
 }
 
-function CflTaskRow({ task, index, open, onToggle }) {
+function CflTaskRow({ task, index, onOpen }) {
   const role = task.role || task.who || 'lo';
   const metaChips = [];
   if (task.assignee) metaChips.push({ k: 'assignee', v: `\u25CB ${task.assignee}` });
@@ -108,66 +111,34 @@ function CflTaskRow({ task, index, open, onToggle }) {
   if (task.when) metaChips.push({ k: 'when', v: `\u23F0 ${task.when}` });
 
   return (
-    <>
-      <div
-        className={`wf-task-polished role-${role}`}
-        onClick={onToggle}
-      >
-        <div className="wf-num">{index + 1}</div>
-        <div className="wf-task-body">
-          <div className="wf-task-head">
-            <span className={`wf-task-label ${role}`}>
-              {TASK_ROLES[role] || role}
-            </span>
-            {task.icon ? (
-              <span style={{ fontSize: 16 }}>{task.icon}</span>
-            ) : null}
-          </div>
-          <div className="wf-task-text">
-            {task.title || task.text || '(no title)'}
-          </div>
-          {metaChips.length > 0 && (
-            <div className="wf-task-meta">
-              {metaChips.map((c) => (
-                <span key={c.k} className="chip">
-                  {c.v}
-                </span>
-              ))}
-            </div>
-          )}
+    <div
+      className={`wf-task-polished role-${role}`}
+      onClick={onOpen}
+    >
+      <div className="wf-num">{index + 1}</div>
+      <div className="wf-task-body">
+        <div className="wf-task-head">
+          <span className={`wf-task-label ${role}`}>
+            {TASK_ROLES[role] || role}
+          </span>
+          {task.icon ? (
+            <span style={{ fontSize: 16 }}>{task.icon}</span>
+          ) : null}
         </div>
-        <div className="wf-task-arrow">{open ? '\u02C5' : '\u203A'}</div>
+        <div className="wf-task-text">
+          {task.title || task.text || '(no title)'}
+        </div>
+        {metaChips.length > 0 && (
+          <div className="wf-task-meta">
+            {metaChips.map((c) => (
+              <span key={c.k} className="chip">
+                {c.v}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
-      {open && (
-        <div className="cfl-detail-inline">
-          {task.when && (
-            <div className="cfl-detail-row">
-              <div className="cfl-detail-label">When</div>
-              <div className="cfl-detail-val">{task.when}</div>
-            </div>
-          )}
-          {task.how && (
-            <div className="cfl-detail-row">
-              <div className="cfl-detail-label">How</div>
-              <div className="cfl-detail-val">
-                <div className="cfl-detail-how">{task.how}</div>
-              </div>
-            </div>
-          )}
-          {task.template && task.template !== '\u2014' && (
-            <div className="cfl-detail-row">
-              <div className="cfl-detail-label">Template</div>
-              <div className="cfl-detail-val">{task.template}</div>
-            </div>
-          )}
-          {task.system && (
-            <div className="cfl-detail-row">
-              <div className="cfl-detail-label">System</div>
-              <div className="cfl-detail-val">{task.system}</div>
-            </div>
-          )}
-        </div>
-      )}
-    </>
+      <div className="wf-task-arrow">{'\u203A'}</div>
+    </div>
   );
 }
