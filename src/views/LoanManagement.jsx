@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { LOANS } from '../data/loans.js';
 import { LOS_STAGES, STATUS_TO_STAGE } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
@@ -456,6 +457,7 @@ export default function LoanManagement() {
             <button className={layout === 'cards' ? 'active' : ''} onClick={() => setLayout('cards')}>Cards</button>
             <button className={layout === 'table' ? 'active' : ''} onClick={() => setLayout('table')}>Spreadsheet</button>
           </div>
+          <Link to="/newloan" className="form-btn primary" style={{ textDecoration: 'none' }}>+ New Loan Intake</Link>
         </div>
       </div>
 
