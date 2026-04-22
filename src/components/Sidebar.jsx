@@ -1,4 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom';
+import { ROLE_LABELS } from '../data/users.js';
+import { setCurrentUser } from '../lib/auth.js';
 
 const NAV_GROUPS = [
   { label: 'Overview', className: '', items: [
@@ -34,7 +36,7 @@ const NAV_GROUPS = [
   ]},
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ user }) {
   const location = useLocation();
   const nav = useNavigate();
   return (
@@ -80,8 +82,18 @@ export default function Sidebar() {
         ))}
       </nav>
       <div className="sidebar-footer">
-        <div className="sidebar-user" id="sidebarUserCard"></div>
-        <button className="sidebar-logout" onClick={() => {/* TODO: logout */}}>Sign Out</button>
+        <div className="sidebar-user" id="sidebarUserCard">
+          {user && (
+            <>
+              <div className="sidebar-user-avatar">{user.initials}</div>
+              <div>
+                <div className="sidebar-user-name">{user.name}</div>
+                <div className="sidebar-user-role">{ROLE_LABELS[user.role] || 'Team Member'}</div>
+              </div>
+            </>
+          )}
+        </div>
+        <button className="sidebar-logout" onClick={() => setCurrentUser(null)}>Sign Out</button>
         <div className="sidebar-fine">
           NMLS #2172565 · Valor Home Loans<br />
           Equal Housing Lender · Member FDIC<br />

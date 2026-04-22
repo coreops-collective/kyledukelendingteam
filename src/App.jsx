@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar.jsx';
 import Pipeline from './views/Pipeline.jsx';
 import NewLoan from './views/NewLoan.jsx';
@@ -16,6 +16,10 @@ import Snapshot from './views/Snapshot.jsx';
 import RateLocks from './views/RateLocks.jsx';
 import Performance from './views/Performance.jsx';
 import Income from './views/Income.jsx';
+import Login from './views/Login.jsx';
+import Welcome from './views/Welcome.jsx';
+import useAuth from './hooks/useAuth.js';
+import { isAdmin, isBranchManager } from './lib/auth.js';
 
 const PAGE_META = {
   '/snapshot':      { title: 'Lending Snapshot' },
@@ -41,10 +45,37 @@ function todayString() {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function RoleGuard({ path, children }) {
+  const nav = useNavigate();
+  useEffect(() => {
+    if (path === '/income' && !isBranchManager()) {
+      nav('/snapshot', { replace: true });
+    } else if (path === '/setup' && !isAdmin()) {
+      nav('/snapshot', { replace: true });
+    }
+  }, [path, nav]);
+  return children;
+}
+
 export default function App() {
   const location = useLocation();
+  const user = useAuth();
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const meta = PAGE_META[location.pathname] || PAGE_META['/snapshot'];
+
+  // Sync body[data-role] for legacy role-gating CSS
+  useEffect(() => {
+    document.body.dataset.role = user ? user.role : '';
+  }, [user]);
+
+  if (!user) {
+    return <Login onSuccess={() => setJustLoggedIn(true)} />;
+  }
+
+  if (justLoggedIn) {
+    return <Welcome user={user} onDismiss={() => setJustLoggedIn(false)} />;
+  }
 
   return (
     <div className="hub-layout">
@@ -56,7 +87,7 @@ export default function App() {
       >
         ☰
       </button>
-      <Sidebar />
+      <Sidebar user={user} />
       <main className="hub-main">
         <header className="hub-header">
           <div>
@@ -84,8 +115,8 @@ export default function App() {
             <Route path="/performance" element={<Performance />} />
             <Route path="/mortgagecalc" element={<MortgageCalc />} />
             <Route path="/closingcalc" element={<ClosingCalc />} />
-            <Route path="/setup" element={<Placeholder title="User Setup" />} />
-            <Route path="/income" element={<Income />} />
+            <Route path="/setup" element={<RoleGuard path="/setup"><Placeholder title="User Setup" /></RoleGuard>} />
+            <Route path="/income" element={<RoleGuard path="/income"><Income /></RoleGuard>} />
             <Route path="/newloan" element={<NewLoan />} />
             <Route path="*" element={<Placeholder title="Not Found" />} />
           </Routes>
