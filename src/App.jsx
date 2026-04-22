@@ -8,6 +8,14 @@ import CFL from './views/CFL.jsx';
 import LoanManagement from './views/LoanManagement.jsx';
 import Partners from './views/Partners.jsx';
 import Team from './views/Team.jsx';
+import Workflows from './views/Workflows.jsx';
+import Tasks from './views/Tasks.jsx';
+import MortgageCalc from './views/MortgageCalc.jsx';
+import ClosingCalc from './views/ClosingCalc.jsx';
+import Snapshot from './views/Snapshot.jsx';
+import RateLocks from './views/RateLocks.jsx';
+import Performance from './views/Performance.jsx';
+import Income from './views/Income.jsx';
 
 const PAGE_META = {
   '/snapshot':      { title: 'Lending Snapshot' },
@@ -62,22 +70,22 @@ export default function App() {
         <section className="hub-content" id="viewRoot">
           <Routes>
             <Route path="/" element={<Navigate to="/snapshot" replace />} />
-            <Route path="/snapshot" element={<Placeholder title="Lending Snapshot" />} />
+            <Route path="/snapshot" element={<Snapshot />} />
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/loanmgmt" element={<LoanManagement />} />
             <Route path="/loans" element={<LoanManagement />} />
-            <Route path="/ratelocks" element={<Placeholder title="Rate Locks" />} />
-            <Route path="/workflows" element={<Placeholder title="Workflows & SOPs" />} />
+            <Route path="/ratelocks" element={<RateLocks />} />
+            <Route path="/workflows" element={<Workflows />} />
             <Route path="/clientforlife" element={<CFL />} />
             <Route path="/cfl" element={<CFL />} />
-            <Route path="/tasks" element={<Placeholder title="Tasks & Projects" />} />
+            <Route path="/tasks" element={<Tasks />} />
             <Route path="/partners" element={<Partners />} />
             <Route path="/team" element={<Team />} />
-            <Route path="/performance" element={<Placeholder title="Performance & Goals" />} />
-            <Route path="/mortgagecalc" element={<Placeholder title="Mortgage Calculator" />} />
-            <Route path="/closingcalc" element={<Placeholder title="Closing Costs Calculator" />} />
+            <Route path="/performance" element={<Performance />} />
+            <Route path="/mortgagecalc" element={<MortgageCalc />} />
+            <Route path="/closingcalc" element={<ClosingCalc />} />
             <Route path="/setup" element={<Placeholder title="User Setup" />} />
-            <Route path="/income" element={<Placeholder title="Income & Comp" />} />
+            <Route path="/income" element={<Income />} />
             <Route path="/newloan" element={<NewLoan />} />
             <Route path="*" element={<Placeholder title="Not Found" />} />
           </Routes>
