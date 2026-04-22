@@ -6,6 +6,7 @@ import NewLoan from './views/NewLoan.jsx';
 import Placeholder from './views/Placeholder.jsx';
 import CFL from './views/CFL.jsx';
 import LoanManagement from './views/LoanManagement.jsx';
+import AllLoans from './views/AllLoans.jsx';
 import Partners from './views/Partners.jsx';
 import Team from './views/Team.jsx';
 import Workflows from './views/Workflows.jsx';
@@ -113,7 +114,7 @@ export default function App() {
             <Route path="/snapshot" element={<Snapshot />} />
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/loanmgmt" element={<LoanManagement />} />
-            <Route path="/loans" element={<LoanManagement />} />
+            <Route path="/loans" element={<AllLoans />} />
             <Route path="/ratelocks" element={<RateLocks />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/clientforlife" element={<CFL />} />

@@ -121,9 +121,6 @@ function CflTaskRow({ task, index, onOpen }) {
           <span className={`wf-task-label ${role}`}>
             {TASK_ROLES[role] || role}
           </span>
-          {task.icon ? (
-            <span style={{ fontSize: 16 }}>{task.icon}</span>
-          ) : null}
         </div>
         <div className="wf-task-text">
           {task.title || task.text || '(no title)'}

@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { LOANS } from '../data/loans.js';
 import { STAGES, REFI_WATCH_STAGE } from '../data/stages.js';
+import LoanDrawer from '../components/LoanDrawer.jsx';
 
 const fmt$ = (n) => '$' + Math.round(n).toLocaleString();
 const fmt$M = (n) => n >= 1_000_000 ? '$' + (n / 1_000_000).toFixed(1) + 'M' : '$' + Math.round(n / 1000) + 'k';
 
-function StageColumn({ stage, loans }) {
+function StageColumn({ stage, loans, onOpen }) {
   const total = loans.reduce((a, l) => a + (l.amount || 0), 0);
   return (
     <div className="kanban-col">
@@ -16,7 +18,12 @@ function StageColumn({ stage, loans }) {
         </div>
       </div>
       {loans.map((l) => (
-        <div key={l.id} className="loan-card">
+        <div
+          key={l.id}
+          className="loan-card"
+          onClick={() => onOpen(l.id)}
+          style={{ cursor: 'pointer' }}
+        >
           <div className="loan-borrower">{l.borrower}</div>
           {l.amount ? <div className="loan-amount">{fmt$(l.amount)}</div> : null}
           <div className="loan-meta">
@@ -31,10 +38,10 @@ function StageColumn({ stage, loans }) {
 }
 
 export default function Pipeline() {
-  const [loans] = useState(LOANS);
+  const [, force] = useState(0);
+  const bump = useCallback(() => force((n) => n + 1), []);
+  const [openId, setOpenId] = useState(null);
 
-  // Include REFI_WATCH_STAGE column (legacy STAGES array had it inline; our
-  // stages.js exports it separately). Insert after 'hotpa' for parity.
   const columns = useMemo(() => {
     const list = [];
     STAGES.forEach((s) => {
@@ -47,15 +54,18 @@ export default function Pipeline() {
   const byStage = useMemo(() => {
     const m = {};
     columns.forEach((s) => { m[s.key] = []; });
-    loans.forEach((l) => {
+    LOANS.forEach((l) => {
       if (m[l.stage]) m[l.stage].push(l);
     });
     return m;
-  }, [loans, columns]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, openId]);
 
-  const activePipelineCount = loans.filter(
+  const activePipelineCount = LOANS.filter(
     (l) => l.stage !== 'funded' && l.stage !== 'cold'
   ).length;
+
+  const openLoan = LOANS.find((l) => l.id === openId) || null;
 
   return (
     <div>
@@ -65,22 +75,38 @@ export default function Pipeline() {
             {activePipelineCount} Active Pipeline Files
           </div>
           <div className="pipeline-header-sub">
-            Drag cards between columns · click any card for full detail
+            Click any card for full detail · edit status to move stages
           </div>
         </div>
-        <button className="form-btn primary" type="button">+ New Loan</button>
       </div>
 
-      <div className="legend">
-        <div><span className="sw" style={{ background: '#f5c518' }}></span>Needs Note</div>
-        <div><span className="sw" style={{ background: '#C8102E' }}></span>Action Required</div>
+      <div className="legend" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 18 }}>
+          <div><span className="sw" style={{ background: '#f5c518' }}></span>Needs Note</div>
+          <div><span className="sw" style={{ background: '#C8102E' }}></span>Action Required</div>
+        </div>
+        <Link
+          to="/newloan"
+          className="form-btn primary"
+          style={{ textDecoration: 'none', padding: '8px 16px', fontSize: 12 }}
+        >
+          + New Loan Intake
+        </Link>
       </div>
 
       <div className="kanban">
         {columns.map((s) => (
-          <StageColumn key={s.key} stage={s} loans={byStage[s.key] || []} />
+          <StageColumn key={s.key} stage={s} loans={byStage[s.key] || []} onOpen={setOpenId} />
         ))}
       </div>
+
+      {openLoan && (
+        <LoanDrawer
+          loan={openLoan}
+          onSaved={bump}
+          onClose={() => setOpenId(null)}
+        />
+      )}
     </div>
   );
 }

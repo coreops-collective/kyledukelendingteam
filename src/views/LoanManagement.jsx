@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { LOANS } from '../data/loans.js';
 import { LOS_STAGES, STATUS_TO_STAGE } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
+import FilterDropdown from '../components/FilterDropdown.jsx';
+import LoanDrawer from '../components/LoanDrawer.jsx';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -371,6 +373,7 @@ export default function LoanManagement() {
   const [, force] = useState(0);
   const bump = useCallback(() => force((n) => n + 1), []);
   const [notesFor, setNotesFor] = useState(null);
+  const [loanFor, setLoanFor] = useState(null);
 
   const [filters, setFilters] = useState({
     year: 'All', month: 'All', status: 'All', lo: 'All', type: 'All', saleType: 'All',
@@ -421,14 +424,11 @@ export default function LoanManagement() {
     bump();
   }, [notesFor, bump]);
 
-  const handleOpenLoan = useCallback(() => {
-    // TODO: full loan drawer (next increment). For now notes drawer doubles as quick edit.
+  const handleOpenLoan = useCallback((id) => {
+    setLoanFor(id);
   }, []);
 
-  const cycle = (key, opts) => setFilters((f) => {
-    const i = opts.indexOf(f[key]);
-    return { ...f, [key]: opts[(i + 1) % opts.length] };
-  });
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
 
   const notesLoan = notesFor ? LOANS.find((l) => l.id === notesFor) : null;
 
@@ -464,36 +464,12 @@ export default function LoanManagement() {
       <DeadlinesPanel loans={losLoans} onOpen={handleOpenLoan} />
 
       <div className="income-filters">
-        <div className="income-filter" onClick={() => cycle('year', years)}>
-          <span className="income-filter-label">Year</span>
-          <span className="income-filter-val">{filters.year}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div className="income-filter" onClick={() => cycle('month', MONTHS_FULL)}>
-          <span className="income-filter-label">Month</span>
-          <span className="income-filter-val">{filters.month}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div className="income-filter" onClick={() => cycle('status', STATUSES)}>
-          <span className="income-filter-label">Status</span>
-          <span className="income-filter-val">{filters.status}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div className="income-filter" onClick={() => cycle('lo', LOS_LIST)}>
-          <span className="income-filter-label">LO</span>
-          <span className="income-filter-val">{filters.lo}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div className="income-filter" onClick={() => cycle('type', TYPES)}>
-          <span className="income-filter-label">Type</span>
-          <span className="income-filter-val">{filters.type}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div className="income-filter" onClick={() => cycle('saleType', SALE_TYPES)}>
-          <span className="income-filter-label">Sale</span>
-          <span className="income-filter-val">{filters.saleType}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
+        <FilterDropdown label="Year" value={filters.year} options={years} onChange={(v) => setFilter('year', v)} />
+        <FilterDropdown label="Month" value={filters.month} options={MONTHS_FULL} onChange={(v) => setFilter('month', v)} />
+        <FilterDropdown label="Status" value={filters.status} options={STATUSES} onChange={(v) => setFilter('status', v)} />
+        <FilterDropdown label="LO" value={filters.lo} options={LOS_LIST} onChange={(v) => setFilter('lo', v)} />
+        <FilterDropdown label="Type" value={filters.type} options={TYPES} onChange={(v) => setFilter('type', v)} />
+        <FilterDropdown label="Sale" value={filters.saleType} options={SALE_TYPES} onChange={(v) => setFilter('saleType', v)} />
         <div
           className="income-filter"
           style={{ background: '#5a0e1a', cursor: 'pointer' }}
@@ -515,6 +491,14 @@ export default function LoanManagement() {
           loan={notesLoan}
           onSave={handleSaveNotes}
           onClose={() => setNotesFor(null)}
+        />
+      )}
+
+      {loanFor && (
+        <LoanDrawer
+          loan={LOANS.find((l) => l.id === loanFor)}
+          onSaved={bump}
+          onClose={() => setLoanFor(null)}
         />
       )}
     </div>
