@@ -16,6 +16,36 @@ export const ROLE_LABELS = {
   loan_officer: 'Loan Officer',
 };
 
+export async function sbInsertUser(user) {
+  try {
+    const row = {
+      name: user.name, email: user.email, password: user.password,
+      role: user.role, initials: user.initials, nmls: user.nmls || '', phone: user.phone || '',
+    };
+    const { data, error } = await supabase.from('users').insert(row).select().single();
+    if (error) { console.warn('sbInsertUser:', error.message); return null; }
+    return data;
+  } catch (e) { console.warn('sbInsertUser error:', e.message); return null; }
+}
+
+export async function sbUpdateUser(id, patch) {
+  const allowed = ['name', 'email', 'password', 'role', 'initials', 'nmls', 'phone'];
+  const row = {};
+  allowed.forEach(k => { if (patch[k] !== undefined) row[k] = patch[k]; });
+  if (!Object.keys(row).length) return;
+  try {
+    const { error } = await supabase.from('users').update(row).eq('id', id);
+    if (error) console.warn('sbUpdateUser:', error.message);
+  } catch (e) { console.warn('sbUpdateUser error:', e.message); }
+}
+
+export async function sbDeleteUser(id) {
+  try {
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (error) console.warn('sbDeleteUser:', error.message);
+  } catch (e) { console.warn('sbDeleteUser error:', e.message); }
+}
+
 export async function loadUsersFromSupabase() {
   try {
     const { data, error } = await supabase

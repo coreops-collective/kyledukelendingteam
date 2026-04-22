@@ -18,6 +18,7 @@ import Performance from './views/Performance.jsx';
 import Income from './views/Income.jsx';
 import Login from './views/Login.jsx';
 import Welcome from './views/Welcome.jsx';
+import Setup from './views/Setup.jsx';
 import useAuth from './hooks/useAuth.js';
 import { isAdmin, isBranchManager } from './lib/auth.js';
 import { loadUsersFromSupabase } from './data/users.js';
@@ -123,7 +124,7 @@ export default function App() {
             <Route path="/performance" element={<Performance />} />
             <Route path="/mortgagecalc" element={<MortgageCalc />} />
             <Route path="/closingcalc" element={<ClosingCalc />} />
-            <Route path="/setup" element={<RoleGuard path="/setup"><Placeholder title="User Setup" /></RoleGuard>} />
+            <Route path="/setup" element={<RoleGuard path="/setup"><Setup /></RoleGuard>} />
             <Route path="/income" element={<RoleGuard path="/income"><Income /></RoleGuard>} />
             <Route path="/newloan" element={<NewLoan />} />
             <Route path="*" element={<Placeholder title="Not Found" />} />
