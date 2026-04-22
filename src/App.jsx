@@ -20,6 +20,7 @@ import Login from './views/Login.jsx';
 import Welcome from './views/Welcome.jsx';
 import useAuth from './hooks/useAuth.js';
 import { isAdmin, isBranchManager } from './lib/auth.js';
+import { loadUsersFromSupabase } from './data/users.js';
 
 const PAGE_META = {
   '/snapshot':      { title: 'Lending Snapshot' },
@@ -64,10 +65,17 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const meta = PAGE_META[location.pathname] || PAGE_META['/snapshot'];
 
+  const [usersReady, setUsersReady] = useState(false);
+
+  // Fetch real users from Supabase on mount (same as legacy)
+  useEffect(() => { loadUsersFromSupabase().finally(() => setUsersReady(true)); }, []);
+
   // Sync body[data-role] for legacy role-gating CSS
   useEffect(() => {
     document.body.dataset.role = user ? user.role : '';
   }, [user]);
+
+  if (!usersReady) return null;
 
   if (!user) {
     return <Login onSuccess={() => setJustLoggedIn(true)} />;
