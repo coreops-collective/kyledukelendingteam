@@ -62,6 +62,7 @@ function RoleGuard({ path, children }) {
 
 export default function App() {
   const location = useLocation();
+  const navigate = useNavigate();
   const user = useAuth();
   const [justLoggedIn, setJustLoggedIn] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -71,6 +72,16 @@ export default function App() {
 
   // Fetch real users from Supabase on mount (same as legacy)
   useEffect(() => { loadUsersFromSupabase().finally(() => setUsersReady(true)); }, []);
+
+  // On page reload / fresh tab, always land on the homepage.
+  // In-app navigation (clicking a sidebar link) runs after mount and is
+  // unaffected because this effect runs exactly once.
+  useEffect(() => {
+    if (location.pathname !== '/' && location.pathname !== '/snapshot') {
+      navigate('/snapshot', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sync body[data-role] for legacy role-gating CSS
   useEffect(() => {
