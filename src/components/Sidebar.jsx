@@ -1,55 +1,92 @@
-import { NavLink } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
-const NAV = [
-  { section: 'Pipeline', items: [
-    { to: '/pipeline', label: 'Pipeline', icon: '📊' },
-    { to: '/loans', label: 'Loan Management', icon: '💰' },
-    { to: '/newloan', label: 'New Loan Intake', icon: '➕' },
+const NAV_GROUPS = [
+  { label: 'Overview', className: '', items: [
+    { view: 'snapshot', path: '/snapshot', text: 'Lending Snapshot' },
   ]},
-  { section: 'People', items: [
-    { to: '/partners', label: 'Partners', icon: '🤝' },
-    { to: '/team', label: 'Team', icon: '👥' },
-    { to: '/cfl', label: 'Clients for Life', icon: '♾️' },
+  { label: 'Loan Management', className: '', items: [
+    { view: 'pipeline', path: '/pipeline', text: 'Loan Pipeline' },
+    { view: 'loanmgmt', path: '/loanmgmt', text: 'Loan Management' },
+    { view: 'loans', path: '/loans', text: 'All Loans' },
+    { view: 'ratelocks', path: '/ratelocks', text: 'Rate Locks' },
   ]},
-  { section: 'Settings', items: [
-    { to: '/setup', label: 'Setup', icon: '⚙️' },
+  { label: 'Process', className: '', items: [
+    { view: 'workflows', path: '/workflows', text: 'Workflows & SOPs' },
+    { view: 'clientforlife', path: '/clientforlife', text: 'Client for Life' },
+    { view: 'tasks', path: '/tasks', text: 'Tasks & Projects' },
+  ]},
+  { label: 'Partners', className: '', items: [
+    { view: 'partners', path: '/partners', text: 'Realtor Partners' },
+  ]},
+  { label: 'Team', className: '', items: [
+    { view: 'team', path: '/team', text: 'Team Members' },
+    { view: 'performance', path: '/performance', text: 'Performance & Goals' },
+  ]},
+  { label: 'Tools', className: '', items: [
+    { view: 'mortgagecalc', path: '/mortgagecalc', text: 'Mortgage Calculator' },
+    { view: 'closingcalc', path: '/closingcalc', text: 'Closing Costs Calculator' },
+  ]},
+  { label: 'Settings', className: 'settings-label', items: [
+    { view: 'setup', path: '/setup', text: 'User Setup' },
+  ]},
+  { label: 'Restricted', className: 'restricted-label', labelStyle: { color: '#7a3030' }, items: [
+    { view: 'income', path: '/income', text: 'Income & Comp', wrap: true },
   ]},
 ];
 
 export default function Sidebar() {
+  const location = useLocation();
+  const nav = useNavigate();
   return (
-    <aside style={{
-      width: 240,
-      background: '#0A0A0A',
-      color: '#fff',
-      padding: '18px 10px',
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: '100vh',
-    }}>
-      <div style={{ padding: '0 8px 18px', borderBottom: '1px solid #222', marginBottom: 12 }}>
-        <div className="brand-title">The Kyle Duke Team</div>
-        <div className="brand-sub">Lending Hub</div>
+    <aside className="hub-sidebar" id="hubSidebar">
+      <div className="sidebar-brand">
+        <div className="brand-crest">
+          <img src="/brand-crest.jpeg" alt="The Kyle Duke Team"
+               onError={(e) => { e.currentTarget.style.display = 'none'; }}
+               style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </div>
+        <div>
+          <div className="brand-title">The Kyle Duke Team</div>
+          <div className="brand-sub">Powered by Valor Home Loans</div>
+        </div>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {NAV.map(group => (
-          <div key={group.section}>
-            <div className="sidebar-section-label">{group.section}</div>
-            {group.items.map(item => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => 'sidebar-item' + (isActive ? ' active' : '')}
-              >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </NavLink>
-            ))}
+      <nav className="sidebar-section">
+        {NAV_GROUPS.map(group => (
+          <div key={group.label}>
+            <div
+              className={`sidebar-section-label${group.className ? ' ' + group.className : ''}`}
+              style={group.labelStyle}
+            >
+              {group.label}
+            </div>
+            {group.items.map(item => {
+              const isActive = location.pathname === item.path ||
+                (location.pathname === '/' && item.view === 'snapshot');
+              return (
+                <div
+                  key={item.view}
+                  className={`sidebar-item${isActive ? ' active' : ''}`}
+                  data-view={item.view}
+                  onClick={() => nav(item.path)}
+                  style={item.wrap ? { position: 'relative' } : undefined}
+                >
+                  {item.wrap
+                    ? <span style={{ opacity: .9 }}>{item.text}</span>
+                    : item.text}
+                </div>
+              );
+            })}
           </div>
         ))}
-      </div>
-      <div style={{ padding: '10px 8px', borderTop: '1px solid #222' }}>
-        <button className="sidebar-logout">Log out</button>
+      </nav>
+      <div className="sidebar-footer">
+        <div className="sidebar-user" id="sidebarUserCard"></div>
+        <button className="sidebar-logout" onClick={() => {/* TODO: logout */}}>Sign Out</button>
+        <div className="sidebar-fine">
+          NMLS #2172565 · Valor Home Loans<br />
+          Equal Housing Lender · Member FDIC<br />
+          Veteran Mortgage Advisor™
+        </div>
       </div>
     </aside>
   );
