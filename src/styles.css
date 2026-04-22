@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0A0A0A;
+  --panel: #111;
+  --panel-2: #1a1a1a;
+  --border: #222;
+  --text: #e6e6e6;
+  --muted: #888;
+  --accent: #c9a961;
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: #f5f5f5;
+  color: #111;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.brand-title { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; line-height: 1.1; color: #fff; }
+.brand-sub { font-size: 9px; color: #888; margin-top: 3px; letter-spacing: .5px; text-transform: uppercase; }
+.sidebar-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #555; padding: 12px 12px 6px; font-weight: 700; }
+.sidebar-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; color: #bbb; cursor: pointer; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 2px; user-select: none; }
+.sidebar-item:hover { background: #1a1a1a; color: #fff; }
+.sidebar-item.active { background: #1a1a1a; color: #fff; }
+.sidebar-user-role { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+.sidebar-logout { display: block; width: 100%; background: transparent; border: 1px solid #333; color: #aaa; padding: 8px 12px; border-radius: 6px; font-family: 'Oswald', sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; cursor: pointer; margin-bottom: 10px; }
+
+.page-title { font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; line-height: 1; }
+.section-title { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.section-sub { font-size: 11px; color: #666; margin-top: 2px; }
+.section-header { display: flex; flex-direction: column; margin-bottom: 12px; }
+
+.card { background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; }
+.kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #888; margin-bottom: 8px; }
+.kpi-value { font-family: 'Oswald', sans-serif; font-size: 28px; font-weight: 700; }
+
+.form-card { background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 20px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-field { display: flex; flex-direction: column; }
+.form-field.full { grid-column: 1 / -1; }
+.form-field label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #555; margin-bottom: 4px; }
+.form-field label.req::after { content: ' *'; color: #c62828; }
+.form-field input, .form-field select, .form-field textarea {
+  padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; font-family: inherit; background: #fff;
+}
+.form-field textarea { min-height: 70px; resize: vertical; }
+.form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.form-btn { padding: 10px 18px; border-radius: 6px; font-family: 'Oswald', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; cursor: pointer; border: 1px solid transparent; }
+.form-btn.primary { background: #111; color: #fff; }
+.form-btn.secondary { background: #fff; color: #333; border-color: #ccc; }
+
+.notify-chip { display: inline-flex; align-items: center; gap: 8px; background: #fff8e1; color: #6b5600; border: 1px solid #f1d98b; padding: 8px 14px; border-radius: 999px; font-size: 12px; margin-bottom: 14px; }
+.notify-chip-dot { width: 8px; height: 8px; background: #c9a961; border-radius: 50%; }
+
+.loans-table { width: 100%; border-collapse: collapse; }
+.loans-table th { text-align: left; padding: 10px 8px; background: #0A0A0A; color: #fff; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
+.loans-table td { padding: 10px 8px; border-bottom: 1px solid #eee; font-size: 13px; }
+.lock-status { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; display: inline-block; }
+.lock-status.locked { background: #d4edda; color: #1b5e20; }
+.lock-status.unlocked { background: #f8d7da; color: #b71c1c; }
+
+.toast { position: fixed; bottom: 20px; right: 20px; background: #111; color: #fff; padding: 12px 16px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.2); z-index: 9999; }
+.toast-title { font-family: 'Oswald', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #c9a961; margin-bottom: 2px; }
