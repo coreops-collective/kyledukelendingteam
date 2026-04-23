@@ -139,6 +139,11 @@ export default function Pipeline() {
           old_stage: oldLabel,
           new_stage: newLabel,
           stage: newLabel,
+          // Keys (for notification_rules.stage_filter matching — the
+          // filter stores stage keys like 'fresh' / 'applied').
+          new_stage_key: newStageKey,
+          old_stage_key: oldStageKey,
+          stage_key: newStageKey,
           lo: loan.lo || '',
           loan_officer: loan.lo || '',
           loa: loan.loa || '',

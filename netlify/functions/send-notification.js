@@ -105,8 +105,14 @@ exports.handler = async (event) => {
     }
 
     // Filter rules by stage_filter. Empty filter = fire always.
-    // For loan.stage_changed use context.new_stage; otherwise use context.stage.
-    const incomingStage = context.new_stage || context.stage || null;
+    // stage_filter stores stage KEYS (e.g. 'fresh', 'applied'), so prefer
+    // the explicit *_key context fields. Fall back to the old label fields
+    // for backward compatibility with any older callers.
+    const incomingStage = context.new_stage_key
+      || context.stage_key
+      || context.new_stage
+      || context.stage
+      || null;
     const stageFiltered = rules.filter((r) => {
       const sf = Array.isArray(r.stage_filter) ? r.stage_filter : [];
       if (sf.length === 0) return true;
