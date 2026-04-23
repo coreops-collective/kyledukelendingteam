@@ -221,6 +221,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan }) {
               <th style={{ width: 150 }}>Status</th>
               <th style={{ width: 260 }}>Notes</th>
               <th style={{ width: 100 }}>LO</th>
+              <th style={{ width: 110 }}>LOA</th>
               <th style={{ width: 140 }}>Sale Type</th>
               <th style={{ width: 80 }}>Appr Ord</th>
               <th style={{ width: 140 }}>Appr Deadline</th>
@@ -266,6 +267,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan }) {
                     </div>
                   </td>
                   <td><EditSelect value={l.lo || ''} options={LOS_LIST.filter(x => x !== 'All')} onChange={(v) => onEdit(l.id, 'lo', v)} /></td>
+                  <td><EditSelect value={l.loa || ''} options={['Kim', 'Abel']} empty="—" onChange={(v) => onEdit(l.id, 'loa', v)} /></td>
                   <td><EditSelect value={l.saleType || ''} options={SALE_TYPES.filter(x => x !== 'All')} empty="—" onChange={(v) => onEdit(l.id, 'saleType', v)} /></td>
                   <td className="cb"><EditCheck value={l.apprOrdered} onChange={(v) => onEdit(l.id, 'apprOrdered', v)} /></td>
                   <td className={`date ${dateClass(l.apprDeadline)}`}><EditInput type="date" value={l.apprDeadline} onChange={(v) => onEdit(l.id, 'apprDeadline', v)} /></td>
