@@ -3,7 +3,7 @@ import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
-import { markPartnerDirty } from '../lib/partnersStore.js';
+import { markPartnerDirty, markPartnerNew } from '../lib/partnersStore.js';
 
 // Format helpers — mirror legacy fmt$M / fmt$
 const fmt$ = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -227,7 +227,7 @@ export default function Partners() {
       {showForm && <NewPartnerDrawer onClose={() => setShowForm(false)} onSubmit={(p) => {
         const added = { ...p, deals: 0, closed: 0, volume: 0, lifetime: 0, vip: p.tier?.startsWith('VIP') };
         PARTNERS.push(added);
-        markPartnerDirty(added);
+        markPartnerNew(added);
         setToast({ title: 'Partner Added', msg: `${p.name} — saved to Supabase` });
         setShowForm(false);
       }} />}

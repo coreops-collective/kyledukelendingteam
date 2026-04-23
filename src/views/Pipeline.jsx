@@ -117,7 +117,7 @@ export default function Pipeline() {
     // Keep `status` in sync so Loan Management reflects the change.
     const mappedStatus = STAGE_TO_STATUS[newStageKey];
     if (mappedStatus) loan.status = mappedStatus;
-    markLoansDirty();
+    markLoansDirty(loan);
     bump();
 
     // Fire loan.stage_changed event so notification rules (filtered by

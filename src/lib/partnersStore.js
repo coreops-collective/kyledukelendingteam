@@ -1,24 +1,31 @@
 import { supabase } from './supabase.js';
 import { PARTNERS } from '../data/partners.js';
 
-// Persistence layer for PARTNERS. Strategy mirrors loansStore.js but:
-// - Uses PER-PARTNER upsert (not full-array) so two users editing different
-//   partners can't overwrite each other via a stale baseline.
-// - Maps between DB snake_case columns and the app's existing shorthand field
-//   names (bday/coffee/addr/social/src) so every view keeps working unchanged.
+// Persistence layer for PARTNERS.
 //
-// DB columns:
-//   name, brokerage, state, city, phone, email, birthday, spouse, kids,
-//   coffee_shop, mailing_address, social_handle, tier, lead_source,
-//   touches (jsonb), id (uuid)
-// App shape adds: bday, coffee, addr, social, src (shorthand aliases) plus
-// display-only stats (deals, closed, volume, lifetime, vip) merged from the
-// static seed by name.
+// Key robustness properties (learned the hard way after the first version
+// wiped ~49 partners):
+//
+// 1. IDEMPOTENT seed. On boot, we diff the static seed against the DB by
+//    NAME. Any static partner missing from the DB gets inserted. Never
+//    "trust" a partial table — if DB has 1 row and static has 50, the
+//    other 49 get topped up, not discarded.
+// 2. Load-before-edit gate. An edit on a partner that has no `id` yet
+//    (i.e. it was never persisted) used to silently insert it as if it
+//    were a new partner — which made the DB look like "only this one
+//    partner exists" on reload. We now only insert via the new-partner
+//    path when `loaded === true`, so mutations before load complete are
+//    ignored (they'll be picked up on the next autosave after load
+//    finishes).
+// 3. Per-partner debounced upsert keyed by `id`, not full-array replace.
+//    Concurrent users editing different partners cannot overwrite each
+//    other's changes.
 
 const DEBOUNCE_MS = 1500;
 const dirtyIds = new Set();
-const dirtyUnsaved = new Map(); // partners without id yet (new), keyed by name
+const newPartnerNames = new Set(); // partners explicitly added by user (no id yet)
 let saveTimer = null;
+let loaded = false;
 
 function rowToPartner(row, seedByName) {
   const seed = seedByName.get(row.name) || {};
@@ -45,8 +52,6 @@ function rowToPartner(row, seedByName) {
     src: row.lead_source || '',
     touches: row.touches || [],
     vip: (row.tier || '').toLowerCase().startsWith('vip') || !!seed.vip,
-    // Display-only historical stats — live-recomputed counts still layer on
-    // top of these via Partners.jsx livePipelineByAgent.
     deals: seed.deals || 0,
     closed: seed.closed || 0,
     volume: seed.volume || 0,
@@ -61,8 +66,7 @@ function rowToPartner(row, seedByName) {
 }
 
 function partnerToRow(p) {
-  return {
-    id: p.id,
+  const row = {
     name: p.name || '',
     brokerage: p.brokerage || null,
     state: p.state || null,
@@ -79,6 +83,8 @@ function partnerToRow(p) {
     lead_source: p.lead_source || p.src || null,
     touches: Array.isArray(p.touches) ? p.touches : [],
   };
+  if (p.id) row.id = p.id;
+  return row;
 }
 
 export async function loadPartnersFromSupabase() {
@@ -87,41 +93,56 @@ export async function loadPartnersFromSupabase() {
     const { data, error } = await supabase.from('partners').select('*');
     if (error) {
       console.warn('[partners] load failed, using static seed:', error.message);
+      loaded = true;
       return { seeded: false };
     }
-    if (!data || data.length === 0) {
-      console.log('[partners] table empty — seeding from static data');
-      const rows = PARTNERS.map((p) => partnerToRow(p));
+    const rows = Array.isArray(data) ? data : [];
+    const dbNames = new Set(rows.map((r) => r.name));
+
+    // Top-up: insert any static partner that's missing from the DB.
+    const missing = PARTNERS.filter((p) => !dbNames.has(p.name));
+    if (missing.length > 0) {
+      console.log(`[partners] topping up ${missing.length} missing partner(s)`);
+      const insertRows = missing.map((p) => {
+        const { id, ...rest } = partnerToRow(p);
+        return rest;
+      });
       const { data: inserted, error: insErr } = await supabase
         .from('partners')
-        .insert(rows)
+        .insert(insertRows)
         .select();
       if (insErr) {
-        console.warn('[partners] seed failed:', insErr.message);
+        console.warn('[partners] top-up failed:', insErr.message);
+        // Don't set loaded=true yet — retry on next boot.
         return { seeded: false };
       }
-      PARTNERS.length = 0;
-      (inserted || []).forEach((row) => PARTNERS.push(rowToPartner(row, seedByName)));
-      return { seeded: true };
+      (inserted || []).forEach((row) => rows.push(row));
     }
+
     PARTNERS.length = 0;
-    data.forEach((row) => PARTNERS.push(rowToPartner(row, seedByName)));
-    return { seeded: false };
+    rows.forEach((row) => PARTNERS.push(rowToPartner(row, seedByName)));
+    loaded = true;
+    return { seeded: missing.length > 0 };
   } catch (e) {
     console.warn('[partners] load error:', e.message);
+    loaded = true;
     return { seeded: false };
   }
 }
 
 async function flushPartners() {
-  // Snapshot and clear so new edits during the await go into the next flush.
+  if (!loaded) {
+    // Do not write before load completes — otherwise an edit on a
+    // still-static partner would look like a "new" insert and replace the
+    // canonical list with one row on the next reload.
+    return;
+  }
   const ids = Array.from(dirtyIds);
-  const unsavedNames = Array.from(dirtyUnsaved.keys());
+  const newNames = Array.from(newPartnerNames);
   dirtyIds.clear();
-  dirtyUnsaved.clear();
+  newPartnerNames.clear();
 
   try {
-    // Update rows with known ids (per-row upsert — avoids full-array overwrite).
     if (ids.length) {
       const rows = ids
         .map((id) => PARTNERS.find((p) => p.id === id))
@@ -132,14 +153,13 @@ async function flushPartners() {
           .from('partners')
           .upsert(rows, { onConflict: 'id' });
         if (error) {
-          console.warn('[partners] save failed:', error.message);
+          console.warn('[partners] update failed:', error.message);
           ids.forEach((id) => dirtyIds.add(id));
         }
       }
     }
-    // Insert new partners (no id yet), then stamp the id onto the in-memory object.
-    if (unsavedNames.length) {
-      const newPartners = unsavedNames
+    if (newNames.length) {
+      const newPartners = newNames
         .map((name) => PARTNERS.find((p) => !p.id && p.name === name))
         .filter(Boolean);
       if (newPartners.length) {
@@ -150,9 +170,8 @@ async function flushPartners() {
         const { data, error } = await supabase.from('partners').insert(rows).select();
         if (error) {
           console.warn('[partners] insert failed:', error.message);
-          unsavedNames.forEach((name) => dirtyUnsaved.set(name, true));
+          newNames.forEach((n) => newPartnerNames.add(n));
         } else if (data) {
-          // Match by name and stamp id onto in-memory partner.
           data.forEach((row) => {
             const p = PARTNERS.find((x) => !x.id && x.name === row.name);
             if (p) p.id = row.id;
@@ -165,10 +184,28 @@ async function flushPartners() {
   }
 }
 
+// Mark an existing partner (with an id) as dirty.
 export function markPartnerDirty(partner) {
   if (!partner) return;
-  if (partner.id) dirtyIds.add(partner.id);
-  else if (partner.name) dirtyUnsaved.set(partner.name, true);
+  if (partner.id) {
+    dirtyIds.add(partner.id);
+  } else if (partner.name && newPartnerNames.has(partner.name)) {
+    // New partner waiting to be inserted — keep tracking until it gets an id.
+  } else {
+    // A partner without an id that we didn't explicitly create is a symptom
+    // of an incomplete load. Skip rather than risk wiping the table.
+    console.warn('[partners] ignoring edit on partner without id:', partner.name);
+    return;
+  }
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushPartners, DEBOUNCE_MS);
+}
+
+// Explicit "user added a brand new partner" — this is the only path that
+// may insert a row that doesn't exist in the DB yet.
+export function markPartnerNew(partner) {
+  if (!partner || !partner.name) return;
+  newPartnerNames.add(partner.name);
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(flushPartners, DEBOUNCE_MS);
 }
@@ -180,7 +217,7 @@ export function savePartnersNow() {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
-    if (dirtyIds.size === 0 && dirtyUnsaved.size === 0) return;
+    if (dirtyIds.size === 0 && newPartnerNames.size === 0) return;
     flushPartners();
   });
 }

@@ -26,14 +26,14 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     if (!window.confirm(`Archive loan for ${loan.borrower}? It will be hidden from all views but kept in Supabase — tell Lauren if you ever need it back.`)) return;
     loan.archived = true;
     loan.archivedAt = new Date().toISOString();
-    markLoansDirty();
+    markLoansDirty(loan);
     onSaved?.();
     onClose?.();
   };
   const handleUnarchive = () => {
     loan.archived = false;
     loan.archivedAt = null;
-    markLoansDirty();
+    markLoansDirty(loan);
     onSaved?.();
   };
 
@@ -44,7 +44,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
       if (nextStage) loan.stage = nextStage;
     }
     force((n) => n + 1);
-    markLoansDirty();
+    markLoansDirty(loan);
     onSaved?.();
   };
 

@@ -472,7 +472,7 @@ export default function LoanManagement() {
     const loan = LOANS.find((l) => l.id === id);
     if (!loan) return;
     loan[key] = value;
-    markLoansDirty();
+    markLoansDirty(loan);
     bump();
   }, [bump]);
 
@@ -482,15 +482,17 @@ export default function LoanManagement() {
     loan.status = statusValue;
     const nextStage = STATUS_TO_STAGE[statusValue];
     if (nextStage) loan.stage = nextStage;
-    markLoansDirty();
+    markLoansDirty(loan);
     bump();
   }, [bump]);
 
   const handleSaveNotes = useCallback((value) => {
     if (!notesFor) return;
     const loan = LOANS.find((l) => l.id === notesFor);
-    if (loan) loan.notes = value;
-    markLoansDirty();
+    if (loan) {
+      loan.notes = value;
+      markLoansDirty(loan);
+    }
     bump();
   }, [notesFor, bump]);
 

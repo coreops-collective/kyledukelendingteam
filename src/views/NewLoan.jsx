@@ -113,6 +113,7 @@ export default function NewLoan() {
     const loanType = form.type === 'Conventional' ? 'CONV' : form.type;
     const purposeShort = form.purpose?.toLowerCase().includes('refi') ? 'Refi' : 'Purchase';
     const loFirst = (form.lo || '').split(' ')[0] || 'Kyle';
+    let touchedLoan = null;
     if (form.kind === 'existing' && form.existingId) {
       // Update existing loan in place.
       const ex = LOANS.find((l) => l.id === form.existingId);
@@ -132,10 +133,11 @@ export default function NewLoan() {
           ex.c2first = form.coFirst; ex.c2last = form.coLast;
           ex.c2phone = form.coPhone; ex.c2email = form.coEmail;
         }
+        touchedLoan = ex;
       }
     } else {
       const newId = 'NL' + Date.now().toString(36).toUpperCase();
-      LOANS.push({
+      const newLoan = {
         id: newId,
         borrower: `${form.last}, ${form.first}`,
         amount: num(form.amt),
@@ -155,10 +157,12 @@ export default function NewLoan() {
         c2last: form.hasCo === 'Yes' ? form.coLast : '',
         c2phone: form.hasCo === 'Yes' ? form.coPhone : '',
         c2email: form.hasCo === 'Yes' ? form.coEmail : '',
-      });
+      };
+      LOANS.push(newLoan);
+      touchedLoan = newLoan;
     }
 
-    markLoansDirty();
+    markLoansDirty(touchedLoan);
     const isFresh = stageKey === 'fresh';
     setToast({
       title: 'New Loan Intake',

@@ -6,16 +6,16 @@ import { LOANS } from '../data/loans.js';
 //    - If the table has rows, replace the in-memory LOANS array with them.
 //    - If the table is empty, seed it from the static LOANS seed data so a
 //      fresh Supabase project auto-populates.
-// 2. After any mutation (UI call), views call markLoansDirty() which triggers
-//    a debounced upsert of the full current LOANS array.
-// 3. A beforeunload handler fires a sync flush as a last-ditch save.
-//
-// We store each loan as a jsonb blob keyed by id so we don't have to keep
-// schema in sync with arbitrary shape drift.
+// 2. After any mutation, views call markLoansDirty(loan) with the specific
+//    loan that was changed. Only those rows get upserted (per-row), which
+//    means two people editing different loans at the same time can't
+//    overwrite each other via a stale full-array snapshot.
+// 3. beforeunload flush as a last-ditch save.
 
-let dirty = false;
-let saveTimer = null;
 const DEBOUNCE_MS = 1500;
+const dirtyIds = new Set();
+let allDirty = false; // fallback when caller doesn't pass a specific loan
+let saveTimer = null;
 
 export async function loadLoansFromSupabase() {
   try {
@@ -25,7 +25,6 @@ export async function loadLoansFromSupabase() {
       return { seeded: false };
     }
     if (!data || data.length === 0) {
-      // Seed the table from whatever is currently in LOANS (the module seed).
       console.log('[loans] table empty — seeding from static data');
       await supabase.from('loans').upsert(
         LOANS.map((l) => ({ id: l.id, data: l })),
@@ -33,7 +32,6 @@ export async function loadLoansFromSupabase() {
       );
       return { seeded: true };
     }
-    // Replace LOANS contents in-place so existing imports keep working.
     LOANS.length = 0;
     for (const row of data) {
       if (row.data) LOANS.push(row.data);
@@ -46,20 +44,46 @@ export async function loadLoansFromSupabase() {
 }
 
 async function flushLoansToSupabase() {
-  if (!dirty) return;
-  dirty = false;
+  // Snapshot and clear so edits during the await queue for the next flush.
+  const ids = Array.from(dirtyIds);
+  const wasAllDirty = allDirty;
+  dirtyIds.clear();
+  allDirty = false;
+
+  if (!ids.length && !wasAllDirty) return;
+
   try {
-    const payload = LOANS.map((l) => ({ id: l.id, data: l, updated_at: new Date().toISOString() }));
+    const loansToSave = wasAllDirty
+      ? LOANS
+      : ids.map((id) => LOANS.find((l) => l.id === id)).filter(Boolean);
+
+    if (!loansToSave.length) return;
+
+    const payload = loansToSave.map((l) => ({
+      id: l.id,
+      data: l,
+      updated_at: new Date().toISOString(),
+    }));
     const { error } = await supabase.from('loans').upsert(payload, { onConflict: 'id' });
-    if (error) console.warn('[loans] save failed:', error.message);
+    if (error) {
+      console.warn('[loans] save failed:', error.message);
+      // Restore so we retry on next flush.
+      ids.forEach((id) => dirtyIds.add(id));
+      if (wasAllDirty) allDirty = true;
+    }
   } catch (e) {
     console.warn('[loans] save error:', e.message);
-    dirty = true;
   }
 }
 
-export function markLoansDirty() {
-  dirty = true;
+export function markLoansDirty(loan) {
+  if (loan && loan.id) {
+    dirtyIds.add(loan.id);
+  } else {
+    // No specific loan given — safest fallback is to flag everything dirty.
+    // Callers should prefer passing the loan so only that row is written.
+    allDirty = true;
+  }
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(flushLoansToSupabase, DEBOUNCE_MS);
 }
@@ -69,13 +93,9 @@ export function saveLoansNow() {
   return flushLoansToSupabase();
 }
 
-// Save on tab close / refresh as a last-ditch.
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
-    if (!dirty) return;
-    // Use keepalive fetch via sendBeacon — but supabase-js doesn't expose that
-    // easily. Best-effort: fire-and-forget async upsert. Browser will typically
-    // give us ~1s after beforeunload to complete it.
+    if (dirtyIds.size === 0 && !allDirty) return;
     flushLoansToSupabase();
   });
 }
