@@ -7,6 +7,7 @@ import Placeholder from './views/Placeholder.jsx';
 import CFL from './views/CFL.jsx';
 import LoanManagement from './views/LoanManagement.jsx';
 import AllLoans from './views/AllLoans.jsx';
+import LoaAssignment from './views/LoaAssignment.jsx';
 import Partners from './views/Partners.jsx';
 import Team from './views/Team.jsx';
 import Workflows from './views/Workflows.jsx';
@@ -29,6 +30,7 @@ const PAGE_META = {
   '/pipeline':      { title: 'Loan Pipeline' },
   '/loanmgmt':      { title: 'Loan Management' },
   '/loans':         { title: 'All Loans' },
+  '/loa':           { title: 'LOA Assignment' },
   '/ratelocks':     { title: 'Rate Locks' },
   '/workflows':     { title: 'Workflows & SOPs' },
   '/clientforlife': { title: 'Client for Life' },
@@ -126,6 +128,7 @@ export default function App() {
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/loanmgmt" element={<LoanManagement />} />
             <Route path="/loans" element={<AllLoans />} />
+            <Route path="/loa" element={<LoaAssignment />} />
             <Route path="/ratelocks" element={<RateLocks />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/clientforlife" element={<CFL />} />

@@ -11,6 +11,7 @@ const NAV_GROUPS = [
     { view: 'loanmgmt', path: '/loanmgmt', text: 'Loan Management' },
     { view: 'loans', path: '/loans', text: 'All Loans' },
     { view: 'ratelocks', path: '/ratelocks', text: 'Rate Locks' },
+    { view: 'loa', path: '/loa', text: 'LOA Assignment' },
   ]},
   { label: 'Process', className: '', items: [
     { view: 'workflows', path: '/workflows', text: 'Workflows & SOPs' },
