@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { PARTNERS } from '../data/partners.js';
+import { LOANS } from '../data/loans.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 
@@ -40,6 +41,27 @@ export default function Partners() {
   const [showForm, setShowForm] = useState(false);
   const [toast, setToast] = useState(null);
 
+  // Compute per-agent live pipeline counts from LOANS (active = not funded/cold).
+  const livePipelineByAgent = useMemo(() => {
+    const map = {};
+    LOANS.forEach((l) => {
+      if (!l.agent || l.stage === 'funded' || l.stage === 'cold') return;
+      if (!map[l.agent]) map[l.agent] = { count: 0, volume: 0 };
+      map[l.agent].count += 1;
+      map[l.agent].volume += l.amount || 0;
+    });
+    return map;
+  }, []);
+
+  // Decorate partners with live pipeline data (keeps PARTNERS source intact).
+  const partnersWithLive = useMemo(
+    () => PARTNERS.map((p) => {
+      const lp = livePipelineByAgent[p.name];
+      return lp ? { ...p, livePipeline: lp.count, livePipelineVolume: lp.volume } : p;
+    }),
+    [livePipelineByAgent]
+  );
+
   const stateOptions = useMemo(
     () =>
       ['All', ...new Set(PARTNERS.map((p) => p.state).filter((s) => s && s !== '—'))].sort(
@@ -50,7 +72,7 @@ export default function Partners() {
 
   const filtered = useMemo(() => {
     const dealMin = DEAL_MIN[filters.deals] || 0;
-    return PARTNERS.filter((p) => {
+    return partnersWithLive.filter((p) => {
       if (filters.search && !`${p.name} ${partnerLoc(p)}`.toLowerCase().includes(filters.search.toLowerCase())) return false;
       if (filters.state !== 'All' && p.state !== filters.state) return false;
       if (filters.tier === 'VIP' && !p.vip) return false;
@@ -58,7 +80,7 @@ export default function Partners() {
       if ((p.deals || 0) < dealMin) return false;
       return true;
     });
-  }, [filters]);
+  }, [filters, partnersWithLive]);
 
   const vipPartners = filtered.filter((p) => p.vip);
   const standardPartners = [...filtered.filter((p) => !p.vip)].sort((a, b) => (b.deals || 0) - (a.deals || 0));
