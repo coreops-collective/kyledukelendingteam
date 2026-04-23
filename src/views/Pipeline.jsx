@@ -1,8 +1,8 @@
 import { useMemo, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import { LOANS } from '../data/loans.js';
 import { STAGES, REFI_WATCH_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
+import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 
 const fmt$ = (n) => '$' + Math.round(n).toLocaleString();
 const fmt$M = (n) => n >= 1_000_000 ? '$' + (n / 1_000_000).toFixed(1) + 'M' : '$' + Math.round(n / 1000) + 'k';
@@ -73,6 +73,7 @@ export default function Pipeline() {
   const bump = useCallback(() => force((n) => n + 1), []);
   const [openId, setOpenId] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
+  const [newLoanOpen, setNewLoanOpen] = useState(false);
 
   const columns = useMemo(() => {
     const list = [];
@@ -127,13 +128,14 @@ export default function Pipeline() {
           <div><span className="sw" style={{ background: '#f5c518' }}></span>Needs Note</div>
           <div><span className="sw" style={{ background: '#C8102E' }}></span>Action Required</div>
         </div>
-        <Link
-          to="/newloan"
+        <button
+          type="button"
+          onClick={() => setNewLoanOpen(true)}
           className="form-btn primary"
-          style={{ textDecoration: 'none', padding: '8px 16px', fontSize: 12 }}
+          style={{ padding: '8px 16px', fontSize: 12 }}
         >
           + New Loan Intake
-        </Link>
+        </button>
       </div>
 
       <div className="kanban">
@@ -158,6 +160,8 @@ export default function Pipeline() {
           onClose={() => setOpenId(null)}
         />
       )}
+
+      {newLoanOpen && <NewLoanDrawer onClose={() => setNewLoanOpen(false)} />}
     </div>
   );
 }

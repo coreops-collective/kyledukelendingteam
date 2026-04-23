@@ -1,10 +1,10 @@
 import { useMemo, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import { LOANS } from '../data/loans.js';
 import { LOS_STAGES, STATUS_TO_STAGE } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
+import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -374,6 +374,7 @@ export default function LoanManagement() {
   const bump = useCallback(() => force((n) => n + 1), []);
   const [notesFor, setNotesFor] = useState(null);
   const [loanFor, setLoanFor] = useState(null);
+  const [newLoanOpen, setNewLoanOpen] = useState(false);
 
   const [filters, setFilters] = useState({
     year: 'All', month: 'All', status: 'All', lo: 'All', type: 'All', saleType: 'All',
@@ -457,7 +458,7 @@ export default function LoanManagement() {
             <button className={layout === 'cards' ? 'active' : ''} onClick={() => setLayout('cards')}>Cards</button>
             <button className={layout === 'table' ? 'active' : ''} onClick={() => setLayout('table')}>Spreadsheet</button>
           </div>
-          <Link to="/newloan" className="form-btn primary" style={{ textDecoration: 'none' }}>+ New Loan Intake</Link>
+          <button type="button" onClick={() => setNewLoanOpen(true)} className="form-btn primary">+ New Loan Intake</button>
         </div>
       </div>
 
@@ -501,6 +502,8 @@ export default function LoanManagement() {
           onClose={() => setLoanFor(null)}
         />
       )}
+
+      {newLoanOpen && <NewLoanDrawer onClose={() => setNewLoanOpen(false)} />}
     </div>
   );
 }
