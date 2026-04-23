@@ -87,7 +87,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
               <I defaultValue={loan.borrower || ''} onBlur={(e) => set('borrower', e.target.value)} />
             </Field>
             <Field label="Status">
-              <S value={loan.status || ''} options={STATUSES} empty="—" onChange={(v) => set('status', v)} />
+              <S value={loan.status || STAGE_TO_STATUS[loan.stage] || ''} options={STATUSES} empty="—" onChange={(v) => set('status', v)} />
             </Field>
             <Field label="LO">
               <S value={loan.lo || ''} options={LO_LIST} empty="—" onChange={(v) => set('lo', v)} />
