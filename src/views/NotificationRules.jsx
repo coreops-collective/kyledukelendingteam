@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { USERS, ROLE_LABELS } from '../data/users.js';
+import { STAGES, REFI_WATCH_STAGE } from '../data/stages.js';
 
 const EVENT_TYPES = [
   { value: 'loan.created',       label: 'New Loan Submitted' },
@@ -111,8 +112,11 @@ function AddRuleDrawer({ onClose, onSaved }) {
   const [extra_email, setExtraEmail] = useState('');
   const [subject_template, setSubject] = useState(DEFAULT_TEMPLATES[EVENT_TYPES[0].value].subject);
   const [body_template, setBody] = useState(DEFAULT_TEMPLATES[EVENT_TYPES[0].value].body);
+  const [stage_filter, setStageFilter] = useState([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
+  const allStages = [...STAGES, REFI_WATCH_STAGE];
+  const toggleStage = (key) => setStageFilter((prev) => prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]);
 
   function changeEvent(v) {
     setEventType(v);
@@ -128,6 +132,7 @@ function AddRuleDrawer({ onClose, onSaved }) {
       user_id: mode === 'user' ? user_id : null,
       extra_email: mode === 'email' ? (extra_email || '').trim() : null,
       subject_template, body_template,
+      stage_filter,
       enabled: true,
     };
     if (mode === 'email' && !row.extra_email) { setErr('Enter an email address'); return; }
@@ -184,6 +189,22 @@ function AddRuleDrawer({ onClose, onSaved }) {
               {mode === 'email' && (
                 <input type="email" value={extra_email} onChange={(e) => setExtraEmail(e.target.value)} placeholder="someone@example.com" />
               )}
+            </div>
+
+            <div className="form-field full" style={{ gridColumn: '1/-1' }}>
+              <label>Only for these stages <span style={{ color: '#999', fontWeight: 400, fontSize: 11 }}>(leave all unchecked to fire on every stage)</span></label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: 10, background: '#fafafa', border: '1px solid #e5e5e5', borderRadius: 6 }}>
+                {allStages.map((s) => (
+                  <label key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={stage_filter.includes(s.key)}
+                      onChange={() => toggleStage(s.key)}
+                    />
+                    {s.label}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="form-field full" style={{ gridColumn: '1/-1' }}>

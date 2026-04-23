@@ -104,13 +104,26 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ success: true, sent: 0, reason: 'No matching rules' }) };
     }
 
+    // Filter rules by stage_filter. Empty filter = fire always.
+    // For loan.stage_changed use context.new_stage; otherwise use context.stage.
+    const incomingStage = context.new_stage || context.stage || null;
+    const stageFiltered = rules.filter((r) => {
+      const sf = Array.isArray(r.stage_filter) ? r.stage_filter : [];
+      if (sf.length === 0) return true;
+      if (!incomingStage) return false;
+      return sf.includes(incomingStage);
+    });
+    if (!stageFiltered.length) {
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ success: true, sent: 0, reason: 'No rules match this stage' }) };
+    }
+
     let appPassword;
     try { appPassword = decrypt(settings.app_password || ''); }
     catch (err) { return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Decryption failed', detail: err.message }) }; }
     if (!appPassword) return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ success: true, sent: 0, reason: 'No app password' }) };
 
     const recipients = new Map();
-    for (const r of rules) {
+    for (const r of stageFiltered) {
       if (r.role) users.filter(u => u.role === r.role).forEach(u => { if (u.email) recipients.set(u.email.toLowerCase(), { email: u.email, rule: r }); });
       else if (r.user_id) { const u = users.find(x => x.id === r.user_id); if (u?.email) recipients.set(u.email.toLowerCase(), { email: u.email, rule: r }); }
       else if (r.extra_email) recipients.set(r.extra_email.toLowerCase(), { email: r.extra_email, rule: r });
