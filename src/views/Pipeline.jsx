@@ -104,12 +104,35 @@ export default function Pipeline() {
   const handleDrop = useCallback((loanId, newStageKey) => {
     const loan = LOANS.find((l) => l.id === loanId);
     if (!loan || loan.stage === newStageKey) return;
+    const oldStageKey = loan.stage;
     loan.stage = newStageKey;
     // Keep `status` in sync so Loan Management reflects the change.
     const mappedStatus = STAGE_TO_STATUS[newStageKey];
     if (mappedStatus) loan.status = mappedStatus;
     markLoansDirty();
     bump();
+
+    // Fire loan.stage_changed event so notification rules (filtered by
+    // stage, e.g. "New Contract") can email recipients. Non-blocking.
+    fetch('/.netlify/functions/send-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: 'loan.stage_changed',
+        context: {
+          loan_id: loan.id,
+          borrower: loan.borrower,
+          old_stage: oldStageKey,
+          new_stage: newStageKey,
+          stage: newStageKey,
+          lo: loan.lo || '',
+          loa: loan.loa || '',
+          amount: loan.amount || '',
+          property: loan.property || '',
+          closeDate: loan.closeDate || '',
+        },
+      }),
+    }).catch(() => { /* silent */ });
   }, [bump]);
 
   return (
