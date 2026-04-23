@@ -322,7 +322,9 @@ export default function NewLoan() {
         </form>
         <div className="form-actions">
           <button className="form-btn secondary" type="button" onClick={() => setForm(f => ({ ...f, lo: '', kind: '', existingId: '', status: '' }))}>Cancel</button>
-          <button className="form-btn primary" type="button" onClick={submit}>Submit & Notify LOA</button>
+          <button className="form-btn primary" type="button" onClick={submit}>
+            {form.status === 'fresh' ? 'Submit & Notify LOA' : 'Submit'}
+          </button>
         </div>
       </div>
       {toast && (
