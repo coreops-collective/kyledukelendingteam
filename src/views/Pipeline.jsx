@@ -217,6 +217,21 @@ export default function Pipeline() {
       )}
 
       {newLoanOpen && <NewLoanDrawer onClose={() => setNewLoanOpen(false)} />}
+
+      {toast && (
+        <div
+          onClick={() => setToast(null)}
+          style={{
+            position: 'fixed', bottom: 24, right: 24, zIndex: 200,
+            background: '#1a6b4a', color: '#fff', padding: '14px 20px',
+            borderRadius: 10, boxShadow: '0 6px 24px rgba(0,0,0,.25)',
+            cursor: 'pointer', maxWidth: 360, fontSize: 13, lineHeight: 1.4,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', fontSize: 11, letterSpacing: '.5px' }}>{toast.title}</div>
+          <div>{toast.msg}</div>
+        </div>
+      )}
     </div>
   );
 }
