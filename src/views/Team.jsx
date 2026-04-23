@@ -168,7 +168,8 @@ function NewTeamMemberModal({ onClose, onSubmit }) {
               <div className="form-field"><label>Start Date</label><input type="date" value={f.start} onChange={set('start')} /></div>
               <div className="form-field"><label>Reports To</label>
                 <select value={f.reports} onChange={set('reports')}>
-                  <option>Kyle Duke</option><option>Missy</option><option>—</option>
+                  <option value="">— Select —</option>
+                  {USERS.map((u) => <option key={u.id} value={u.name}>{u.name}</option>)}
                 </select>
               </div>
             </Section>
