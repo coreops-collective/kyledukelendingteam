@@ -161,10 +161,12 @@ export default function Pipeline() {
       .then((res) => res.json().catch(() => ({})))
       .then((json) => {
         if (json?.sent > 0) {
-          setToast({ title: 'Notification sent', msg: `Emailed ${json.sent} recipient${json.sent === 1 ? '' : 's'} about ${loan.borrower}` });
-        } else if (json?.reason) {
-          // Only surface if it's surprising (e.g. a stage that had no matching rule).
-          // 'No matching rules' / 'No rules match this stage' are normal, keep quiet.
+          // Friendly message when the drop is into New Contract — that's
+          // when the LOA is the typical recipient in Kyle's setup.
+          const msg = newStageKey === 'fresh'
+            ? `LOA has been notified about ${loan.borrower}`
+            : `Emailed ${json.sent} recipient${json.sent === 1 ? '' : 's'} about ${loan.borrower}`;
+          setToast({ title: 'Notification sent', msg });
         }
       })
       .catch(() => { /* silent */ });
