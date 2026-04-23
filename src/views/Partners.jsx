@@ -65,9 +65,8 @@ export default function Partners() {
 
   const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
 
-  const openPartner = (p) => {
-    setToast({ title: 'Partner', msg: `${p.name} — detail drawer not yet ported` });
-  };
+  const [openedPartner, setOpenedPartner] = useState(null);
+  const openPartner = (p) => setOpenedPartner(p);
 
   return (
     <div>
@@ -201,11 +200,13 @@ export default function Partners() {
         <div className="muted" style={{ textAlign: 'center', padding: 30 }}>No partners match those filters</div>
       )}
 
-      {showForm && <NewPartnerModal onClose={() => setShowForm(false)} onSubmit={(p) => {
-        console.log('[partners] new partner submitted', p);
+      {showForm && <NewPartnerDrawer onClose={() => setShowForm(false)} onSubmit={(p) => {
+        PARTNERS.push({ ...p, deals: 0, closed: 0, volume: 0, lifetime: 0, vip: p.tier?.startsWith('VIP') });
         setToast({ title: 'Partner Added', msg: `${p.name} — welcome touch sequence started` });
         setShowForm(false);
       }} />}
+
+      {openedPartner && <PartnerDrawer partner={openedPartner} onClose={() => setOpenedPartner(null)} />}
 
       {toast && (
         <div className="toast" onClick={() => setToast(null)}>
@@ -217,7 +218,7 @@ export default function Partners() {
   );
 }
 
-function NewPartnerModal({ onClose, onSubmit }) {
+function NewPartnerDrawer({ onClose, onSubmit }) {
   const [f, setF] = useState({
     name: '', brokerage: '', state: '', city: '', phone: '', email: '',
     bday: '', spouse: '', kids: '', coffee: '', addr: '', social: '',
@@ -226,22 +227,25 @@ function NewPartnerModal({ onClose, onSubmit }) {
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   const submit = () => {
-    if (!f.name || !f.brokerage || !f.phone || !f.email) return;
+    if (!f.name || !f.brokerage || !f.phone || !f.email) {
+      alert('Name, brokerage, phone, and email are required.');
+      return;
+    }
     onSubmit(f);
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div>
-            <div className="modal-title">Add Realtor Partner</div>
-            <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>On submit → saved to CRM + welcome touch sequence begins</div>
-          </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+    <>
+      <div className="drawer-overlay open" onClick={onClose} />
+      <aside className="drawer open" style={{ width: 640, maxWidth: '95vw' }}>
+        <div className="drawer-head">
+          <button className="drawer-close" onClick={onClose}>×</button>
+          <div className="drawer-stage">New Partner</div>
+          <div className="drawer-borrower">Add Realtor Partner</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>On submit → saved + welcome touch sequence begins</div>
         </div>
-        <div className="modal-body">
-          <form className="form-grid" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <div className="drawer-body">
+          <form className="form-grid" onSubmit={(e) => { e.preventDefault(); submit(); }} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="form-field"><label className="req">Agent Name</label><input value={f.name} onChange={set('name')} required /></div>
             <div className="form-field"><label className="req">Brokerage</label><input value={f.brokerage} onChange={set('brokerage')} required /></div>
             <div className="form-field"><label>State</label>
@@ -257,25 +261,110 @@ function NewPartnerModal({ onClose, onSubmit }) {
             <div className="form-field"><label>Spouse / Partner Name</label><input value={f.spouse} onChange={set('spouse')} /></div>
             <div className="form-field"><label>Kids / Pet Names</label><input value={f.kids} onChange={set('kids')} /></div>
             <div className="form-field"><label>Favorite Coffee Shop</label><input value={f.coffee} onChange={set('coffee')} /></div>
-            <div className="form-field full"><label>Mailing Address</label><input value={f.addr} onChange={set('addr')} /></div>
+            <div className="form-field" style={{ gridColumn: '1/-1' }}><label>Mailing Address</label><input value={f.addr} onChange={set('addr')} /></div>
             <div className="form-field"><label>Social Media Handle</label><input value={f.social} onChange={set('social')} /></div>
             <div className="form-field"><label>Referral Tier</label>
               <select value={f.tier} onChange={set('tier')}>
                 <option>Standard</option><option>VIP (5+ deals/yr)</option>
               </select>
             </div>
-            <div className="form-field"><label>Lead Source</label>
+            <div className="form-field" style={{ gridColumn: '1/-1' }}><label>Lead Source</label>
               <select value={f.src} onChange={set('src')}>
                 <option>Past Closing</option><option>Networking Event</option><option>Past Client Intro</option><option>Other LO</option><option>Cold Outreach</option>
               </select>
             </div>
           </form>
         </div>
-        <div className="modal-actions">
-          <button className="form-btn secondary" type="button" onClick={onClose}>Cancel</button>
-          <button className="form-btn primary" type="button" onClick={submit}>Add Partner &amp; Start Touch Sequence</button>
+        <div className="drawer-actions">
+          <button className="drawer-btn" type="button" onClick={onClose}>Cancel</button>
+          <button className="drawer-btn primary" type="button" onClick={submit}>Add Partner</button>
         </div>
-      </div>
+      </aside>
+    </>
+  );
+}
+
+function PartnerDrawer({ partner, onClose }) {
+  const [, force] = useState(0);
+  const [touchDraft, setTouchDraft] = useState({ kind: 'call', note: '' });
+
+  const logTouch = () => {
+    if (!touchDraft.kind) return;
+    partner.touches = partner.touches || [];
+    partner.touches.unshift({ at: new Date().toISOString(), kind: touchDraft.kind, note: touchDraft.note });
+    partner.lastTouchAt = partner.touches[0].at;
+    setTouchDraft({ kind: 'call', note: '' });
+    force((n) => n + 1);
+  };
+
+  const p = partner;
+  const Row = ({ label, value }) => (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, color: '#222' }}>{value || '—'}</div>
     </div>
+  );
+
+  return (
+    <>
+      <div className="drawer-overlay open" onClick={onClose} />
+      <aside className="drawer open" style={{ width: 640, maxWidth: '95vw' }}>
+        <div className="drawer-head">
+          <button className="drawer-close" onClick={onClose}>×</button>
+          <div className="drawer-stage">{p.vip ? 'VIP Partner' : 'Partner'}</div>
+          <div className="drawer-borrower">{p.name}</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{[p.city, p.state].filter(Boolean).join(', ') || '—'}</div>
+        </div>
+        <div className="drawer-body">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Row label="Phone" value={p.phone} />
+            <Row label="Email" value={p.email} />
+            <Row label="YTD Closings" value={p.closed || p.ytdClosings || 0} />
+            <Row label="YTD Volume" value={'$' + Math.round((p.volume || p.ytdVolume || 0) / 1000).toLocaleString() + 'K'} />
+            <Row label="Total Deals" value={p.deals || 0} />
+            <Row label="Lifetime Volume" value={'$' + Math.round((p.lifetime || 0) / 1000).toLocaleString() + 'K'} />
+          </div>
+
+          <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid #eee' }}>
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10, color: '#555' }}>
+              Log a Touch
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 8, alignItems: 'start' }}>
+              <select value={touchDraft.kind} onChange={(e) => setTouchDraft((d) => ({ ...d, kind: e.target.value }))}
+                style={{ padding: 8, border: '1px solid #d0d0d0', borderRadius: 6, fontSize: 13 }}>
+                <option value="call">Call</option>
+                <option value="text">Text</option>
+                <option value="email">Email</option>
+                <option value="meeting">Meeting</option>
+                <option value="gift">Gift</option>
+                <option value="other">Other</option>
+              </select>
+              <input
+                value={touchDraft.note}
+                onChange={(e) => setTouchDraft((d) => ({ ...d, note: e.target.value }))}
+                placeholder="Notes (optional)"
+                style={{ padding: 8, border: '1px solid #d0d0d0', borderRadius: 6, fontSize: 13 }}
+              />
+              <button className="form-btn primary" type="button" onClick={logTouch} style={{ padding: '8px 14px', fontSize: 12 }}>Log</button>
+            </div>
+            {p.touches && p.touches.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>Recent touches</div>
+                {p.touches.slice(0, 10).map((t, i) => (
+                  <div key={i} style={{ fontSize: 12, padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
+                    <span style={{ fontWeight: 700, textTransform: 'uppercase', color: '#555', marginRight: 8, fontSize: 10 }}>{t.kind}</span>
+                    <span style={{ color: '#999', marginRight: 8 }}>{new Date(t.at).toLocaleDateString()}</span>
+                    {t.note && <span>{t.note}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="drawer-actions">
+          <button className="drawer-btn primary" onClick={onClose}>Close</button>
+        </div>
+      </aside>
+    </>
   );
 }

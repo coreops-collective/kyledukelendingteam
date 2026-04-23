@@ -1,8 +1,8 @@
 // Mortgage / closing calculator helpers — ported verbatim from legacy/index.html
 
-export const fmt$ = n => n == null ? '\u2014' : '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+export const fmt$ = n => n == null ? '\u2014' : '$ ' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
 
-export const LOGO_SVG = '<img src="FC327C2D-23D4-4C6D-8E78-9DE97A9E4116_1_102_o.jpeg" alt="The Kyle Duke Team" onerror="this.style.display=\'none\'" style="width:100%;height:100%;object-fit:contain">';
+export const LOGO_SVG = '<img src="/brand-crest.jpeg" alt="The Kyle Duke Team" onerror="this.style.display=\'none\'" style="width:100%;height:100%;object-fit:contain">';
 
 // Mortgage insurance / funding fee logic per Fannie Mae / Freddie Mac / VA guidelines
 export function calcConventionalPMI(loanAmt, ltv) {

@@ -104,56 +104,104 @@ export default function Team() {
 
 function NewTeamMemberModal({ onClose, onSubmit }) {
   const [f, setF] = useState({
-    first: '', last: '', role: 'Senior Loan Officer', nmls: '', start: '',
+    first: '', last: '', role: 'Loan Officer', customRole: '', nmls: '', start: '',
     email: '', phone: '', reports: 'Kyle Duke', notes: '',
+    birthday: '', personalEmail: '', mailingAddress: '',
+    emergencyName: '', emergencyPhone: '', emergencyRel: '',
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const isOther = f.role === 'Other';
 
   const submit = () => {
-    if (!f.first || !f.last || !f.email || !f.phone || !f.role) return;
-    onSubmit(f);
+    if (!f.first || !f.last || !f.email || !f.phone || !f.role) {
+      alert('First, last, email, phone, and role are required.');
+      return;
+    }
+    if (isOther && !f.customRole.trim()) {
+      alert('Enter a custom role or pick one from the list.');
+      return;
+    }
+    onSubmit({ ...f, role: isOther ? f.customRole.trim() : f.role });
   };
 
+  const Section = ({ title, children }) => (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid #eee' }}>
+        {title}
+      </div>
+      <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>{children}</div>
+    </div>
+  );
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div>
-            <div className="modal-title">Add Team Member</div>
-            <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>On submit → saved to database + welcome email sent</div>
-          </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+    <>
+      <div className="drawer-overlay open" onClick={onClose} />
+      <aside className="drawer open" style={{ width: 680, maxWidth: '95vw' }}>
+        <div className="drawer-head">
+          <button className="drawer-close" onClick={onClose}>×</button>
+          <div className="drawer-stage">New Team Member</div>
+          <div className="drawer-borrower">Add Team Member</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>On submit → saved + welcome email sent</div>
         </div>
-        <div className="modal-body">
-          <form className="form-grid" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-            <div className="form-field"><label className="req">First Name</label><input value={f.first} onChange={set('first')} required /></div>
-            <div className="form-field"><label className="req">Last Name</label><input value={f.last} onChange={set('last')} required /></div>
-            <div className="form-field full"><label className="req">Role</label>
-              <select value={f.role} onChange={set('role')} required>
-                <option>Senior Loan Officer</option>
-                <option>Junior Loan Officer</option>
-                <option>Loan Officer Assistant (LOA)</option>
-                <option>Processor</option>
-                <option>Admin</option>
-              </select>
-            </div>
-            <div className="form-field"><label>NMLS #</label><input value={f.nmls} onChange={set('nmls')} /></div>
-            <div className="form-field"><label>Start Date</label><input type="date" value={f.start} onChange={set('start')} /></div>
-            <div className="form-field full"><label className="req">Email</label><input type="email" value={f.email} onChange={set('email')} required /></div>
-            <div className="form-field"><label className="req">Phone</label><input type="tel" value={f.phone} onChange={set('phone')} required /></div>
-            <div className="form-field"><label>Reports To</label>
-              <select value={f.reports} onChange={set('reports')}>
-                <option>Kyle Duke</option><option>Missy</option><option>—</option>
-              </select>
-            </div>
-            <div className="form-field full"><label>Notes</label><textarea value={f.notes} onChange={set('notes')} /></div>
+        <div className="drawer-body">
+          <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
+            <Section title="Identity">
+              <div className="form-field"><label className="req">First Name</label><input value={f.first} onChange={set('first')} required /></div>
+              <div className="form-field"><label className="req">Last Name</label><input value={f.last} onChange={set('last')} required /></div>
+              <div className="form-field" style={{ gridColumn: '1/-1' }}><label className="req">Role</label>
+                <select value={f.role} onChange={set('role')} required>
+                  <option>Loan Officer</option>
+                  <option>Loan Officer Assistant (LOA)</option>
+                  <option>Processor</option>
+                  <option>Admin</option>
+                  <option>Branch Manager</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              {isOther && (
+                <div className="form-field" style={{ gridColumn: '1/-1' }}>
+                  <label className="req">Custom role</label>
+                  <input value={f.customRole} onChange={set('customRole')} placeholder="e.g. Marketing Coordinator" />
+                </div>
+              )}
+              <div className="form-field"><label>NMLS #</label><input value={f.nmls} onChange={set('nmls')} /></div>
+              <div className="form-field"><label>Start Date</label><input type="date" value={f.start} onChange={set('start')} /></div>
+              <div className="form-field"><label>Reports To</label>
+                <select value={f.reports} onChange={set('reports')}>
+                  <option>Kyle Duke</option><option>Missy</option><option>—</option>
+                </select>
+              </div>
+            </Section>
+
+            <Section title="Work Contact">
+              <div className="form-field" style={{ gridColumn: '1/-1' }}><label className="req">Work Email</label><input type="email" value={f.email} onChange={set('email')} required /></div>
+              <div className="form-field" style={{ gridColumn: '1/-1' }}><label className="req">Work Phone</label><input type="tel" value={f.phone} onChange={set('phone')} required /></div>
+            </Section>
+
+            <Section title="Personal">
+              <div className="form-field"><label>Birthday</label><input type="date" value={f.birthday} onChange={set('birthday')} /></div>
+              <div className="form-field"><label>Personal Email</label><input type="email" value={f.personalEmail} onChange={set('personalEmail')} /></div>
+              <div className="form-field" style={{ gridColumn: '1/-1' }}><label>Mailing Address</label><input value={f.mailingAddress} onChange={set('mailingAddress')} placeholder="Street, City, State ZIP" /></div>
+            </Section>
+
+            <Section title="Emergency Contact">
+              <div className="form-field"><label>Name</label><input value={f.emergencyName} onChange={set('emergencyName')} /></div>
+              <div className="form-field"><label>Relationship</label><input value={f.emergencyRel} onChange={set('emergencyRel')} placeholder="Spouse, parent, etc." /></div>
+              <div className="form-field" style={{ gridColumn: '1/-1' }}><label>Phone</label><input type="tel" value={f.emergencyPhone} onChange={set('emergencyPhone')} /></div>
+            </Section>
+
+            <Section title="Notes">
+              <div className="form-field" style={{ gridColumn: '1/-1' }}>
+                <textarea value={f.notes} onChange={set('notes')} style={{ minHeight: 80 }} />
+              </div>
+            </Section>
           </form>
         </div>
-        <div className="modal-actions">
-          <button className="form-btn secondary" type="button" onClick={onClose}>Cancel</button>
-          <button className="form-btn primary" type="button" onClick={submit}>Add Team Member</button>
+        <div className="drawer-actions">
+          <button className="drawer-btn" type="button" onClick={onClose}>Cancel</button>
+          <button className="drawer-btn primary" type="button" onClick={submit}>Add Team Member</button>
         </div>
-      </div>
-    </div>
+      </aside>
+    </>
   );
 }

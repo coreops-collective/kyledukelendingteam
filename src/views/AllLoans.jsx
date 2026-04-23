@@ -11,6 +11,8 @@ export default function AllLoans() {
   const [q, setQ] = useState('');
   const [todaysRate, setTodaysRate] = useState('');
   const [minDrop, setMinDrop] = useState('0.5');
+  const [openClient, setOpenClient] = useState(null);
+  const [layout, setLayout] = useState('cards'); // cards | table
   const refiMode = todaysRate !== '' && !isNaN(parseFloat(todaysRate));
 
   const years = useMemo(
@@ -141,8 +143,49 @@ export default function AllLoans() {
         >
           <span className="income-filter-label" style={{ color: '#fbb' }}>Reset</span>
         </div>
+        <div className="lm-view-toggle" style={{ marginLeft: 'auto' }}>
+          <button className={layout === 'cards' ? 'active' : ''} onClick={() => setLayout('cards')}>Cards</button>
+          <button className={layout === 'table' ? 'active' : ''} onClick={() => setLayout('table')}>Spreadsheet</button>
+        </div>
       </div>
 
+      {layout === 'cards' ? (
+        <div className="lm-cards">
+          {filtered.map((c, i) => {
+            const savings = refiMode ? monthlyPI(c.amount, c.rate) - monthlyPI(c.amount, parseFloat(todaysRate)) : 0;
+            return (
+              <div
+                key={(c.name || '') + '|' + (c.closeDate || '') + '|' + i}
+                className="lm-card funded"
+                onClick={() => setOpenClient(c)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="lm-card-head">
+                  <div>
+                    <div className="lm-card-name">{c.name}</div>
+                    <div className="lm-card-prop">{c.property || '—'}</div>
+                  </div>
+                  <div className="lm-card-stat">
+                    <div className="lm-card-amount">{fmt$(c.amount)}</div>
+                    <div className="lm-card-status">{c.saleType || 'FUNDED'}</div>
+                  </div>
+                </div>
+                <div className="lm-card-grid">
+                  <div><div className="lbl">Closed</div><div className="val">{c.closeDate || '—'}</div></div>
+                  <div><div className="lbl">Rate</div><div className="val">{c.rate ? c.rate + '%' : '—'}</div></div>
+                  <div><div className="lbl">Type</div><div className="val">{c.type || '—'}</div></div>
+                  <div><div className="lbl">LO</div><div className="val">{c.lo || '—'}</div></div>
+                  <div><div className="lbl">Agent</div><div className="val">{c.agent || '—'}</div></div>
+                  {refiMode && savings > 0 && (
+                    <div><div className="lbl" style={{ color: '#1a6b4a' }}>Refi Savings</div><div className="val" style={{ color: '#1a6b4a', fontWeight: 700 }}>{fmt$(savings)}/mo</div></div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && <div className="muted" style={{ textAlign: 'center', padding: 40 }}>No matches</div>}
+        </div>
+      ) : (
       <div className="lm-wrap">
         <div className="lm-scroll">
           <table className="lm-table">
@@ -165,7 +208,11 @@ export default function AllLoans() {
             </thead>
             <tbody>
               {filtered.map((c, i) => (
-                <tr key={(c.name || '') + '|' + (c.closeDate || '') + '|' + i}>
+                <tr
+                  key={(c.name || '') + '|' + (c.closeDate || '') + '|' + i}
+                  onClick={() => setOpenClient(c)}
+                  style={{ cursor: 'pointer' }}
+                >
                   <td style={{ fontWeight: 600 }}>{c.name}</td>
                   <td>{c.closeDate || '—'}</td>
                   <td>{c.saleType || '—'}</td>
@@ -188,6 +235,84 @@ export default function AllLoans() {
           </table>
         </div>
       </div>
+      )}
+
+      {openClient && (
+        <PastClientDrawer client={openClient} refiRate={refiMode ? parseFloat(todaysRate) : null} onClose={() => setOpenClient(null)} />
+      )}
     </div>
+  );
+}
+
+function PastClientDrawer({ client, refiRate, onClose }) {
+  const c = client;
+  const monthlyPI = (principal, ratePct) => {
+    if (!principal || !ratePct) return 0;
+    const r = ratePct / 100 / 12;
+    return (principal * r) / (1 - Math.pow(1 + r, -360));
+  };
+  const currentPI = monthlyPI(c.amount, c.rate);
+  const newPI = refiRate ? monthlyPI(c.amount, refiRate) : null;
+  const savings = newPI != null ? currentPI - newPI : null;
+
+  const Row = ({ label, value }) => (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 13, color: '#222' }}>{value || '—'}</div>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="drawer-overlay open" onClick={onClose} />
+      <aside className="drawer open" style={{ width: 560, maxWidth: '95vw' }}>
+        <div className="drawer-head">
+          <button className="drawer-close" onClick={onClose}>×</button>
+          <div className="drawer-stage">Past Client · Funded</div>
+          <div className="drawer-borrower">{c.name}</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{c.property || ''}</div>
+        </div>
+        <div className="drawer-body">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Row label="Close Date" value={c.closeDate} />
+            <Row label="Sale Type" value={c.saleType} />
+            <Row label="Loan Amount" value={fmt$(c.amount)} />
+            <Row label="Purchase Price" value={c.price ? fmt$(c.price) : null} />
+            <Row label="Type" value={c.type} />
+            <Row label="Rate" value={c.rate ? c.rate + '%' : null} />
+            <Row label="LO" value={c.lo} />
+            <Row label="Agent" value={c.agent} />
+            <Row label="Phone" value={c.phone} />
+            <Row label="Email" value={c.email} />
+          </div>
+
+          {refiRate && c.rate && (
+            <div style={{ marginTop: 18, padding: 14, background: '#f1f8f1', border: '1px solid #c8e6c9', borderRadius: 8 }}>
+              <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#1a6b4a', marginBottom: 8 }}>
+                Refi Analysis at {refiRate}%
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, fontSize: 12 }}>
+                <div><div style={{ color: '#666' }}>Current P&I</div><div style={{ fontWeight: 700 }}>{fmt$(Math.round(currentPI))}/mo</div></div>
+                <div><div style={{ color: '#666' }}>New P&I</div><div style={{ fontWeight: 700 }}>{fmt$(Math.round(newPI))}/mo</div></div>
+                <div>
+                  <div style={{ color: '#666' }}>Monthly Savings</div>
+                  <div style={{ fontWeight: 700, color: savings > 0 ? '#1a6b4a' : '#c62828' }}>
+                    {savings > 0 ? fmt$(Math.round(savings)) + '/mo' : savings < 0 ? fmt$(Math.round(-savings)) + ' more' : '—'}
+                  </div>
+                </div>
+              </div>
+              {savings > 0 && (
+                <div style={{ marginTop: 10, fontSize: 11, color: '#555' }}>
+                  Annual savings ≈ <strong>{fmt$(Math.round(savings * 12))}</strong>. Reach out to see if refinance makes sense.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="drawer-actions">
+          <button className="drawer-btn primary" onClick={onClose}>Close</button>
+        </div>
+      </aside>
+    </>
   );
 }
