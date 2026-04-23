@@ -216,32 +216,32 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan }) {
         <table className="lm-table">
           <thead>
             <tr>
-              <th style={{ width: 160 }}>Client</th>
-              <th style={{ width: 120 }}>Closing Date</th>
-              <th style={{ width: 130 }}>Status</th>
-              <th style={{ width: 240 }}>Notes</th>
-              <th style={{ width: 90 }}>LO</th>
-              <th style={{ width: 120 }}>Sale Type</th>
-              <th style={{ width: 60 }}>Appr Ord</th>
-              <th style={{ width: 120 }}>Appr Deadline</th>
-              <th style={{ width: 60 }}>Appr Rcvd</th>
-              <th style={{ width: 60 }}>Title Rcvd</th>
-              <th style={{ width: 120 }}>Lock Expires</th>
-              <th style={{ width: 120 }}>ICD Deadline</th>
-              <th style={{ width: 60 }}>ICD Sent</th>
-              <th style={{ width: 60 }}>ICD Signed</th>
-              <th style={{ width: 240 }}>Property</th>
-              <th style={{ width: 120 }}>Purchase Price</th>
-              <th style={{ width: 120 }}>Loan Amount</th>
-              <th style={{ width: 80 }}>Type</th>
-              <th style={{ width: 80 }}>Rate</th>
-              <th style={{ width: 170 }}>Agent</th>
-              <th style={{ width: 140 }}>Lead Source</th>
-              <th style={{ width: 130 }}>Phone</th>
-              <th style={{ width: 180 }}>Email</th>
-              <th style={{ width: 120 }}>Co-Borrower First</th>
-              <th style={{ width: 120 }}>Co-Borrower Last</th>
-              <th style={{ width: 130 }}>Co-Borrower Phone</th>
+              <th style={{ width: 180 }}>Client</th>
+              <th style={{ width: 130 }}>Closing Date</th>
+              <th style={{ width: 150 }}>Status</th>
+              <th style={{ width: 260 }}>Notes</th>
+              <th style={{ width: 100 }}>LO</th>
+              <th style={{ width: 140 }}>Sale Type</th>
+              <th style={{ width: 80 }}>Appr Ord</th>
+              <th style={{ width: 140 }}>Appr Deadline</th>
+              <th style={{ width: 80 }}>Appr Rcvd</th>
+              <th style={{ width: 80 }}>Title Rcvd</th>
+              <th style={{ width: 140 }}>Lock Expires</th>
+              <th style={{ width: 140 }}>ICD Deadline</th>
+              <th style={{ width: 80 }}>ICD Sent</th>
+              <th style={{ width: 80 }}>ICD Signed</th>
+              <th style={{ width: 280 }}>Property</th>
+              <th style={{ width: 140 }}>Purchase Price</th>
+              <th style={{ width: 140 }}>Loan Amount</th>
+              <th style={{ width: 100 }}>Type</th>
+              <th style={{ width: 100 }}>Rate</th>
+              <th style={{ width: 200 }}>Agent</th>
+              <th style={{ width: 160 }}>Lead Source</th>
+              <th style={{ width: 150 }}>Phone</th>
+              <th style={{ width: 220 }}>Email</th>
+              <th style={{ width: 140 }}>Co-Borrower First</th>
+              <th style={{ width: 140 }}>Co-Borrower Last</th>
+              <th style={{ width: 150 }}>Co-Borrower Phone</th>
             </tr>
           </thead>
           <tbody>
