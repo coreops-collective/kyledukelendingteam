@@ -24,6 +24,7 @@ import useAuth from './hooks/useAuth.js';
 import { isAdmin, isBranchManager } from './lib/auth.js';
 import { loadUsersFromSupabase } from './data/users.js';
 import { loadLoansFromSupabase } from './lib/loansStore.js';
+import { loadPartnersFromSupabase } from './lib/partnersStore.js';
 
 const PAGE_META = {
   '/snapshot':      { title: 'Lending Snapshot' },
@@ -73,7 +74,7 @@ export default function App() {
 
   // Fetch real users + loans from Supabase on mount (same as legacy)
   useEffect(() => {
-    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase()])
+    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase(), loadPartnersFromSupabase()])
       .finally(() => setUsersReady(true));
   }, []);
 

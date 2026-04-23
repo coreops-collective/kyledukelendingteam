@@ -3,6 +3,7 @@ import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
+import { markPartnerDirty } from '../lib/partnersStore.js';
 
 // Format helpers — mirror legacy fmt$M / fmt$
 const fmt$ = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -224,8 +225,10 @@ export default function Partners() {
       )}
 
       {showForm && <NewPartnerDrawer onClose={() => setShowForm(false)} onSubmit={(p) => {
-        PARTNERS.push({ ...p, deals: 0, closed: 0, volume: 0, lifetime: 0, vip: p.tier?.startsWith('VIP') });
-        setToast({ title: 'Partner Added', msg: `${p.name} — welcome touch sequence started` });
+        const added = { ...p, deals: 0, closed: 0, volume: 0, lifetime: 0, vip: p.tier?.startsWith('VIP') };
+        PARTNERS.push(added);
+        markPartnerDirty(added);
+        setToast({ title: 'Partner Added', msg: `${p.name} — saved to Supabase` });
         setShowForm(false);
       }} />}
 
@@ -316,12 +319,13 @@ function PartnerDrawer({ partner, onClose }) {
     partner.touches = partner.touches || [];
     partner.touches.unshift({ at: new Date().toISOString(), kind: touchDraft.kind, note: touchDraft.note });
     partner.lastTouchAt = partner.touches[0].at;
+    markPartnerDirty(partner);
     setTouchDraft({ kind: 'call', note: '' });
     force((n) => n + 1);
   };
 
   const p = partner;
-  const set = (key, value) => { p[key] = value; force((n) => n + 1); };
+  const set = (key, value) => { p[key] = value; markPartnerDirty(p); force((n) => n + 1); };
   const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
   const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4, display: 'block' };
 
