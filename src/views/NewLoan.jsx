@@ -34,7 +34,12 @@ export default function NewLoan() {
   const existingOptions = useMemo(() => {
     if (form.kind !== 'existing') return [];
     const loFirst = (form.lo || '').split(' ')[0];
-    return LOANS.filter(l => !form.lo || l.lo === loFirst || l.lo === form.lo);
+    // Only pipeline-stage loans qualify as "existing in pipeline":
+    // New Lead, Applied, HOT PA, REFI Watch — i.e. PRE_CONTRACT_STAGES.
+    return LOANS
+      .filter(l => PRE_CONTRACT_STAGES.includes(l.stage))
+      .filter(l => !form.lo || l.lo === loFirst || l.lo === form.lo)
+      .sort((a, b) => (a.borrower || '').localeCompare(b.borrower || ''));
   }, [form.kind, form.lo]);
 
   function loadExisting(id) {
