@@ -147,13 +147,13 @@ export default function Partners() {
                 <div className="partner-name">{p.name}</div>
                 <div className="partner-brokerage">{partnerLoc(p)}</div>
                 <div className="partner-stat"><span>Total Closings</span><strong>{p.totalClosings || p.deals || 0}</strong></div>
-                <div className="partner-stat"><span>Total Volume</span><strong>{fmt$M(p.totalVolume || p.lifetime || 0)}</strong></div>
+                <div className="partner-stat"><span>Total Volume</span><strong>{fmt$(p.totalVolume || p.lifetime || 0)}</strong></div>
                 <div className="partner-stat"><span>YTD Closings</span><strong>{p.ytdClosings || p.closed || 0}</strong></div>
-                <div className="partner-stat"><span>YTD Volume</span><strong>{fmt$M(p.ytdVolume || p.volume || 0)}</strong></div>
+                <div className="partner-stat"><span>YTD Volume</span><strong>{fmt$(p.ytdVolume || p.volume || 0)}</strong></div>
                 {p.livePipeline ? (
                   <div className="partner-stat" style={{ borderTop: '1px dashed #f5b8c1', paddingTop: 6, marginTop: 4 }}>
                     <span style={{ color: 'var(--brand-red)', fontWeight: 700 }}>Live Pipeline</span>
-                    <strong>{p.livePipeline} · {fmt$M(p.livePipelineVolume || 0)}</strong>
+                    <strong>{p.livePipeline} · {fmt$(p.livePipelineVolume || 0)}</strong>
                   </div>
                 ) : null}
                 <div style={{ textAlign: 'center', fontSize: 10, color: '#999', marginTop: 8, textTransform: 'uppercase', letterSpacing: '.5px' }}>
@@ -188,7 +188,7 @@ export default function Partners() {
                 <div className="brk">{partnerLoc(p)}</div>
                 <div className="num">{p.state || '—'}</div>
                 <div className="num">{p.totalClosings || p.closed || 0}</div>
-                <div className="vol">{fmt$M(p.totalVolume || p.lifetime || 0)}</div>
+                <div className="vol">{fmt$(p.totalVolume || p.lifetime || 0)}</div>
                 <div className="num" style={{ color: '#888' }}>{p.ytdClosings || p.closed || 0}</div>
               </div>
             ))}
@@ -298,9 +298,24 @@ function PartnerDrawer({ partner, onClose }) {
   };
 
   const p = partner;
-  const Row = ({ label, value }) => (
+  const set = (key, value) => { p[key] = value; force((n) => n + 1); };
+  const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
+  const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4, display: 'block' };
+
+  const EditRow = ({ label, field, type = 'text' }) => (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 3 }}>{label}</div>
+      <label style={labelStyle}>{label}</label>
+      <input
+        type={type}
+        defaultValue={p[field] || ''}
+        onBlur={(e) => set(field, e.target.value)}
+        style={inputStyle}
+      />
+    </div>
+  );
+  const ReadRow = ({ label, value }) => (
+    <div style={{ marginBottom: 10 }}>
+      <div style={labelStyle}>{label}</div>
       <div style={{ fontSize: 13, color: '#222' }}>{value || '—'}</div>
     </div>
   );
@@ -316,13 +331,32 @@ function PartnerDrawer({ partner, onClose }) {
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{[p.city, p.state].filter(Boolean).join(', ') || '—'}</div>
         </div>
         <div className="drawer-body">
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 10 }}>
+            Contact
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Row label="Phone" value={p.phone} />
-            <Row label="Email" value={p.email} />
-            <Row label="YTD Closings" value={p.closed || p.ytdClosings || 0} />
-            <Row label="YTD Volume" value={'$' + Math.round((p.volume || p.ytdVolume || 0) / 1000).toLocaleString() + 'K'} />
-            <Row label="Total Deals" value={p.deals || 0} />
-            <Row label="Lifetime Volume" value={'$' + Math.round((p.lifetime || 0) / 1000).toLocaleString() + 'K'} />
+            <EditRow label="Name" field="name" />
+            <EditRow label="Brokerage" field="brokerage" />
+            <EditRow label="Phone" field="phone" type="tel" />
+            <EditRow label="Email" field="email" type="email" />
+            <EditRow label="City" field="city" />
+            <EditRow label="State" field="state" />
+            <EditRow label="Birthday" field="bday" type="date" />
+            <EditRow label="Spouse / Partner" field="spouse" />
+            <EditRow label="Kids / Pets" field="kids" />
+            <EditRow label="Favorite Coffee" field="coffee" />
+            <div style={{ gridColumn: '1/-1' }}><EditRow label="Mailing Address" field="addr" /></div>
+            <EditRow label="Social Handle" field="social" />
+          </div>
+
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', margin: '18px 0 10px', paddingTop: 14, borderTop: '1px solid #eee' }}>
+            Stats
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <ReadRow label="Total Closings" value={p.totalClosings || p.deals || 0} />
+            <ReadRow label="Lifetime Volume" value={'$' + Math.round(p.lifetime || 0).toLocaleString()} />
+            <ReadRow label="YTD Closings" value={p.closed || p.ytdClosings || 0} />
+            <ReadRow label="YTD Volume" value={'$' + Math.round(p.volume || p.ytdVolume || 0).toLocaleString()} />
           </div>
 
           <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid #eee' }}>
