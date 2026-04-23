@@ -231,7 +231,9 @@ export default function Setup() {
                   </td>
                   <td>{u.email}</td>
                   <td><span className="status-pill" style={rolePillStyle(u.role)}>{ROLE_LABELS[u.role]}</span></td>
-                  <td style={{ fontFamily: 'Menlo,monospace', fontSize: 11, color: '#888' }}>{u.password}</td>
+                  <td style={{ fontFamily: 'Menlo,monospace', fontSize: 11, color: '#888' }}>
+                    {me?.role === 'branch_manager' ? u.password : '••••••••'}
+                  </td>
                   <td style={{ textAlign: 'right' }}>
                     <button className="form-btn secondary" style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setEdit(u)}>
                       {me && me.id === u.id ? 'Edit (you)' : 'Edit'}
