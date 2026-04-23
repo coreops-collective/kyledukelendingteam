@@ -52,14 +52,11 @@ function inRateBucket(rate, bucketLabel) {
   return rate >= b.min && rate <= b.max;
 }
 
-// Build INCOME rows from PAST_CLIENTS (historical closings — Funded)
+// Build INCOME rows from PAST_CLIENTS (historical closings — Funded).
+// No dedupe: All Loans and Income must show the same unit count.
 function buildIncome() {
-  const seen = new Set();
   const rows = [];
   PAST_CLIENTS.forEach((pc) => {
-    const key = (pc.name || '') + '|' + (pc.closeDate || '');
-    if (seen.has(key)) return;
-    seen.add(key);
     const lo = pc.lo || 'Kyle';
     rows.push({
       client: pc.name,
