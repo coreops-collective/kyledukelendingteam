@@ -146,7 +146,7 @@ export default function Partners() {
               <div key={p.name} className="partner-card vip" style={{ cursor: 'pointer' }} onClick={() => openPartner(p)}>
                 <div className="partner-name">{p.name}</div>
                 <div className="partner-brokerage">{partnerLoc(p)}</div>
-                <div className="partner-stat"><span>Total Closings</span><strong>{p.totalClosings || 0}</strong></div>
+                <div className="partner-stat"><span>Total Closings</span><strong>{p.totalClosings || p.deals || 0}</strong></div>
                 <div className="partner-stat"><span>Total Volume</span><strong>{fmt$M(p.totalVolume || p.lifetime || 0)}</strong></div>
                 <div className="partner-stat"><span>YTD Closings</span><strong>{p.ytdClosings || p.closed || 0}</strong></div>
                 <div className="partner-stat"><span>YTD Volume</span><strong>{fmt$M(p.ytdVolume || p.volume || 0)}</strong></div>
