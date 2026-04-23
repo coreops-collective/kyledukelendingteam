@@ -11,7 +11,7 @@ const EVENT_TYPES = [
 const DEFAULT_TEMPLATES = {
   'loan.created': {
     subject: 'New loan intake: {{borrower_first}} {{borrower_last}}',
-    body: 'A new loan was submitted.\n\nBorrower: {{borrower_first}} {{borrower_last}}\nPhone: {{phone}}\nEmail: {{email}}\nLoan Officer: {{loan_officer}}\nType: {{loan_type}}\nPurpose: {{purpose}}\nStage: {{stage}}\n\nLog in to see the full record.',
+    body: 'A new loan was submitted.\n\nBorrower: {{borrower_first}} {{borrower_last}}\nPhone: {{phone}}\nEmail: {{email}}\nLoan Officer: {{loan_officer}}\nType: {{loan_type}}\nPurpose: {{purpose}}\nStage: {{stage}}\n\nLog in to view: {{dashboard_url}}',
   },
   'loan.stage_changed': {
     subject: 'Loan stage changed: {{borrower}} → {{new_stage}}',
