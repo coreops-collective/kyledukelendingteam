@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { STAGES, REFI_WATCH_STAGE, PRE_CONTRACT_STAGES, stageByKey } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
@@ -22,6 +22,13 @@ export default function NewLoan() {
     notes: '',
   });
   const [toast, setToast] = useState(null);
+
+  // Auto-dismiss toasts after 3s.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -152,8 +159,15 @@ export default function NewLoan() {
     }
 
     markLoansDirty();
-    setToast({ title: 'New Loan Intake', msg: `${form.first} ${form.last} added to pipeline` });
+    const isFresh = stageKey === 'fresh';
+    setToast({
+      title: 'New Loan Intake',
+      msg: isFresh
+        ? `${form.first} ${form.last} added — LOA notified`
+        : `${form.first} ${form.last} added to pipeline`,
+    });
     try { await sbInsert('loan_intakes', row); } catch { /* non-fatal — table may not exist */ }
+    if (!isFresh) return; // Skip notification unless this is a New Contract.
     // Fire-and-forget notification (email rules configured in Setup).
     fetch('/.netlify/functions/send-notification', {
       method: 'POST',
@@ -164,7 +178,12 @@ export default function NewLoan() {
 
   return (
     <div>
-      <div className="notify-chip"><span className="notify-chip-dot" />On submit → saved to database + notifies configured recipients</div>
+      <div className="notify-chip">
+        <span className="notify-chip-dot" />
+        {form.status === 'fresh'
+          ? 'On submit → saved + LOA notified (New Contract)'
+          : 'On submit → saved'}
+      </div>
       <div className="form-card">
         <div className="section-header">
           <div className="section-title">New Loan Intake</div>
