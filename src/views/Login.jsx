@@ -3,6 +3,10 @@ import { USERS } from '../data/users.js';
 import { setCurrentUser } from '../lib/auth.js';
 
 const REMEMBER_KEY = 'kdt.rememberEmail';
+const REMEMBER_PASS_KEY = 'kdt.rememberPass';
+// Light obfuscation only — this is browser-local convenience, not security.
+const encodePass = (p) => btoa(unescape(encodeURIComponent(p)));
+const decodePass = (p) => { try { return decodeURIComponent(escape(atob(p))); } catch { return ''; } };
 
 export default function Login({ onSuccess }) {
   const [email, setEmail] = useState('');
@@ -14,10 +18,12 @@ export default function Login({ onSuccess }) {
   const [forgotMsg, setForgotMsg] = useState('');
   const [forgotSending, setForgotSending] = useState(false);
 
-  // Prefill remembered email on mount
+  // Prefill remembered email + password on mount
   useEffect(() => {
-    const saved = localStorage.getItem(REMEMBER_KEY);
-    if (saved) { setEmail(saved); setRemember(true); }
+    const savedEmail = localStorage.getItem(REMEMBER_KEY);
+    const savedPass = localStorage.getItem(REMEMBER_PASS_KEY);
+    if (savedEmail) { setEmail(savedEmail); setRemember(true); }
+    if (savedPass) { setPass(decodePass(savedPass)); }
   }, []);
 
   function onSubmit(ev) {
@@ -26,8 +32,13 @@ export default function Login({ onSuccess }) {
       (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === pass
     );
     if (!user) { setErr('Invalid email or password'); return; }
-    if (remember) localStorage.setItem(REMEMBER_KEY, email.trim());
-    else localStorage.removeItem(REMEMBER_KEY);
+    if (remember) {
+      localStorage.setItem(REMEMBER_KEY, email.trim());
+      localStorage.setItem(REMEMBER_PASS_KEY, encodePass(pass));
+    } else {
+      localStorage.removeItem(REMEMBER_KEY);
+      localStorage.removeItem(REMEMBER_PASS_KEY);
+    }
     setCurrentUser(user);
     onSuccess?.(user);
   }
@@ -109,7 +120,7 @@ export default function Login({ onSuccess }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0 14px', fontSize: 12 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#444' }}>
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-              Remember email
+              Remember me
             </label>
             <button
               type="button"
