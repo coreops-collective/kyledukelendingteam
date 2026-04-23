@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { STAGES, REFI_WATCH_STAGE, PRE_CONTRACT_STAGES, stageByKey } from '../data/stages.js';
+import { STAGES, REFI_WATCH_STAGE, PRE_CONTRACT_STAGES, stageByKey, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { sbInsert } from '../lib/supabase.js';
@@ -172,7 +172,14 @@ export default function NewLoan() {
     fetch('/.netlify/functions/send-notification', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event_type: 'loan.created', context: row }),
+      body: JSON.stringify({
+        event_type: 'loan.created',
+        context: {
+          ...row,
+          stage: STAGE_TO_STATUS[row.stage] || row.stage,
+          dashboard_url: 'https://thekyleduketeam.netlify.app/',
+        },
+      }),
     }).catch(() => { /* silent */ });
   }
 

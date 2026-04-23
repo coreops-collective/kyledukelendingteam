@@ -23,6 +23,7 @@ export default function NotificationRules() {
   const [rules, setRules] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [add, setAdd] = useState(false);
+  const [edit, setEdit] = useState(null);
 
   async function refresh() {
     const { data } = await supabase.from('notification_rules').select('*').order('created_at', { ascending: false });
@@ -90,7 +91,8 @@ export default function NotificationRules() {
                       <span style={{ fontSize: 12, color: r.enabled ? '#1a6b4a' : '#888' }}>{r.enabled ? 'On' : 'Off'}</span>
                     </label>
                   </td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button className="form-btn secondary" onClick={() => setEdit(r)} style={{ padding: '4px 10px', fontSize: 10, marginRight: 6 }}>Edit</button>
                     <button className="form-btn secondary" onClick={() => remove(r.id)} style={{ padding: '4px 10px', fontSize: 10, color: '#c62828' }}>Delete</button>
                   </td>
                 </tr>
@@ -100,19 +102,23 @@ export default function NotificationRules() {
         )}
       </div>
       {add && <AddRuleDrawer onClose={() => setAdd(false)} onSaved={refresh} />}
+      {edit && <AddRuleDrawer initial={edit} onClose={() => setEdit(null)} onSaved={refresh} />}
     </div>
   );
 }
 
-function AddRuleDrawer({ onClose, onSaved }) {
-  const [event_type, setEventType] = useState(EVENT_TYPES[0].value);
-  const [mode, setMode] = useState('role'); // role | user | email
-  const [role, setRole] = useState('loan_officer');
-  const [user_id, setUserId] = useState(USERS[0]?.id || '');
-  const [extra_email, setExtraEmail] = useState('');
-  const [subject_template, setSubject] = useState(DEFAULT_TEMPLATES[EVENT_TYPES[0].value].subject);
-  const [body_template, setBody] = useState(DEFAULT_TEMPLATES[EVENT_TYPES[0].value].body);
-  const [stage_filter, setStageFilter] = useState([]);
+function AddRuleDrawer({ onClose, onSaved, initial }) {
+  const isEdit = !!initial;
+  const [event_type, setEventType] = useState(initial?.event_type || EVENT_TYPES[0].value);
+  const [mode, setMode] = useState(
+    initial?.role ? 'role' : initial?.user_id ? 'user' : initial?.extra_email ? 'email' : 'role'
+  );
+  const [role, setRole] = useState(initial?.role || 'loan_officer');
+  const [user_id, setUserId] = useState(initial?.user_id || USERS[0]?.id || '');
+  const [extra_email, setExtraEmail] = useState(initial?.extra_email || '');
+  const [subject_template, setSubject] = useState(initial?.subject_template || DEFAULT_TEMPLATES[initial?.event_type || EVENT_TYPES[0].value].subject);
+  const [body_template, setBody] = useState(initial?.body_template || DEFAULT_TEMPLATES[initial?.event_type || EVENT_TYPES[0].value].body);
+  const [stage_filter, setStageFilter] = useState(Array.isArray(initial?.stage_filter) ? initial.stage_filter : []);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const allStages = [...STAGES, REFI_WATCH_STAGE];
@@ -137,7 +143,9 @@ function AddRuleDrawer({ onClose, onSaved }) {
     };
     if (mode === 'email' && !row.extra_email) { setErr('Enter an email address'); return; }
     setSaving(true);
-    const { error } = await supabase.from('notification_rules').insert(row);
+    const { error } = isEdit
+      ? await supabase.from('notification_rules').update(row).eq('id', initial.id)
+      : await supabase.from('notification_rules').insert(row);
     setSaving(false);
     if (error) { setErr(error.message); return; }
     onSaved(); onClose();
@@ -150,7 +158,7 @@ function AddRuleDrawer({ onClose, onSaved }) {
         <div className="drawer-head">
           <button className="drawer-close" onClick={onClose}>×</button>
           <div className="drawer-stage">Notification Rule</div>
-          <div className="drawer-borrower">Add Rule</div>
+          <div className="drawer-borrower">{isEdit ? 'Edit Rule' : 'Add Rule'}</div>
         </div>
         <div className="drawer-body">
           <form className="form-grid" style={{ padding: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }} onSubmit={(e) => e.preventDefault()}>
@@ -223,7 +231,7 @@ function AddRuleDrawer({ onClose, onSaved }) {
         </div>
         <div className="drawer-actions">
           <button className="drawer-btn" onClick={onClose}>Cancel</button>
-          <button className="drawer-btn primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Create Rule'}</button>
+          <button className="drawer-btn primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Rule'}</button>
         </div>
       </aside>
     </>
