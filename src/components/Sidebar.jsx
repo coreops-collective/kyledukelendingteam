@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ROLE_LABELS } from '../data/users.js';
-import { setCurrentUser } from '../lib/auth.js';
+import { setCurrentUser, isAdmin, isBranchManager } from '../lib/auth.js';
 
 const NAV_GROUPS = [
   { label: 'Overview', className: '', items: [
