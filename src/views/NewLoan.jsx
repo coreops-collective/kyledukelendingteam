@@ -99,8 +99,59 @@ export default function NewLoan() {
       underwriting_path: isContract ? (form.uwPath || null) : null,
       borrower_story: isContract ? (form.story || null) : null,
     };
-    setToast({ title: 'New Loan Intake', msg: `${form.first} ${form.last} submitted — notifying recipients` });
-    await sbInsert('loan_intakes', row);
+    // Also push into the in-memory LOANS array so it shows up immediately
+    // in Loan Management / Pipeline / All Loans.
+    const stageKey = form.status || 'new';
+    const loanType = form.type === 'Conventional' ? 'CONV' : form.type;
+    const purposeShort = form.purpose?.toLowerCase().includes('refi') ? 'Refi' : 'Purchase';
+    const loFirst = (form.lo || '').split(' ')[0] || 'Kyle';
+    if (form.kind === 'existing' && form.existingId) {
+      // Update existing loan in place.
+      const ex = LOANS.find((l) => l.id === form.existingId);
+      if (ex) {
+        ex.stage = stageKey;
+        ex.lo = loFirst;
+        ex.type = loanType || ex.type;
+        ex.purpose = purposeShort;
+        if (form.phone) ex.phone = form.phone;
+        if (form.email) ex.email = form.email;
+        if (propAddr) ex.property = propAddr;
+        if (num(form.amt)) ex.amount = num(form.amt);
+        if (form.agent) ex.agent = form.agent;
+        if (form.notes) ex.notes = form.notes;
+        if (form.closeDate) ex.closeDate = form.closeDate;
+        if (form.hasCo === 'Yes') {
+          ex.c2first = form.coFirst; ex.c2last = form.coLast;
+          ex.c2phone = form.coPhone; ex.c2email = form.coEmail;
+        }
+      }
+    } else {
+      const newId = 'NL' + Date.now().toString(36).toUpperCase();
+      LOANS.push({
+        id: newId,
+        borrower: `${form.last}, ${form.first}`,
+        amount: num(form.amt),
+        stage: stageKey,
+        type: loanType || 'CONV',
+        purpose: purposeShort,
+        lo: loFirst,
+        loa: '',
+        phone: form.phone || '',
+        email: form.email || '',
+        property: propAddr || 'TBD',
+        closeDate: isContract ? (form.closeDate || '') : (form.estClose || ''),
+        agent: form.agent || '',
+        leadSource: form.src || '',
+        notes: form.notes || '',
+        c2first: form.hasCo === 'Yes' ? form.coFirst : '',
+        c2last: form.hasCo === 'Yes' ? form.coLast : '',
+        c2phone: form.hasCo === 'Yes' ? form.coPhone : '',
+        c2email: form.hasCo === 'Yes' ? form.coEmail : '',
+      });
+    }
+
+    setToast({ title: 'New Loan Intake', msg: `${form.first} ${form.last} added to pipeline` });
+    try { await sbInsert('loan_intakes', row); } catch { /* non-fatal — table may not exist */ }
     // Fire-and-forget notification (email rules configured in Setup).
     fetch('/.netlify/functions/send-notification', {
       method: 'POST',
