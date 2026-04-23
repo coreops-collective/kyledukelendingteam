@@ -221,6 +221,20 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
 .form-btn.secondary:hover{background:#f4f4f6}
 .notify-chip{display:inline-flex;align-items:center;gap:6px;background:#fff8e1;border:1px solid #f5e3a1;color:#7a6300;padding:6px 12px;border-radius:14px;font-size:11px;font-weight:600;margin-bottom:14px}
 .notify-chip-dot{width:6px;height:6px;border-radius:50%;background:#f5c518}
+/* All Loans (past clients) table — cleaner than the Loan Management spreadsheet */
+.al-table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid #e5e5e5;border-radius:10px;overflow:hidden;font-size:12px}
+.al-table thead th{background:linear-gradient(135deg,#0A0A0A,#2d0d0d);color:#fff;font-family:'Oswald',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:12px 14px;text-align:left;border-bottom:3px solid var(--brand-red);white-space:nowrap}
+.al-table thead th.num{text-align:right}
+.al-table tbody td{padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#222;vertical-align:middle;white-space:nowrap}
+.al-table tbody tr{transition:background .12s}
+.al-table tbody tr:nth-child(even) td{background:#fafafa}
+.al-table tbody tr:hover td{background:#fff3c4}
+.al-table td.num{text-align:right;font-family:'Oswald',sans-serif;font-weight:700;padding-right:18px}
+.al-table td.client{font-weight:700;color:#111}
+.al-table td.prop{max-width:280px;overflow:hidden;text-overflow:ellipsis;color:#555;font-size:11.5px}
+.al-table td.savings{color:#1a6b4a;font-weight:700;text-align:right;padding-right:18px}
+.al-table-wrap{overflow-x:auto;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+
 /* Loan Management spreadsheet */
 .lm-wrap{background:#fff;border:1px solid var(--border);border-radius:var(--card-radius);overflow:hidden;box-shadow:var(--shadow-sm)}
 .lm-scroll{overflow-x:auto;overflow-y:visible;max-width:100%}

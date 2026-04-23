@@ -186,54 +186,52 @@ export default function AllLoans() {
           {filtered.length === 0 && <div className="muted" style={{ textAlign: 'center', padding: 40 }}>No matches</div>}
         </div>
       ) : (
-      <div className="lm-wrap">
-        <div className="lm-scroll">
-          <table className="lm-table">
-            <thead>
-              <tr>
-                <th style={{ width: 190 }}>Client</th>
-                <th style={{ width: 110 }}>Close Date</th>
-                <th style={{ width: 110 }}>Sale</th>
-                <th style={{ width: 260 }}>Property</th>
-                <th style={{ width: 110 }}>Price</th>
-                <th style={{ width: 110 }}>Loan Amount</th>
-                <th style={{ width: 80 }}>Type</th>
-                <th style={{ width: 80 }}>Rate</th>
-                {refiMode && <th style={{ width: 130 }}>Monthly Savings</th>}
-                <th style={{ width: 180 }}>Agent</th>
-                <th style={{ width: 130 }}>Phone</th>
-                <th style={{ width: 200 }}>Email</th>
-                <th style={{ width: 80 }}>LO</th>
+      <div className="al-table-wrap">
+        <table className="al-table">
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Close Date</th>
+              <th>Sale</th>
+              <th>Property</th>
+              <th className="num">Price</th>
+              <th className="num">Loan Amount</th>
+              <th>Type</th>
+              <th className="num">Rate</th>
+              {refiMode && <th className="num">Monthly Savings</th>}
+              <th>Agent</th>
+              <th>Phone</th>
+              <th>Email</th>
+              <th>LO</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((c, i) => (
+              <tr
+                key={(c.name || '') + '|' + (c.closeDate || '') + '|' + i}
+                onClick={() => setOpenClient(c)}
+                style={{ cursor: 'pointer' }}
+              >
+                <td className="client">{c.name}</td>
+                <td>{c.closeDate || '—'}</td>
+                <td>{c.saleType || '—'}</td>
+                <td className="prop">{c.property || '—'}</td>
+                <td className="num">{fmt$(c.price)}</td>
+                <td className="num">{fmt$(c.amount)}</td>
+                <td>{c.type || '—'}</td>
+                <td className="num">{c.rate ? c.rate + '%' : '—'}</td>
+                {refiMode && (() => {
+                  const savings = monthlyPI(c.amount, c.rate) - monthlyPI(c.amount, parseFloat(todaysRate));
+                  return <td className="savings">{savings > 0 ? fmt$(savings) + '/mo' : '—'}</td>;
+                })()}
+                <td>{c.agent || '—'}</td>
+                <td>{c.phone || '—'}</td>
+                <td>{c.email || '—'}</td>
+                <td>{c.lo || '—'}</td>
               </tr>
-            </thead>
-            <tbody>
-              {filtered.map((c, i) => (
-                <tr
-                  key={(c.name || '') + '|' + (c.closeDate || '') + '|' + i}
-                  onClick={() => setOpenClient(c)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td style={{ fontWeight: 600 }}>{c.name}</td>
-                  <td>{c.closeDate || '—'}</td>
-                  <td>{c.saleType || '—'}</td>
-                  <td>{c.property || '—'}</td>
-                  <td className="money">{fmt$(c.price)}</td>
-                  <td className="money">{fmt$(c.amount)}</td>
-                  <td>{c.type || '—'}</td>
-                  <td>{c.rate ? c.rate + '%' : '—'}</td>
-                  {refiMode && (() => {
-                    const savings = monthlyPI(c.amount, c.rate) - monthlyPI(c.amount, parseFloat(todaysRate));
-                    return <td className="money" style={{ color: '#1a6b4a', fontWeight: 600 }}>{savings > 0 ? fmt$(savings) + '/mo' : '—'}</td>;
-                  })()}
-                  <td>{c.agent || '—'}</td>
-                  <td>{c.phone || '—'}</td>
-                  <td>{c.email || '—'}</td>
-                  <td>{c.lo || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
       )}
 
