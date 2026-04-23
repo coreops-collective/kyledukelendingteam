@@ -9,7 +9,9 @@ const LO_OPTIONS = ['Kyle Duke', 'Missy'];
 export default function NewLoan() {
   const [form, setForm] = useState({
     lo: '', kind: '', existingId: '', status: '',
-    first: '', last: '', co: '', phone: '', email: '',
+    first: '', last: '', phone: '', email: '',
+    hasCo: 'No',
+    coFirst: '', coLast: '', coPhone: '', coEmail: '',
     type: 'VA', purpose: 'Purchase', amt: '', fico: '', preapp: '',
     agent: '', src: 'Realtor Referral',
     estClose: '',
@@ -73,7 +75,10 @@ export default function NewLoan() {
       client_kind: form.kind || 'new',
       existing_loan_id: form.kind === 'existing' ? (form.existingId || null) : null,
       borrower_first: form.first, borrower_last: form.last,
-      co_borrower: form.co || null, phone: form.phone || null, email: form.email || null,
+      co_borrower: form.hasCo === 'Yes' ? `${form.coFirst} ${form.coLast}`.trim() : null,
+      co_borrower_phone: form.hasCo === 'Yes' ? (form.coPhone || null) : null,
+      co_borrower_email: form.hasCo === 'Yes' ? (form.coEmail || null) : null,
+      phone: form.phone || null, email: form.email || null,
       loan_officer: form.lo || null, loan_type: form.type || null, purpose: form.purpose || null,
       estimated_amount: num(form.amt),
       credit_score: num(form.fico) ? Math.round(num(form.fico)) : null,
@@ -155,9 +160,24 @@ export default function NewLoan() {
 
           <div className="form-field"><label className="req">Borrower First Name</label><input value={form.first} onChange={set('first')} required /></div>
           <div className="form-field"><label className="req">Borrower Last Name</label><input value={form.last} onChange={set('last')} required /></div>
-          <div className="form-field"><label>Co-Borrower (if any)</label><input value={form.co} onChange={set('co')} /></div>
           <div className="form-field"><label className="req">Phone</label><input type="tel" value={form.phone} onChange={set('phone')} required /></div>
-          <div className="form-field full"><label className="req">Email</label><input type="email" value={form.email} onChange={set('email')} required /></div>
+          <div className="form-field"><label className="req">Email</label><input type="email" value={form.email} onChange={set('email')} required /></div>
+
+          <div className="form-field full">
+            <label className="req">Is there a co-borrower?</label>
+            <select value={form.hasCo} onChange={set('hasCo')}>
+              <option>No</option>
+              <option>Yes</option>
+            </select>
+          </div>
+          {form.hasCo === 'Yes' && (
+            <>
+              <div className="form-field"><label className="req">Co-Borrower First Name</label><input value={form.coFirst} onChange={set('coFirst')} required /></div>
+              <div className="form-field"><label className="req">Co-Borrower Last Name</label><input value={form.coLast} onChange={set('coLast')} required /></div>
+              <div className="form-field"><label className="req">Co-Borrower Phone</label><input type="tel" value={form.coPhone} onChange={set('coPhone')} required /></div>
+              <div className="form-field"><label className="req">Co-Borrower Email</label><input type="email" value={form.coEmail} onChange={set('coEmail')} required /></div>
+            </>
+          )}
           <div className="form-field"><label className="req">Loan Type</label>
             <select value={form.type} onChange={set('type')} required>
               <option>VA</option><option>FHA</option><option>Conventional</option><option>Jumbo</option><option>Non-QM</option>
