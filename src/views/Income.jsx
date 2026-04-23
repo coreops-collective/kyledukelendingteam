@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { PAST_CLIENTS } from '../data/pastClients.js';
 import { LOANS } from '../data/loans.js';
+import FilterDropdown from '../components/FilterDropdown.jsx';
 
 // ---- helpers (ported from legacy) ----
 const fmt$ = (n) =>
@@ -193,12 +194,7 @@ export default function Income() {
   const cur = kyleStats(thisM, thisY);
   const nxt = kyleProjected(next.getMonth(), next.getFullYear());
 
-  const cycleFilter = (key, options) => {
-    const curVal = filters[key];
-    const idx = options.indexOf(curVal);
-    const nextVal = options[(idx + 1) % options.length];
-    setFilters((f) => ({ ...f, [key]: nextVal }));
-  };
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
 
   const resetFilters = () =>
     setFilters({ year: 'All', month: 'All', status: 'All', lo: 'All', rate: 'All' });
@@ -248,37 +244,11 @@ export default function Income() {
       </div>
 
       <div className="income-filters">
-        <div className="income-filter" onClick={() => cycleFilter('year', ['All', ...years])}>
-          <span className="income-filter-label">Year</span>
-          <span className="income-filter-val">{filters.year}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div className="income-filter" onClick={() => cycleFilter('month', ['All', ...months])}>
-          <span className="income-filter-label">Month</span>
-          <span className="income-filter-val">{filters.month}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div className="income-filter" onClick={() => cycleFilter('status', ['All', 'Funded', 'Adversed'])}>
-          <span className="income-filter-label">Status</span>
-          <span className="income-filter-val">{filters.status}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div
-          className="income-filter"
-          onClick={() => cycleFilter('lo', ['All', ...new Set(rows.map((r) => r.lo))])}
-        >
-          <span className="income-filter-label">LO</span>
-          <span className="income-filter-val">{filters.lo}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div
-          className="income-filter"
-          onClick={() => cycleFilter('rate', RATE_BUCKETS.map((b) => b.label))}
-        >
-          <span className="income-filter-label">Rate</span>
-          <span className="income-filter-val">{filters.rate}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
+        <FilterDropdown label="Year" value={filters.year} options={['All', ...years.map(String)]} onChange={(v) => setFilter('year', v)} />
+        <FilterDropdown label="Month" value={filters.month} options={['All', ...months]} onChange={(v) => setFilter('month', v)} />
+        <FilterDropdown label="Status" value={filters.status} options={['All', 'Funded', 'Adversed']} onChange={(v) => setFilter('status', v)} />
+        <FilterDropdown label="LO" value={filters.lo} options={['All', ...new Set(rows.map((r) => r.lo))]} onChange={(v) => setFilter('lo', v)} />
+        <FilterDropdown label="Rate" value={filters.rate} options={RATE_BUCKETS.map((b) => b.label)} onChange={(v) => setFilter('rate', v)} />
         <div
           className="income-filter"
           style={{ background: '#5a0e1a', cursor: 'pointer' }}

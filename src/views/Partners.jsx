@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { PARTNERS } from '../data/partners.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
+import FilterDropdown from '../components/FilterDropdown.jsx';
 
 // Format helpers — mirror legacy fmt$M / fmt$
 const fmt$ = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -62,12 +63,7 @@ export default function Partners() {
   const vipPartners = filtered.filter((p) => p.vip);
   const standardPartners = [...filtered.filter((p) => !p.vip)].sort((a, b) => (b.deals || 0) - (a.deals || 0));
 
-  const cycle = (key, options) => {
-    const cur = filters[key];
-    const idx = options.indexOf(cur);
-    const next = options[(idx + 1) % options.length];
-    setFilters((f) => ({ ...f, [key]: next }));
-  };
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
 
   const openPartner = (p) => {
     setToast({ title: 'Partner', msg: `${p.name} — detail drawer not yet ported` });
@@ -126,21 +122,9 @@ export default function Partners() {
           onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
           style={{ background: '#fff', border: '1px solid var(--border)', padding: '8px 14px', borderRadius: 20, fontSize: 12, minWidth: 240, color: '#222' }}
         />
-        <div className="income-filter" onClick={() => cycle('state', stateOptions)}>
-          <span className="income-filter-label">State</span>
-          <span className="income-filter-val">{filters.state}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div className="income-filter" onClick={() => cycle('tier', TIER_OPTIONS)}>
-          <span className="income-filter-label">Tier</span>
-          <span className="income-filter-val">{filters.tier}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
-        <div className="income-filter" onClick={() => cycle('deals', DEAL_BUCKETS)}>
-          <span className="income-filter-label">Deals</span>
-          <span className="income-filter-val">{filters.deals}</span>
-          <span className="income-filter-arrow">▾</span>
-        </div>
+        <FilterDropdown label="State" value={filters.state} options={stateOptions} onChange={(v) => setFilter('state', v)} />
+        <FilterDropdown label="Tier" value={filters.tier} options={TIER_OPTIONS} onChange={(v) => setFilter('tier', v)} />
+        <FilterDropdown label="Deals" value={filters.deals} options={DEAL_BUCKETS} onChange={(v) => setFilter('deals', v)} />
         <div
           className="income-filter"
           style={{ background: '#5a0e1a', cursor: 'pointer' }}
