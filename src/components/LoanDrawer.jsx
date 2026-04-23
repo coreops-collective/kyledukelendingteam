@@ -5,7 +5,7 @@ import { markLoansDirty } from '../lib/loansStore.js';
 
 // Every pipeline stage label so the Status dropdown works for both
 // pre-contract (New Lead, Applied, HOT PA, REFI Watch) and LOS stages.
-const STATUSES = ['New Lead','Applied','HOT PA','REFI Watch','New Contract','Disclosed','Processing','Underwriting','CTC Required','CTC','BTP','Approved','Funded','Cold / Archived'];
+const STATUSES = ['New Lead','Applied','HOT PA','REFI Watch','New Contract','Disclosed','Processing','Underwriting','CTC Required','CTC','BTP','Approved','Funded','Archived'];
 const TYPES = ['CONV','FHA','VA','Jumbo'];
 const SALE_TYPES = ['PURCHASE','REFINANCE'];
 const LEAD_SOURCES = ['Realtor Referral','Self-Generated','Past Client','Veteran Network','Zillow','Other'];

@@ -10,7 +10,7 @@ export const STAGES = [
   { key: 'ctc', label: 'Clear to Close' },
   { key: 'approved', label: 'Approved' },
   { key: 'funded', label: 'Funded' },
-  { key: 'cold', label: 'Cold / Archived' },
+  { key: 'cold', label: 'Archived' },
 ];
 
 export const REFI_WATCH_STAGE = { key: 'refiwatch', label: 'REFI - Watch' };
@@ -19,14 +19,14 @@ export const STAGE_TO_STATUS = {
   new: 'New Lead', hotpa: 'HOT PA', applied: 'Applied', refiwatch: 'REFI Watch', fresh: 'New Contract',
   disclosed: 'Disclosed', processing: 'Processing', uw: 'Underwriting',
   ctcreq: 'CTC Required', ctc: 'CTC', approved: 'Approved', funded: 'Funded',
-  cold: 'Cold / Archived',
+  cold: 'Archived',
 };
 
 export const STATUS_TO_STAGE = {
   'New Lead': 'new', 'HOT PA': 'hotpa', 'Applied': 'applied', 'REFI Watch': 'refiwatch', 'New Contract': 'fresh',
   'Disclosed': 'disclosed', 'Processing': 'processing', 'Underwriting': 'uw',
   'CTC Required': 'ctcreq', 'CTC': 'ctc', 'Approved': 'approved', 'Funded': 'funded',
-  'Cold / Archived': 'cold',
+  'Archived': 'cold',
   'BTP': 'processing',
 };
 
