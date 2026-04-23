@@ -207,10 +207,56 @@ function EditCheck({ value, onChange }) {
   );
 }
 
+// ── Color legend ────────────────────────────────────────────────
+function ColorLegend() {
+  const swatches = [
+    { label: 'Disclosed', bg: '#e1bee7', bar: '#7b1fa2' },
+    { label: 'Processing', bg: '#bbdefb', bar: '#1976d2' },
+    { label: 'Underwriting', bg: '#bbdefb', bar: '#1976d2' },
+    { label: 'CTC Required', bg: '#ffe082', bar: '#f57c00' },
+    { label: 'CTC', bg: '#fff3c4', bar: '#f5c518' },
+    { label: 'Approved', bg: '#dcedc8', bar: '#2e7d32' },
+    { label: 'Funded', bg: '#a5d6a7', bar: '#2e7d32' },
+    { label: 'BTP / Adversed', bg: '#ffcdd2', bar: '#c62828' },
+  ];
+  const dateSwatches = [
+    { label: 'Date overdue', bg: '#ffebee', color: '#c62828' },
+    { label: 'Due within 7 days', bg: '#fff8e1', color: '#e65100' },
+  ];
+  return (
+    <div style={{
+      background: '#fff', border: '1px solid var(--border)', borderRadius: 10,
+      padding: '10px 14px', marginBottom: 14, display: 'flex', flexWrap: 'wrap',
+      gap: 18, alignItems: 'center', fontSize: 11,
+    }}>
+      <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginRight: 4 }}>
+        Key
+      </div>
+      {swatches.map((s) => (
+        <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 18, height: 14, background: s.bg, borderLeft: `3px solid ${s.bar}`, borderRadius: 2 }} />
+          {s.label}
+        </div>
+      ))}
+      <div style={{ width: 1, height: 18, background: '#e5e5e5', margin: '0 4px' }} />
+      {dateSwatches.map((s) => (
+        <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ background: s.bg, color: s.color, fontFamily: 'Menlo,monospace', fontWeight: 700, fontSize: 10, padding: '2px 6px', borderRadius: 3 }}>
+            MM/DD
+          </span>
+          {s.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Table view (spreadsheet) ────────────────────────────────────
 function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan }) {
   const agentOpts = [...PARTNERS].map(p => p.name).sort((a,b) => a.localeCompare(b));
   return (
+    <>
+    <ColorLegend />
     <div className="lm-wrap">
       <div className="lm-scroll">
         <table className="lm-table">
@@ -303,6 +349,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan }) {
         </table>
       </div>
     </div>
+    </>
   );
 }
 
