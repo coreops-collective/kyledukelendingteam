@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { STATUS_TO_STAGE } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
+import { markLoansDirty } from '../lib/loansStore.js';
 
 const STATUSES = ['New Contract','Disclosed','Processing','Underwriting','CTC Required','CTC','BTP','Approved','Funded'];
 const TYPES = ['CONV','FHA','VA','Jumbo'];
@@ -26,6 +27,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
       if (nextStage) loan.stage = nextStage;
     }
     force((n) => n + 1);
+    markLoansDirty();
     onSaved?.();
   };
 

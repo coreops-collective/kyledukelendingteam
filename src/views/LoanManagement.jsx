@@ -5,6 +5,7 @@ import { PARTNERS } from '../data/partners.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
+import { markLoansDirty } from '../lib/loansStore.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -471,6 +472,7 @@ export default function LoanManagement() {
     const loan = LOANS.find((l) => l.id === id);
     if (!loan) return;
     loan[key] = value;
+    markLoansDirty();
     bump();
   }, [bump]);
 
@@ -480,6 +482,7 @@ export default function LoanManagement() {
     loan.status = statusValue;
     const nextStage = STATUS_TO_STAGE[statusValue];
     if (nextStage) loan.stage = nextStage;
+    markLoansDirty();
     bump();
   }, [bump]);
 
@@ -487,6 +490,7 @@ export default function LoanManagement() {
     if (!notesFor) return;
     const loan = LOANS.find((l) => l.id === notesFor);
     if (loan) loan.notes = value;
+    markLoansDirty();
     bump();
   }, [notesFor, bump]);
 

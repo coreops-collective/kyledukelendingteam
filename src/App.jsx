@@ -23,6 +23,7 @@ import Setup from './views/Setup.jsx';
 import useAuth from './hooks/useAuth.js';
 import { isAdmin, isBranchManager } from './lib/auth.js';
 import { loadUsersFromSupabase } from './data/users.js';
+import { loadLoansFromSupabase } from './lib/loansStore.js';
 
 const PAGE_META = {
   '/snapshot':      { title: 'Lending Snapshot' },
@@ -70,8 +71,11 @@ export default function App() {
 
   const [usersReady, setUsersReady] = useState(false);
 
-  // Fetch real users from Supabase on mount (same as legacy)
-  useEffect(() => { loadUsersFromSupabase().finally(() => setUsersReady(true)); }, []);
+  // Fetch real users + loans from Supabase on mount (same as legacy)
+  useEffect(() => {
+    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase()])
+      .finally(() => setUsersReady(true));
+  }, []);
 
   // On page reload / fresh tab, always land on the homepage.
   // In-app navigation (clicking a sidebar link) runs after mount and is

@@ -3,6 +3,7 @@ import { LOANS } from '../data/loans.js';
 import { STAGES, REFI_WATCH_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
+import { markLoansDirty } from '../lib/loansStore.js';
 
 const fmt$ = (n) => '$' + Math.round(n).toLocaleString();
 const fmt$M = (n) => n >= 1_000_000 ? '$' + (n / 1_000_000).toFixed(1) + 'M' : '$' + Math.round(n / 1000) + 'k';
@@ -107,6 +108,7 @@ export default function Pipeline() {
     // Keep `status` in sync so Loan Management reflects the change.
     const mappedStatus = STAGE_TO_STATUS[newStageKey];
     if (mappedStatus) loan.status = mappedStatus;
+    markLoansDirty();
     bump();
   }, [bump]);
 

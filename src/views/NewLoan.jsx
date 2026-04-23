@@ -3,6 +3,7 @@ import { STAGES, REFI_WATCH_STAGE, PRE_CONTRACT_STAGES, stageByKey } from '../da
 import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { sbInsert } from '../lib/supabase.js';
+import { markLoansDirty } from '../lib/loansStore.js';
 
 const LO_OPTIONS = ['Kyle Duke', 'Missy'];
 
@@ -150,6 +151,7 @@ export default function NewLoan() {
       });
     }
 
+    markLoansDirty();
     setToast({ title: 'New Loan Intake', msg: `${form.first} ${form.last} added to pipeline` });
     try { await sbInsert('loan_intakes', row); } catch { /* non-fatal — table may not exist */ }
     // Fire-and-forget notification (email rules configured in Setup).
