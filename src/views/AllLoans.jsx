@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { PAST_CLIENTS } from '../data/pastClients.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
+import { getCurrentUser } from '../lib/auth.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -171,10 +172,19 @@ export default function AllLoans() {
                   <div><div className="lbl">Type</div><div className="val">{c.type || '—'}</div></div>
                   <div><div className="lbl">LO</div><div className="val">{c.lo || '—'}</div></div>
                   <div><div className="lbl">Agent</div><div className="val">{c.agent || '—'}</div></div>
+                  <div><div className="lbl">Last Contact</div><div className="val">{c.lastContact || '—'}</div></div>
                   {refiMode && savings > 0 && (
                     <div><div className="lbl" style={{ color: '#1a6b4a' }}>Refi Savings</div><div className="val" style={{ color: '#1a6b4a', fontWeight: 700 }}>{fmt$(savings)}/mo</div></div>
                   )}
                 </div>
+                {c.noteEntries && c.noteEntries.length > 0 && (() => {
+                  const latest = c.noteEntries[0];
+                  return (
+                    <div className="lm-card-notes" style={{ marginTop: 10, padding: '6px 10px', background: '#fff8e1', borderRadius: 6, fontSize: 11, color: '#5a4a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <strong>{latest.by}:</strong> {latest.text.replace(/\n/g, ' · ')}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -239,6 +249,24 @@ export default function AllLoans() {
 
 function PastClientDrawer({ client, refiRate, onClose }) {
   const c = client;
+  const [, force] = useState(0);
+  const [draft, setDraft] = useState('');
+  const set = (key, value) => { c[key] = value; force((n) => n + 1); };
+  const markContactedToday = () => set('lastContact', new Date().toISOString().slice(0, 10));
+
+  const postNote = () => {
+    const text = draft.trim();
+    if (!text) return;
+    const user = getCurrentUser();
+    const entry = {
+      at: new Date().toISOString(),
+      by: user?.name || user?.email || 'Unknown',
+      text,
+    };
+    c.noteEntries = [entry, ...(c.noteEntries || [])];
+    setDraft('');
+    force((n) => n + 1);
+  };
   const monthlyPI = (principal, ratePct) => {
     if (!principal || !ratePct) return 0;
     const r = ratePct / 100 / 12;
@@ -277,6 +305,63 @@ function PastClientDrawer({ client, refiRate, onClose }) {
             <Row label="Agent" value={c.agent} />
             <Row label="Phone" value={c.phone} />
             <Row label="Email" value={c.email} />
+          </div>
+
+          <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eee' }}>
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 10 }}>
+              Follow-Up
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end', marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>Last Contact</div>
+                <input
+                  type="date"
+                  defaultValue={c.lastContact || ''}
+                  onBlur={(e) => set('lastContact', e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box' }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={markContactedToday}
+                className="form-btn primary"
+                style={{ padding: '8px 14px', fontSize: 12, whiteSpace: 'nowrap' }}
+              >
+                Mark today
+              </button>
+            </div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>Add a Note</div>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Conversations, preferences, anniversaries, follow-up reminders…"
+              style={{ width: '100%', minHeight: 80, padding: 12, fontFamily: 'inherit', fontSize: 13, lineHeight: 1.5, border: '1px solid #d0d0d0', borderRadius: 6, resize: 'vertical', boxSizing: 'border-box', marginBottom: 8 }}
+            />
+            <button
+              type="button"
+              onClick={postNote}
+              disabled={!draft.trim()}
+              className="form-btn primary"
+              style={{ padding: '8px 14px', fontSize: 12, opacity: draft.trim() ? 1 : 0.5 }}
+            >
+              Post note
+            </button>
+
+            {c.noteEntries && c.noteEntries.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8 }}>
+                  Notes ({c.noteEntries.length})
+                </div>
+                {c.noteEntries.map((n, i) => (
+                  <div key={i} style={{ padding: '10px 12px', background: '#fafafa', border: '1px solid #eee', borderLeft: '3px solid var(--brand-red)', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>
+                    <div style={{ whiteSpace: 'pre-wrap', color: '#222', lineHeight: 1.5, marginBottom: 6 }}>{n.text}</div>
+                    <div style={{ fontSize: 10, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                      {n.by} · {new Date(n.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {refiRate && c.rate && (
