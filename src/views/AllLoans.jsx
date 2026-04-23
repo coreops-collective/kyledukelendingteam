@@ -60,11 +60,6 @@ export default function AllLoans() {
 
   return (
     <div>
-      <div className="page-title">All Loans</div>
-      <div className="section-sub" style={{ marginBottom: 14 }}>
-        Historical closings · {PAST_CLIENTS.length} past clients on record
-      </div>
-
       <div style={{
         display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap',
         marginBottom: 18, padding: '14px 18px', background: '#fff',
