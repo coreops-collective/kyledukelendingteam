@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from 'react';
 import { LOANS } from '../data/loans.js';
-import { LOS_STAGES, STATUS_TO_STAGE } from '../data/stages.js';
+import { LOS_STAGES, STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
@@ -35,7 +35,7 @@ function getMonthFromDate(s) {
 }
 
 function statusOf(l) {
-  return l.status || l.stage || '';
+  return l.status || STAGE_TO_STATUS[l.stage] || l.stage || '';
 }
 function statusSlug(s) {
   return (s || '').toLowerCase().replace(/[^a-z]/g, '');

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { STATUS_TO_STAGE } from '../data/stages.js';
+import { STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import { markLoansDirty } from '../lib/loansStore.js';
 
@@ -75,7 +75,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
       <aside className="drawer open" style={{ width: 720, maxWidth: '95vw' }}>
         <div className="drawer-head">
           <button className="drawer-close" onClick={onClose}>×</button>
-          <div className="drawer-stage">{loan.status || loan.stage || 'Loan'}</div>
+          <div className="drawer-stage">{loan.status || STAGE_TO_STATUS[loan.stage] || loan.stage || 'Loan'}</div>
           <div className="drawer-borrower">{loan.borrower}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
             {loan.property || '—'} · {fmt$(loan.amount)}

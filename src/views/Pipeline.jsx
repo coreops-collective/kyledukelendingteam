@@ -1,6 +1,6 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { LOANS } from '../data/loans.js';
-import { STAGES, REFI_WATCH_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
+import { STAGES, REFI_WATCH_STAGE, STAGE_TO_STATUS, stageByKey } from '../data/stages.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty } from '../lib/loansStore.js';
@@ -74,6 +74,13 @@ export default function Pipeline() {
   const bump = useCallback(() => force((n) => n + 1), []);
   const [openId, setOpenId] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [toast]);
   const [newLoanOpen, setNewLoanOpen] = useState(false);
 
   const columns = useMemo(() => {
@@ -113,7 +120,12 @@ export default function Pipeline() {
     bump();
 
     // Fire loan.stage_changed event so notification rules (filtered by
-    // stage, e.g. "New Contract") can email recipients. Non-blocking.
+    // stage, e.g. "New Contract") can email recipients. Context includes
+    // both stage_changed-style fields AND loan.created-style fields so
+    // whichever placeholders the user put in the template, they populate.
+    const [lastName, firstName] = (loan.borrower || '').split(',').map((s) => (s || '').trim());
+    const oldLabel = STAGE_TO_STATUS[oldStageKey] || stageByKey(oldStageKey)?.label || oldStageKey;
+    const newLabel = STAGE_TO_STATUS[newStageKey] || stageByKey(newStageKey)?.label || newStageKey;
     fetch('/.netlify/functions/send-notification', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -122,17 +134,35 @@ export default function Pipeline() {
         context: {
           loan_id: loan.id,
           borrower: loan.borrower,
-          old_stage: oldStageKey,
-          new_stage: newStageKey,
-          stage: newStageKey,
+          borrower_first: firstName || '',
+          borrower_last: lastName || '',
+          old_stage: oldLabel,
+          new_stage: newLabel,
+          stage: newLabel,
           lo: loan.lo || '',
+          loan_officer: loan.lo || '',
           loa: loan.loa || '',
+          phone: loan.phone || '',
+          email: loan.email || '',
+          loan_type: loan.type || '',
+          purpose: loan.purpose || '',
           amount: loan.amount || '',
           property: loan.property || '',
           closeDate: loan.closeDate || '',
+          dashboard_url: 'https://thekyleduketeam.netlify.app/',
         },
       }),
-    }).catch(() => { /* silent */ });
+    })
+      .then((res) => res.json().catch(() => ({})))
+      .then((json) => {
+        if (json?.sent > 0) {
+          setToast({ title: 'Notification sent', msg: `Emailed ${json.sent} recipient${json.sent === 1 ? '' : 's'} about ${loan.borrower}` });
+        } else if (json?.reason) {
+          // Only surface if it's surprising (e.g. a stage that had no matching rule).
+          // 'No matching rules' / 'No rules match this stage' are normal, keep quiet.
+        }
+      })
+      .catch(() => { /* silent */ });
   }, [bump]);
 
   return (
