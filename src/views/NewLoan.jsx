@@ -106,7 +106,7 @@ export default function NewLoan() {
 
   return (
     <div>
-      <div className="notify-chip"><span className="notify-chip-dot" />On submit → saved to database + notifies LOA Amber Chen</div>
+      <div className="notify-chip"><span className="notify-chip-dot" />On submit → saved to database + notifies configured recipients</div>
       <div className="form-card">
         <div className="section-header">
           <div className="section-title">New Loan Intake</div>
