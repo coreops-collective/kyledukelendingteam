@@ -1,16 +1,54 @@
 import { useMemo, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { LOANS } from '../data/loans.js';
-import { STAGES, REFI_WATCH_STAGE } from '../data/stages.js';
+import { STAGES, REFI_WATCH_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 
 const fmt$ = (n) => '$' + Math.round(n).toLocaleString();
 const fmt$M = (n) => n >= 1_000_000 ? '$' + (n / 1_000_000).toFixed(1) + 'M' : '$' + Math.round(n / 1000) + 'k';
 
-function StageColumn({ stage, loans, onOpen }) {
-  const total = loans.reduce((a, l) => a + (l.amount || 0), 0);
+function LoanCard({ loan, onOpen, onDragStart, onDragEnd }) {
   return (
-    <div className="kanban-col">
+    <div
+      className="loan-card"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', loan.id);
+        e.dataTransfer.effectAllowed = 'move';
+        onDragStart(loan.id);
+      }}
+      onDragEnd={onDragEnd}
+      onClick={() => onOpen(loan.id)}
+      style={{ cursor: 'grab' }}
+    >
+      <div className="loan-borrower">{loan.borrower}</div>
+      {loan.amount ? <div className="loan-amount">{fmt$(loan.amount)}</div> : null}
+      <div className="loan-meta">
+        <span className="loan-pill">{loan.type}</span>
+        <span className="loan-pill">{loan.purpose}</span>
+        <span className="loan-pill">{loan.lo}</span>
+      </div>
+    </div>
+  );
+}
+
+function StageColumn({ stage, loans, draggingId, onOpen, onDrop, onDragStart, onDragEnd }) {
+  const [hover, setHover] = useState(false);
+  const total = loans.reduce((a, l) => a + (l.amount || 0), 0);
+
+  return (
+    <div
+      className="kanban-col"
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (!hover) setHover(true); }}
+      onDragLeave={() => setHover(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setHover(false);
+        const id = e.dataTransfer.getData('text/plain');
+        if (id) onDrop(id, stage.key);
+      }}
+      style={hover && draggingId ? { outline: '2px dashed #C8102E', outlineOffset: -4, background: '#fff5f5' } : undefined}
+    >
       <div className="kanban-col-head">
         <div className="kanban-col-title">{stage.label}</div>
         <div className="kanban-col-count">
@@ -18,20 +56,13 @@ function StageColumn({ stage, loans, onOpen }) {
         </div>
       </div>
       {loans.map((l) => (
-        <div
+        <LoanCard
           key={l.id}
-          className="loan-card"
-          onClick={() => onOpen(l.id)}
-          style={{ cursor: 'pointer' }}
-        >
-          <div className="loan-borrower">{l.borrower}</div>
-          {l.amount ? <div className="loan-amount">{fmt$(l.amount)}</div> : null}
-          <div className="loan-meta">
-            <span className="loan-pill">{l.type}</span>
-            <span className="loan-pill">{l.purpose}</span>
-            <span className="loan-pill">{l.lo}</span>
-          </div>
-        </div>
+          loan={l}
+          onOpen={onOpen}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+        />
       ))}
     </div>
   );
@@ -41,6 +72,7 @@ export default function Pipeline() {
   const [, force] = useState(0);
   const bump = useCallback(() => force((n) => n + 1), []);
   const [openId, setOpenId] = useState(null);
+  const [draggingId, setDraggingId] = useState(null);
 
   const columns = useMemo(() => {
     const list = [];
@@ -59,13 +91,23 @@ export default function Pipeline() {
     });
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, openId]);
+  }, [columns, openId, draggingId]);
 
   const activePipelineCount = LOANS.filter(
     (l) => l.stage !== 'funded' && l.stage !== 'cold'
   ).length;
 
-  const openLoan = LOANS.find((l) => l.id === openId) || null;
+  const openLoan = openId ? LOANS.find((l) => l.id === openId) : null;
+
+  const handleDrop = useCallback((loanId, newStageKey) => {
+    const loan = LOANS.find((l) => l.id === loanId);
+    if (!loan || loan.stage === newStageKey) return;
+    loan.stage = newStageKey;
+    // Keep `status` in sync so Loan Management reflects the change.
+    const mappedStatus = STAGE_TO_STATUS[newStageKey];
+    if (mappedStatus) loan.status = mappedStatus;
+    bump();
+  }, [bump]);
 
   return (
     <div>
@@ -75,7 +117,7 @@ export default function Pipeline() {
             {activePipelineCount} Active Pipeline Files
           </div>
           <div className="pipeline-header-sub">
-            Click any card for full detail · edit status to move stages
+            Drag cards between columns to change stage · click a card for full detail
           </div>
         </div>
       </div>
@@ -96,7 +138,16 @@ export default function Pipeline() {
 
       <div className="kanban">
         {columns.map((s) => (
-          <StageColumn key={s.key} stage={s} loans={byStage[s.key] || []} onOpen={setOpenId} />
+          <StageColumn
+            key={s.key}
+            stage={s}
+            loans={byStage[s.key] || []}
+            draggingId={draggingId}
+            onOpen={setOpenId}
+            onDrop={handleDrop}
+            onDragStart={setDraggingId}
+            onDragEnd={() => setDraggingId(null)}
+          />
         ))}
       </div>
 
