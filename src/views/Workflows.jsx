@@ -26,6 +26,11 @@ export default function Workflows() {
     if (step) setOpenTask(step);
   };
 
+  const setStepRole = (stepId, role) => {
+    const copy = workflows.map(w => ({ ...w, steps: w.steps.map(s => s.id === stepId ? { ...s, role } : s) }));
+    setWorkflows(copy);
+  };
+
   const renderChecklist = () => (
     <div className="wf-checklist-polished">
       {wf.steps.map((s, idx) => {
@@ -38,7 +43,15 @@ export default function Workflows() {
             <div className="wf-num">{idx + 1}</div>
             <div className="wf-task-body">
               <div className="wf-task-head">
-                <span className={`wf-task-label ${s.role}`}>{s.label || TASK_ROLES[s.role] || s.role}</span>
+                <select
+                  className={`wf-task-label ${s.role}`}
+                  value={s.role}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setStepRole(s.id, e.target.value)}
+                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 'inherit', fontSize: 'inherit', padding: '2px 4px' }}
+                >
+                  {Object.entries(TASK_ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
               </div>
               <div className="wf-task-text">{s.text || '(no title)'}</div>
               {metaChips.length ? <div className="wf-task-meta">{metaChips}</div> : null}

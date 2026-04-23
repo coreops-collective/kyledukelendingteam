@@ -11,6 +11,8 @@ export default function CFL() {
   const [active, setActive] = useState(0);
   const [layout, setLayout] = useState('checklist');
   const [openTask, setOpenTask] = useState(null);
+  const [, force] = useState(0);
+  const bump = () => force((n) => n + 1);
 
   const activeCat = cats[active] || cats[0];
   const tasksInCat = CLIENT_FOR_LIFE.filter((c) => c.cat === activeCat);
@@ -31,7 +33,15 @@ export default function CFL() {
                 <div className="wf-num">{idx + 1}</div>
                 <div className="wf-task-body">
                   <div className="wf-task-head">
-                    <span className={`wf-task-label ${role}`}>{TASK_ROLES[role] || role}</span>
+                    <select
+                      className={`wf-task-label ${role}`}
+                      value={role}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => { t.role = e.target.value; bump(); }}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 'inherit', fontSize: 'inherit', padding: '2px 4px' }}
+                    >
+                      {Object.entries(TASK_ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
                   </div>
                   <div className="wf-task-text">{t.title || t.text || '(no title)'}</div>
                   {metaChips.length > 0 && <div className="wf-task-meta">{metaChips}</div>}
