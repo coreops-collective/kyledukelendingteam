@@ -116,12 +116,23 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
   const [pass, setPass] = useState('');
   const [role, setRole] = useState(user.role);
 
+  const iAmBM = me?.role === 'branch_manager';
+  const targetIsBM = user.role === 'branch_manager';
+  // Can't change a BM's password unless I'm a BM too (self-edit allowed).
+  const canChangePassword = iAmBM || (me?.id === user.id) || !targetIsBM;
+
   function save() {
     const u = USERS.find(x => x.id === user.id);
     if (!u) return;
     u.name = name.trim();
     u.email = email.trim();
-    if (pass) u.password = pass;
+    if (pass) {
+      if (!canChangePassword) {
+        toast({ title: 'Not allowed', msg: "Only a Branch Manager can change a Branch Manager's password" });
+        return;
+      }
+      u.password = pass;
+    }
     u.role = role;
     u.initials = u.name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
     onSaved();
@@ -131,6 +142,7 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
   }
 
   function del() {
+    if (!iAmBM) { toast({ title: 'Not allowed', msg: 'Only a Branch Manager can delete users' }); return; }
     if (me.id === user.id) { toast({ title: 'Error', msg: 'You cannot delete yourself' }); return; }
     const idx = USERS.findIndex(x => x.id === user.id);
     if (idx < 0) return;
@@ -163,7 +175,19 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
             </div>
             <div className="form-field">
               <label>New Password</label>
-              <input type="text" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="(unchanged)" />
+              <input
+                type="text"
+                value={pass}
+                onChange={(e) => setPass(e.target.value)}
+                placeholder={canChangePassword ? '(unchanged)' : 'Branch Manager only'}
+                disabled={!canChangePassword}
+                style={!canChangePassword ? { background: '#f4f4f6', color: '#999', cursor: 'not-allowed' } : undefined}
+              />
+              {!canChangePassword && (
+                <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
+                  Only a Branch Manager can change a Branch Manager's password.
+                </div>
+              )}
             </div>
             <div className="form-field">
               <label className="req">Role</label>
@@ -172,7 +196,7 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
           </form>
         </div>
         <div className="drawer-actions">
-          {me && me.id !== user.id && (
+          {iAmBM && me.id !== user.id && (
             <button className="drawer-btn" onClick={del} style={{ color: '#c62828' }}>Delete</button>
           )}
           <button className="drawer-btn" onClick={onClose}>Cancel</button>
@@ -255,7 +279,7 @@ function SetupInner() {
         </div>
       </div>
 
-      <EmailDeliverySettings />
+      {me?.role === 'branch_manager' && <EmailDeliverySettings />}
       <NotificationRules />
 
       {add && <AddUserDrawer me={me} onClose={() => setAdd(false)} onSaved={rerender} toast={setToast} />}
