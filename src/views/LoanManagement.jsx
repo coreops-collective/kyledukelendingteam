@@ -209,6 +209,7 @@ function EditCheck({ value, onChange }) {
 
 // ── Color legend ────────────────────────────────────────────────
 function ColorLegend() {
+  const [open, setOpen] = useState(false);
   const swatches = [
     { label: 'Disclosed', bg: '#e1bee7', bar: '#7b1fa2' },
     { label: 'Processing', bg: '#bbdefb', bar: '#1976d2' },
@@ -226,27 +227,42 @@ function ColorLegend() {
   return (
     <div style={{
       background: '#fff', border: '1px solid var(--border)', borderRadius: 10,
-      padding: '10px 14px', marginBottom: 14, display: 'flex', flexWrap: 'wrap',
-      gap: 18, alignItems: 'center', fontSize: 11,
+      marginBottom: 14, fontSize: 11, overflow: 'hidden',
     }}>
-      <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginRight: 4 }}>
-        Key
-      </div>
-      {swatches.map((s) => (
-        <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 18, height: 14, background: s.bg, borderLeft: `3px solid ${s.bar}`, borderRadius: 2 }} />
-          {s.label}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: '100%', padding: '10px 14px', background: 'transparent',
+          border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
+          gap: 10, fontFamily: "'Oswald',sans-serif", fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '.6px', color: '#555',
+          fontSize: 11, textAlign: 'left',
+        }}
+      >
+        <span style={{ transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</span>
+        Color Key
+        {!open && <span style={{ color: '#999', fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>(click to show)</span>}
+      </button>
+      {open && (
+        <div style={{ padding: '0 14px 12px', display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
+          {swatches.map((s) => (
+            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 18, height: 14, background: s.bg, borderLeft: `3px solid ${s.bar}`, borderRadius: 2 }} />
+              {s.label}
+            </div>
+          ))}
+          <div style={{ width: 1, height: 18, background: '#e5e5e5', margin: '0 4px' }} />
+          {dateSwatches.map((s) => (
+            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ background: s.bg, color: s.color, fontFamily: 'Menlo,monospace', fontWeight: 700, fontSize: 10, padding: '2px 6px', borderRadius: 3 }}>
+                MM/DD
+              </span>
+              {s.label}
+            </div>
+          ))}
         </div>
-      ))}
-      <div style={{ width: 1, height: 18, background: '#e5e5e5', margin: '0 4px' }} />
-      {dateSwatches.map((s) => (
-        <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ background: s.bg, color: s.color, fontFamily: 'Menlo,monospace', fontWeight: 700, fontSize: 10, padding: '2px 6px', borderRadius: 3 }}>
-            MM/DD
-          </span>
-          {s.label}
-        </div>
-      ))}
+      )}
     </div>
   );
 }
