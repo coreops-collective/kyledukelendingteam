@@ -96,6 +96,7 @@ export default function Pipeline() {
     const m = {};
     columns.forEach((s) => { m[s.key] = []; });
     LOANS.forEach((l) => {
+      if (l.archived) return;
       if (m[l.stage]) m[l.stage].push(l);
     });
     return m;
@@ -103,7 +104,7 @@ export default function Pipeline() {
   }, [columns, openId, draggingId]);
 
   const activePipelineCount = LOANS.filter(
-    (l) => l.stage !== 'funded' && l.stage !== 'cold'
+    (l) => !l.archived && l.stage !== 'funded' && l.stage !== 'cold'
   ).length;
 
   const openLoan = openId ? LOANS.find((l) => l.id === openId) : null;

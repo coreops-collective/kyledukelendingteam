@@ -447,7 +447,7 @@ export default function LoanManagement() {
   });
 
   const losLoans = useMemo(
-    () => LOANS.filter((l) => LOS_STAGES.includes(l.stage)),
+    () => LOANS.filter((l) => !l.archived && LOS_STAGES.includes(l.stage)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );

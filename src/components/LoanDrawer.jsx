@@ -22,6 +22,21 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
   const [, force] = useState(0);
   if (!loan) return null;
 
+  const handleArchive = () => {
+    if (!window.confirm(`Archive loan for ${loan.borrower}? It will be hidden from all views but kept in Supabase — tell Lauren if you ever need it back.`)) return;
+    loan.archived = true;
+    loan.archivedAt = new Date().toISOString();
+    markLoansDirty();
+    onSaved?.();
+    onClose?.();
+  };
+  const handleUnarchive = () => {
+    loan.archived = false;
+    loan.archivedAt = null;
+    markLoansDirty();
+    onSaved?.();
+  };
+
   const set = (key, value) => {
     loan[key] = value;
     if (key === 'status') {
@@ -175,6 +190,11 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
           </div>
         </div>
         <div className="drawer-actions">
+          {loan.archived ? (
+            <button className="drawer-btn" onClick={handleUnarchive} style={{ color: '#1a6b4a' }}>Unarchive</button>
+          ) : (
+            <button className="drawer-btn" onClick={handleArchive} style={{ color: '#c62828' }}>Archive</button>
+          )}
           <button className="drawer-btn primary" onClick={onClose}>Done</button>
         </div>
       </aside>

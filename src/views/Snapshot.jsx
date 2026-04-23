@@ -191,8 +191,8 @@ function renderGeoLoanTypeBlock(){
 }
 
 function buildSnapshotHTML(){
-  const activeLoans = LOANS.filter(l=>l.stage!=='funded' && l.stage!=='cold');
-  const refiCount = LOANS.filter(l=>l.stage==='refiwatch').length;
+  const activeLoans = LOANS.filter(l=>!l.archived && l.stage!=='funded' && l.stage!=='cold');
+  const refiCount = LOANS.filter(l=>!l.archived && l.stage==='refiwatch').length;
   const kyleCount = activeLoans.filter(l=>l.lo==='Kyle').length;
   const missyCount = activeLoans.filter(l=>l.lo==='Missy').length;
   const now = new Date();
@@ -203,7 +203,7 @@ function buildSnapshotHTML(){
   const nextMoYr = nextMoDate.getFullYear();
   const MONTH_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const closingInMonth = (mIdx, yr) => LOANS.filter(l=>{
-    if(!l.closeDate || l.stage==='funded' || l.stage==='cold') return false;
+    if(l.archived || !l.closeDate || l.stage==='funded' || l.stage==='cold') return false;
     const d = new Date(l.closeDate);
     return !isNaN(d) && d.getMonth()===mIdx && d.getFullYear()===yr;
   }).length;

@@ -11,7 +11,7 @@ export default function RateLocks() {
   const withDays = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     return LOANS
-      .filter((l) => l.lockExp && l.lockExp !== 'Funded' && l.stage !== 'funded' && !isNaN(new Date(l.lockExp)))
+      .filter((l) => !l.archived && l.lockExp && l.lockExp !== 'Funded' && l.stage !== 'funded' && !isNaN(new Date(l.lockExp)))
       .map((l) => ({ ...l, daysLeft: Math.ceil((new Date(l.lockExp) - today) / 86400000) }))
       .sort((a, b) => a.daysLeft - b.daysLeft);
     // eslint-disable-next-line react-hooks/exhaustive-deps

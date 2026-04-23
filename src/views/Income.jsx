@@ -183,6 +183,7 @@ function IncomeInner() {
 
   function kyleProjected(mIdx, yr) {
     const upcoming = LOANS.filter((l) => {
+      if (l.archived) return false;
       if (!l.closeDate) return false;
       const d = new Date(l.closeDate);
       return (
