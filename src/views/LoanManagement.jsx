@@ -435,11 +435,6 @@ export default function LoanManagement() {
 
   return (
     <div>
-      <div className="page-title">Loan Management</div>
-      <div className="section-sub" style={{ marginBottom: 14 }}>
-        Spreadsheet view · LOS pipeline · edits save live (session only for now)
-      </div>
-
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginBottom: 18, padding: '14px 18px', background: '#fff',
