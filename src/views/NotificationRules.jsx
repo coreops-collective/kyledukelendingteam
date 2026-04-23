@@ -15,7 +15,7 @@ const DEFAULT_TEMPLATES = {
   },
   'loan.stage_changed': {
     subject: 'Loan stage changed: {{borrower}} → {{new_stage}}',
-    body: 'Borrower: {{borrower}}\nFrom: {{old_stage}}\nTo: {{new_stage}}\nLoan Officer: {{lo}}',
+    body: 'Borrower: {{borrower}}\nFrom: {{old_stage}}\nTo: {{new_stage}}\nLoan Officer: {{lo}}\nLOA: {{loa}}\nPhone: {{phone}}\nEmail: {{email}}\nType: {{loan_type}}\nPurpose: {{purpose}}\nProperty: {{property}}\n\nLog in to view: {{dashboard_url}}',
   },
 };
 
