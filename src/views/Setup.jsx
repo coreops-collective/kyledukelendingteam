@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { USERS, ROLE_LABELS, sbInsertUser, sbUpdateUser, sbDeleteUser } from '../data/users.js';
-import { getCurrentUser } from '../lib/auth.js';
+import { getCurrentUser, isAdmin } from '../lib/auth.js';
 import EmailDeliverySettings from './EmailDeliverySettings.jsx';
 import NotificationRules from './NotificationRules.jsx';
 
@@ -184,6 +184,15 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
 }
 
 export default function Setup() {
+  // Defense in depth — even if router guard is bypassed, only admins
+  // and branch managers can see this page.
+  if (!isAdmin()) {
+    return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Restricted — Admin only.</div>;
+  }
+  return <SetupInner />;
+}
+
+function SetupInner() {
   const me = getCurrentUser();
   const [, tick] = useState(0);
   const [add, setAdd] = useState(false);

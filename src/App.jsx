@@ -50,14 +50,14 @@ function todayString() {
 }
 
 function RoleGuard({ path, children }) {
-  const nav = useNavigate();
-  useEffect(() => {
-    if (path === '/income' && !isBranchManager()) {
-      nav('/snapshot', { replace: true });
-    } else if (path === '/setup' && !isAdmin()) {
-      nav('/snapshot', { replace: true });
-    }
-  }, [path, nav]);
+  // Check synchronously so restricted views never render even briefly
+  // to unauthorized users. Also covers direct-URL access (no flash).
+  if (path === '/income' && !isBranchManager()) {
+    return <Navigate to="/snapshot" replace />;
+  }
+  if (path === '/setup' && !isAdmin()) {
+    return <Navigate to="/snapshot" replace />;
+  }
   return children;
 }
 

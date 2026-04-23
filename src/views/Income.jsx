@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { PAST_CLIENTS } from '../data/pastClients.js';
 import { LOANS } from '../data/loans.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
+import { isBranchManager } from '../lib/auth.js';
 
 // ---- helpers (ported from legacy) ----
 const fmt$ = (n) =>
@@ -102,7 +103,18 @@ const getBranchMgrOverride = (r) => {
   return Math.round(((r.amount || 0) * KYLE_OVERRIDE_BPS) / 100 * 100) / 100;
 };
 
+function IncomeBlocked() {
+  return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Restricted — Branch Manager only.</div>;
+}
+
 export default function Income() {
+  // Defense in depth: if a non-branch-manager somehow reaches this
+  // component (router guard bypassed), refuse to render the data.
+  if (!isBranchManager()) return <IncomeBlocked />;
+  return <IncomeInner />;
+}
+
+function IncomeInner() {
   const [rows, setRows] = useState(INITIAL_INCOME);
   const [filters, setFilters] = useState({
     year: 'All',

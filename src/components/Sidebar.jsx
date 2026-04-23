@@ -53,7 +53,18 @@ export default function Sidebar({ user }) {
         </div>
       </div>
       <nav className="sidebar-section">
-        {NAV_GROUPS.map(group => (
+        {NAV_GROUPS
+          .map((group) => {
+            // Hide restricted nav items based on current user's role.
+            const filteredItems = group.items.filter((item) => {
+              if (item.path === '/income') return isBranchManager();
+              if (item.path === '/setup') return isAdmin();
+              return true;
+            });
+            return filteredItems.length ? { ...group, items: filteredItems } : null;
+          })
+          .filter(Boolean)
+          .map(group => (
           <div key={group.label}>
             <div
               className={`sidebar-section-label${group.className ? ' ' + group.className : ''}`}
