@@ -16,15 +16,20 @@ const MONTH_NAMES = [
 
 const loBpsFor = (lo) => (lo === 'Missy' ? 1.2 : 1.3);
 // Branch gross bumps from 10 bps → 30 bps for loans closing Apr 2026 and later.
-const BRANCH_GROSS_BPS_LEGACY = 0.1;
-const BRANCH_GROSS_BPS_NEW = 0.3;
-const BRANCH_GROSS_CUTOVER = new Date('2026-04-01');
+// Branch gross schedule:
+//   before 2025-06-01       → 0 bps (no branch revenue)
+//   2025-06-01 … 2026-03-31 → 10 bps
+//   2026-04-01 onward       → 30 bps
+const BRANCH_GROSS_START = new Date('2025-06-01');
+const BRANCH_GROSS_BUMP = new Date('2026-04-01');
 const KYLE_OVERRIDE_BPS = 0.1;
 function branchGrossBpsFor(closeDate) {
-  if (!closeDate) return BRANCH_GROSS_BPS_LEGACY;
+  if (!closeDate) return 0;
   const d = new Date(closeDate);
-  if (isNaN(d)) return BRANCH_GROSS_BPS_LEGACY;
-  return d >= BRANCH_GROSS_CUTOVER ? BRANCH_GROSS_BPS_NEW : BRANCH_GROSS_BPS_LEGACY;
+  if (isNaN(d)) return 0;
+  if (d < BRANCH_GROSS_START) return 0;
+  if (d >= BRANCH_GROSS_BUMP) return 0.3;
+  return 0.1;
 }
 const computeBranchGross = (amt, closeDate) =>
   Math.round(((amt || 0) * branchGrossBpsFor(closeDate)) / 100 * 100) / 100;
