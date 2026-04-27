@@ -692,7 +692,7 @@ function KyleTile({ label, dt, s, projected }) {
 // the month plus everything that's already funded for the month from the
 // canonical funded ledger (LOANS-funded + PAST_CLIENTS historical, deduped).
 // Grouped by LO with per-group subtotals and a grand total.
-function PipelineMonth({ label, mIdx, yr, defaultOpen = true }) {
+function PipelineMonth({ label, mIdx, yr, defaultOpen = false }) {
   const matchesMonth = (closeDate) => {
     if (!closeDate) return false;
     const d = new Date(closeDate);
