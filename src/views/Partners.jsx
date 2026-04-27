@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
-import { markPartnerDirty, markPartnerNew } from '../lib/partnersStore.js';
+import { markPartnerDirty, markPartnerNew, subscribePartners } from '../lib/partnersStore.js';
 
 // Format helpers — mirror legacy fmt$M / fmt$
 const fmt$ = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -45,6 +45,13 @@ export default function Partners() {
   // memos below to recompute after we push a new partner so the list updates
   // immediately instead of waiting for a manual refresh.
   const [partnersVersion, setPartnersVersion] = useState(0);
+
+  // Subscribe to live changes from other clients so adds/edits made by
+  // teammates show up here within ~1s without a refresh.
+  useEffect(() => {
+    const unsubscribe = subscribePartners(() => setPartnersVersion((v) => v + 1));
+    return unsubscribe;
+  }, []);
 
   // Compute per-agent live pipeline counts from LOANS (active = not funded/cold).
   const livePipelineByAgent = useMemo(() => {

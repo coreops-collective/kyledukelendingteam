@@ -1,11 +1,11 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { LOANS } from '../data/loans.js';
 import { LOS_STAGES, STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
-import { markLoansDirty } from '../lib/loansStore.js';
+import { markLoansDirty, subscribeLoans } from '../lib/loansStore.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -441,6 +441,8 @@ export default function LoanManagement() {
   const [notesFor, setNotesFor] = useState(null);
   const [loanFor, setLoanFor] = useState(null);
   const [newLoanOpen, setNewLoanOpen] = useState(false);
+
+  useEffect(() => subscribeLoans(bump), [bump]);
 
   const [filters, setFilters] = useState({
     year: 'All', month: 'All', status: 'All', lo: 'All', type: 'All', saleType: 'All',

@@ -99,3 +99,41 @@ if (typeof window !== 'undefined') {
     flushLoansToSupabase();
   });
 }
+
+// Subscribe to live changes on the `loans` table. Each row stores the loan
+// as a jsonb blob in `data`, so applying an event is just "drop in the new
+// data". Calls onChange() after every applied event. Returns unsubscribe fn.
+//
+// Echo: a write from this client also fires an UPDATE event. Replacing the
+// in-memory loan with the same data is a no-op, so we don't bother
+// suppressing echoes.
+export function subscribeLoans(onChange) {
+  const channel = supabase
+    .channel('loans-changes')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'loans' }, ({ new: row }) => {
+      if (!row || !row.data) return;
+      if (LOANS.some((l) => l.id === row.id)) return;
+      LOANS.push(row.data);
+      onChange && onChange();
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'loans' }, ({ new: row }) => {
+      if (!row || !row.data) return;
+      const idx = LOANS.findIndex((l) => l.id === row.id);
+      if (idx >= 0) {
+        LOANS[idx] = row.data;
+      } else {
+        LOANS.push(row.data);
+      }
+      onChange && onChange();
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'loans' }, ({ old: row }) => {
+      if (!row) return;
+      const idx = LOANS.findIndex((l) => l.id === row.id);
+      if (idx >= 0) {
+        LOANS.splice(idx, 1);
+        onChange && onChange();
+      }
+    })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+}

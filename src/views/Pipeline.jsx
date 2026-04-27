@@ -3,7 +3,7 @@ import { LOANS } from '../data/loans.js';
 import { STAGES, REFI_WATCH_STAGE, STAGE_TO_STATUS, stageByKey } from '../data/stages.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
-import { markLoansDirty } from '../lib/loansStore.js';
+import { markLoansDirty, subscribeLoans } from '../lib/loansStore.js';
 
 const fmt$ = (n) => '$' + Math.round(n).toLocaleString();
 const fmt$M = (n) => n >= 1_000_000 ? '$' + (n / 1_000_000).toFixed(1) + 'M' : '$' + Math.round(n / 1000) + 'k';
@@ -75,6 +75,8 @@ export default function Pipeline() {
   const [openId, setOpenId] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
   const [toast, setToast] = useState(null);
+
+  useEffect(() => subscribeLoans(bump), [bump]);
 
   useEffect(() => {
     if (!toast) return;

@@ -1,12 +1,15 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { LOANS } from '../data/loans.js';
 import { fmt$ } from '../lib/snapshotHelpers.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
+import { subscribeLoans } from '../lib/loansStore.js';
 
 export default function RateLocks() {
   const [, force] = useState(0);
   const bump = useCallback(() => force((n) => n + 1), []);
   const [openId, setOpenId] = useState(null);
+
+  useEffect(() => subscribeLoans(bump), [bump]);
 
   const withDays = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);

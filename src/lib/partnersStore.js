@@ -228,3 +228,78 @@ if (typeof window !== 'undefined') {
     flushPartners();
   });
 }
+
+// Apply just the DB-backed fields of a row onto an existing partner object
+// without clobbering the seeded stat fields (deals / lifetime / etc.).
+function applyRowToPartner(p, row) {
+  p.id = row.id;
+  p.name = row.name || '';
+  p.brokerage = row.brokerage || '';
+  p.state = row.state || '';
+  p.city = row.city || '';
+  p.phone = row.phone || '';
+  p.email = row.email || '';
+  p.birthday = row.birthday || '';
+  p.bday = row.birthday || '';
+  p.anniversary = row.anniversary || '';
+  p.spouse = row.spouse || '';
+  p.kids = row.kids || '';
+  p.coffee_shop = row.coffee_shop || '';
+  p.coffee = row.coffee_shop || '';
+  p.favorite_restaurant = row.favorite_restaurant || '';
+  p.restaurant = row.favorite_restaurant || '';
+  p.mailing_address = row.mailing_address || '';
+  p.addr = row.mailing_address || '';
+  p.social_handle = row.social_handle || '';
+  p.social = row.social_handle || '';
+  p.notes = row.notes || '';
+  p.tier = row.tier || 'Standard';
+  p.lead_source = row.lead_source || '';
+  p.src = row.lead_source || '';
+  p.touches = row.touches || [];
+  p.vip = (row.tier || '').toLowerCase().startsWith('vip') || !!p.vip;
+}
+
+// Subscribe to live changes on the `partners` table. Calls onChange() after
+// every applied event so the UI can re-render. Returns an unsubscribe fn.
+//
+// Echo handling: when *this* client inserts a partner, the realtime INSERT
+// event will fire for it too. We dedupe by id first; if no id match, we
+// look for a same-name local partner that hasn't been assigned an id yet
+// (the in-flight insert) and just adopt the id.
+export function subscribePartners(onChange) {
+  const seedByName = new Map(PARTNERS.map((p) => [p.name, p]));
+  const channel = supabase
+    .channel('partners-changes')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'partners' }, ({ new: row }) => {
+      if (!row) return;
+      if (PARTNERS.some((p) => p.id === row.id)) return; // already have it
+      const pending = PARTNERS.find((p) => !p.id && p.name === row.name);
+      if (pending) {
+        applyRowToPartner(pending, row);
+      } else {
+        PARTNERS.push(rowToPartner(row, seedByName));
+      }
+      onChange && onChange();
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partners' }, ({ new: row }) => {
+      if (!row) return;
+      const existing = PARTNERS.find((p) => p.id === row.id);
+      if (existing) {
+        applyRowToPartner(existing, row);
+      } else {
+        PARTNERS.push(rowToPartner(row, seedByName));
+      }
+      onChange && onChange();
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partners' }, ({ old: row }) => {
+      if (!row) return;
+      const idx = PARTNERS.findIndex((p) => p.id === row.id);
+      if (idx >= 0) {
+        PARTNERS.splice(idx, 1);
+        onChange && onChange();
+      }
+    })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
