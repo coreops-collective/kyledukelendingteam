@@ -36,11 +36,11 @@ const NAV_GROUPS = [
   ]},
 ];
 
-export default function Sidebar({ user }) {
+export default function Sidebar({ user, open = false }) {
   const location = useLocation();
   const nav = useNavigate();
   return (
-    <aside className="hub-sidebar" id="hubSidebar">
+    <aside className={`hub-sidebar${open ? ' open' : ''}`} id="hubSidebar">
       <div className="sidebar-brand">
         <div className="brand-crest">
           <img src="/brand-crest.jpeg" alt="The Kyle Duke Team"

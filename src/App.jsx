@@ -93,6 +93,11 @@ export default function App() {
     document.body.dataset.role = user ? user.role : '';
   }, [user]);
 
+  // Close the mobile menu whenever the route changes.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
   if (!usersReady) return null;
 
   if (!user) {
@@ -106,14 +111,15 @@ export default function App() {
   return (
     <div className="hub-layout">
       <button
-        className="mobile-menu-btn"
+        className={`mobile-menu-btn${mobileOpen ? ' open' : ''}`}
         id="mobileMenuBtn"
         onClick={() => setMobileOpen(v => !v)}
         aria-label="Menu"
+        aria-expanded={mobileOpen}
       >
-        ☰
+        {mobileOpen ? '×' : '☰'}
       </button>
-      <Sidebar user={user} />
+      <Sidebar user={user} open={mobileOpen} />
       <main className="hub-main">
         <header className="hub-header">
           <div>
