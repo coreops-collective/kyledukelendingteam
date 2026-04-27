@@ -356,8 +356,25 @@ function ColorLegend() {
 }
 
 // ── Table view (spreadsheet) ────────────────────────────────────
-function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan }) {
+function SortHeader({ field, label, width, sort, onSort }) {
+  const active = sort && sort.key === field;
+  const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+  return (
+    <th
+      style={{ width, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      onClick={() => onSort && onSort(field)}
+      title={`Sort by ${label}`}
+    >
+      {label}{arrow}
+    </th>
+  );
+}
+
+function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort, onSort }) {
   const agentOpts = [...PARTNERS].map(p => p.name).sort((a,b) => a.localeCompare(b));
+  const SH = (field, label, width) => (
+    <SortHeader field={field} label={label} width={width} sort={sort} onSort={onSort} />
+  );
   return (
     <>
     <ColorLegend />
@@ -366,28 +383,28 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan }) {
         <table className="lm-table">
           <thead>
             <tr>
-              <th style={{ width: 180 }}>Client</th>
-              <th style={{ width: 130 }}>Closing Date</th>
-              <th style={{ width: 150 }}>Status</th>
+              {SH('borrower', 'Client', 180)}
+              {SH('closeDate', 'Closing Date', 130)}
+              {SH('status', 'Status', 150)}
               <th style={{ width: 260 }}>Notes</th>
-              <th style={{ width: 100 }}>LO</th>
-              <th style={{ width: 110 }}>LOA</th>
-              <th style={{ width: 140 }}>Sale Type</th>
+              {SH('lo', 'LO', 100)}
+              {SH('loa', 'LOA', 110)}
+              {SH('saleType', 'Sale Type', 140)}
               <th style={{ width: 80 }}>Appr Ord</th>
-              <th style={{ width: 140 }}>Appr Deadline</th>
+              {SH('apprDeadline', 'Appr Deadline', 140)}
               <th style={{ width: 80 }}>Appr Rcvd</th>
               <th style={{ width: 80 }}>Title Rcvd</th>
-              <th style={{ width: 140 }}>Lock Expires</th>
-              <th style={{ width: 140 }}>ICD Deadline</th>
+              {SH('lockExp', 'Lock Expires', 140)}
+              {SH('icdDeadline', 'ICD Deadline', 140)}
               <th style={{ width: 80 }}>ICD Sent</th>
               <th style={{ width: 80 }}>ICD Signed</th>
-              <th style={{ width: 280 }}>Property</th>
-              <th style={{ width: 140 }}>Purchase Price</th>
-              <th style={{ width: 140 }}>Loan Amount</th>
-              <th style={{ width: 100 }}>Type</th>
-              <th style={{ width: 100 }}>Rate</th>
-              <th style={{ width: 200 }}>Agent</th>
-              <th style={{ width: 160 }}>Lead Source</th>
+              {SH('property', 'Property', 280)}
+              {SH('price', 'Purchase Price', 140)}
+              {SH('amount', 'Loan Amount', 140)}
+              {SH('type', 'Type', 100)}
+              {SH('rate', 'Rate', 100)}
+              {SH('agent', 'Agent', 200)}
+              {SH('leadSource', 'Lead Source', 160)}
               <th style={{ width: 150 }}>Phone</th>
               <th style={{ width: 220 }}>Email</th>
               <th style={{ width: 140 }}>Co-Borrower First</th>
@@ -556,6 +573,56 @@ export default function LoanManagement() {
     return true;
   });
 
+  // Sort state for the spreadsheet table. Click a column header to toggle
+  // through asc → desc → unsorted. Default is close date ascending so the
+  // soonest-closing loans float to the top.
+  const [sort, setSort] = useState({ key: 'closeDate', dir: 'asc' });
+
+  const sortedFiltered = useMemo(() => {
+    const { key, dir } = sort;
+    if (!key) return filtered;
+    const sign = dir === 'asc' ? 1 : -1;
+    const arr = [...filtered];
+    const isDate = ['closeDate', 'apprDeadline', 'lockExp', 'icdDeadline'].includes(key);
+    const isNumber = ['price', 'amount', 'rate'].includes(key);
+    const statusOrder = STATUSES.filter((s) => s !== 'All');
+    arr.sort((a, b) => {
+      let av = a[key];
+      let bv = b[key];
+      const aMissing = av === undefined || av === null || av === '';
+      const bMissing = bv === undefined || bv === null || bv === '';
+      if (aMissing && bMissing) return 0;
+      if (aMissing) return 1;   // empty values always sort to the bottom
+      if (bMissing) return -1;
+      if (isDate) {
+        const ad = new Date(av).getTime();
+        const bd = new Date(bv).getTime();
+        if (isNaN(ad)) return 1;
+        if (isNaN(bd)) return -1;
+        return sign * (ad - bd);
+      }
+      if (key === 'status') {
+        const ai = statusOrder.indexOf(av);
+        const bi = statusOrder.indexOf(bv);
+        if (ai === -1 && bi === -1) return sign * String(av).localeCompare(String(bv));
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return sign * (ai - bi);
+      }
+      if (isNumber) return sign * ((Number(av) || 0) - (Number(bv) || 0));
+      return sign * String(av).localeCompare(String(bv));
+    });
+    return arr;
+  }, [filtered, sort]);
+
+  const onSort = useCallback((key) => {
+    setSort((s) => {
+      if (s.key !== key) return { key, dir: 'asc' };
+      if (s.dir === 'asc') return { key, dir: 'desc' };
+      return { key: null, dir: 'asc' };
+    });
+  }, []);
+
   const years = ['All', ...new Set(losLoans.map(r => getYearFromDate(r.closeDate)).filter(Boolean))]
     .sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : Number(b) - Number(a));
 
@@ -642,7 +709,7 @@ export default function LoanManagement() {
       </div>
 
       {layout === 'table'
-        ? <TableView loans={filtered} onEdit={handleEdit} onEditStatus={handleEditStatus} onOpenNotes={setNotesFor} onOpenLoan={handleOpenLoan} />
+        ? <TableView loans={sortedFiltered} onEdit={handleEdit} onEditStatus={handleEditStatus} onOpenNotes={setNotesFor} onOpenLoan={handleOpenLoan} sort={sort} onSort={onSort} />
         : <CardsView loans={filtered} onOpenNotes={setNotesFor} onOpenLoan={handleOpenLoan} />}
 
       {notesLoan && (
