@@ -46,6 +46,17 @@ export default function Partners() {
   // immediately instead of waiting for a manual refresh.
   const [partnersVersion, setPartnersVersion] = useState(0);
 
+  // Listen for save errors from partnersStore and surface them as a
+  // visible toast so the user actually sees when a save fails.
+  useEffect(() => {
+    const onErr = (e) => {
+      const msg = e?.detail?.message || 'Save failed';
+      setToast({ title: 'Save failed', msg, error: true });
+    };
+    window.addEventListener('partners:save-error', onErr);
+    return () => window.removeEventListener('partners:save-error', onErr);
+  }, []);
+
   // Subscribe to live changes from other clients so adds/edits made by
   // teammates show up here within ~1s without a refresh.
   useEffect(() => {
@@ -247,9 +258,13 @@ export default function Partners() {
       {openedPartner && <PartnerDrawer partner={openedPartner} onClose={() => setOpenedPartner(null)} />}
 
       {toast && (
-        <div className="toast" onClick={() => setToast(null)}>
+        <div
+          className="toast"
+          onClick={() => setToast(null)}
+          style={toast.error ? { background: '#c62828', color: '#fff', maxWidth: 480 } : undefined}
+        >
           <strong>{toast.title}</strong>
-          <div>{toast.msg}</div>
+          <div style={{ wordBreak: 'break-word' }}>{toast.msg}</div>
         </div>
       )}
     </div>

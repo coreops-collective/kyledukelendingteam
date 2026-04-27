@@ -137,6 +137,19 @@ export async function loadPartnersFromSupabase() {
   }
 }
 
+// Surface save errors to the UI via a window-level event so the Partners
+// view can show a red toast. Without this, errors only land in the
+// console which most users won't think to open.
+function reportSaveError(prefix, error) {
+  const message = error && (error.message || error.details || error.hint)
+    ? `${prefix}: ${error.message || error.details || error.hint}`
+    : `${prefix}: ${String(error)}`;
+  console.error('[partners]', message, error);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('partners:save-error', { detail: { message, error } }));
+  }
+}
+
 async function flushPartners() {
   if (!loaded) {
     // Do not write before load completes — otherwise an edit on a
@@ -160,7 +173,7 @@ async function flushPartners() {
           .from('partners')
           .upsert(rows, { onConflict: 'id' });
         if (error) {
-          console.warn('[partners] update failed:', error.message);
+          reportSaveError('update failed', error);
           ids.forEach((id) => dirtyIds.add(id));
         }
       }
@@ -176,7 +189,7 @@ async function flushPartners() {
         });
         const { data, error } = await supabase.from('partners').insert(rows).select();
         if (error) {
-          console.warn('[partners] insert failed:', error.message);
+          reportSaveError('insert failed', error);
           newNames.forEach((n) => newPartnerNames.add(n));
         } else if (data) {
           data.forEach((row) => {
@@ -187,7 +200,7 @@ async function flushPartners() {
       }
     }
   } catch (e) {
-    console.warn('[partners] flush error:', e.message);
+    reportSaveError('flush error', e);
   }
 }
 
