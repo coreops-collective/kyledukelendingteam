@@ -247,7 +247,8 @@ export default function Partners() {
 function NewPartnerDrawer({ onClose, onSubmit }) {
   const [f, setF] = useState({
     name: '', brokerage: '', state: '', city: '', phone: '', email: '',
-    bday: '', spouse: '', kids: '', coffee: '', addr: '', social: '',
+    bday: '', anniversary: '', spouse: '', kids: '', coffee: '', restaurant: '',
+    addr: '', social: '', notes: '',
     tier: 'Standard', src: 'Past Closing',
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
@@ -284,11 +285,23 @@ function NewPartnerDrawer({ onClose, onSubmit }) {
             <div className="form-field"><label className="req">Phone</label><input type="tel" value={f.phone} onChange={set('phone')} required /></div>
             <div className="form-field"><label className="req">Email</label><input type="email" value={f.email} onChange={set('email')} required /></div>
             <div className="form-field"><label>Birthday</label><input type="date" value={f.bday} onChange={set('bday')} /></div>
+            <div className="form-field"><label>Anniversary</label><input type="date" value={f.anniversary} onChange={set('anniversary')} /></div>
             <div className="form-field"><label>Spouse / Partner Name</label><input value={f.spouse} onChange={set('spouse')} /></div>
             <div className="form-field"><label>Kids / Pet Names</label><input value={f.kids} onChange={set('kids')} /></div>
             <div className="form-field"><label>Favorite Coffee Shop</label><input value={f.coffee} onChange={set('coffee')} /></div>
+            <div className="form-field"><label>Favorite Restaurant</label><input value={f.restaurant} onChange={set('restaurant')} /></div>
             <div className="form-field" style={{ gridColumn: '1/-1' }}><label>Mailing Address</label><input value={f.addr} onChange={set('addr')} /></div>
             <div className="form-field"><label>Social Media Handle</label><input value={f.social} onChange={set('social')} /></div>
+            <div className="form-field" style={{ gridColumn: '1/-1' }}>
+              <label>Notes</label>
+              <textarea
+                value={f.notes}
+                onChange={set('notes')}
+                rows={3}
+                placeholder="Anything memorable — kids' names, coffee order, milestones, gift ideas, etc."
+                style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
+              />
+            </div>
             <div className="form-field"><label>Referral Tier</label>
               <select value={f.tier} onChange={set('tier')}>
                 <option>Standard</option><option>VIP (5+ deals/yr)</option>
@@ -369,11 +382,23 @@ function PartnerDrawer({ partner, onClose }) {
             <EditRow label="City" field="city" />
             <EditRow label="State" field="state" />
             <EditRow label="Birthday" field="bday" type="date" />
+            <EditRow label="Anniversary" field="anniversary" type="date" />
             <EditRow label="Spouse / Partner" field="spouse" />
             <EditRow label="Kids / Pets" field="kids" />
             <EditRow label="Favorite Coffee" field="coffee" />
+            <EditRow label="Favorite Restaurant" field="restaurant" />
             <div style={{ gridColumn: '1/-1' }}><EditRow label="Mailing Address" field="addr" /></div>
             <EditRow label="Social Handle" field="social" />
+            <div style={{ gridColumn: '1/-1' }}>
+              <label style={labelStyle}>Notes</label>
+              <textarea
+                defaultValue={p.notes || ''}
+                onBlur={(e) => set('notes', e.target.value)}
+                rows={4}
+                placeholder="Anything memorable — kids' names, coffee order, milestones, gift ideas, etc."
+                style={{ ...inputStyle, resize: 'vertical' }}
+              />
+            </div>
           </div>
 
           <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', margin: '18px 0 10px', paddingTop: 14, borderTop: '1px solid #eee' }}>
