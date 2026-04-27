@@ -182,46 +182,51 @@ function IncomeInner() {
   const prev = new Date(thisY, thisM - 1, 1);
   const next = new Date(thisY, thisM + 1, 1);
 
-  function kyleStats(mIdx, yr) {
-    const mName = MONTH_NAMES[mIdx];
-    const kyleRows = kyleIncome.filter((r) => r.month === mName && r.year === yr);
-    const volume = kyleRows.reduce((a, r) => a + (r.amount || 0), 0);
-    const units = kyleRows.length;
-    const loGross = kyleRows.reduce((a, r) => a + getIncomeGross(r), 0);
-    const missyRows = missyIncome.filter((r) => r.month === mName && r.year === yr);
-    const missyVolume = missyRows.reduce((a, r) => a + (r.amount || 0), 0);
-    const missyUnits = missyRows.length;
-    const override = missyRows.reduce((a, r) => a + getBranchMgrOverride(r), 0);
-    return { volume, units, loGross, missyVolume, missyUnits, override, total: loGross + override };
-  }
+  // Tile stats for any month: count every non-adversed loan with a close
+  // date in that month, regardless of stage. Funded loans come from the
+  // canonical funded ledger (LOANS-funded + PAST_CLIENTS); still-active
+  // pipeline loans come from the live LOANS list. Same logic powers the
+  // collapsible breakdown below so the tile and the breakdown agree.
+  function statsForMonth(mIdx, yr) {
+    const matches = (cd) => {
+      if (!cd) return false;
+      const d = new Date(cd);
+      return !isNaN(d) && d.getMonth() === mIdx && d.getFullYear() === yr;
+    };
 
-  function kyleProjected(mIdx, yr) {
-    const upcoming = LOANS.filter((l) => {
-      if (l.archived || l.status === 'Adversed') return false;
-      if (!l.closeDate) return false;
-      const d = new Date(l.closeDate);
-      return (
-        !isNaN(d) &&
-        d.getMonth() === mIdx &&
-        d.getFullYear() === yr &&
-        l.stage !== 'funded' &&
-        l.stage !== 'cold'
-      );
-    });
-    const kyleUp = upcoming.filter((l) => l.lo === 'Kyle');
-    const missyUp = upcoming.filter((l) => l.lo === 'Missy');
-    const volume = kyleUp.reduce((a, l) => a + (l.amount || 0), 0);
-    const units = kyleUp.length;
+    const inFlight = LOANS
+      .filter((l) =>
+        !l.archived && l.status !== 'Adversed' && l.stage !== 'cold' &&
+        l.stage !== 'funded' && (l.status || '') !== 'Funded' &&
+        matches(l.closeDate)
+      )
+      .map((l) => ({ amount: l.amount || 0, lo: l.lo || '' }));
+
+    const funded = getAllFunded()
+      .filter((r) => matches(r.closeDate))
+      .map((r) => ({ amount: r.amount || 0, lo: r.lo || 'Kyle' }));
+
+    const all = [...inFlight, ...funded];
+    const kyle = all.filter((r) => r.lo === 'Kyle');
+    const missy = all.filter((r) => r.lo === 'Missy');
+    const volume = kyle.reduce((a, r) => a + r.amount, 0);
+    const missyVolume = missy.reduce((a, r) => a + r.amount, 0);
     const loGross = volume * 0.013;
-    const missyVolume = missyUp.reduce((a, l) => a + (l.amount || 0), 0);
-    const missyUnits = missyUp.length;
-    const override = (missyVolume * KYLE_OVERRIDE_BPS) / 100;
-    return { volume, units, loGross, missyVolume, missyUnits, override, total: loGross + override };
+    const override = missyVolume * 0.001;
+    return {
+      volume,
+      units: kyle.length,
+      loGross,
+      missyVolume,
+      missyUnits: missy.length,
+      override,
+      total: loGross + override,
+    };
   }
 
-  const last = kyleStats(prev.getMonth(), prev.getFullYear());
-  const cur = kyleStats(thisM, thisY);
-  const nxt = kyleProjected(next.getMonth(), next.getFullYear());
+  const last = statsForMonth(prev.getMonth(), prev.getFullYear());
+  const cur = statsForMonth(thisM, thisY);
+  const nxt = statsForMonth(next.getMonth(), next.getFullYear());
 
   const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
 
