@@ -183,7 +183,7 @@ function IncomeInner() {
 
   function kyleProjected(mIdx, yr) {
     const upcoming = LOANS.filter((l) => {
-      if (l.archived) return false;
+      if (l.archived || l.status === 'Adversed') return false;
       if (!l.closeDate) return false;
       const d = new Date(l.closeDate);
       return (
@@ -258,6 +258,9 @@ function IncomeInner() {
         <KyleTile label="Next Month" dt={next} s={nxt} projected={true} />
       </div>
 
+      <PipelineMonth label={`${MONTH_NAMES[thisM]} ${thisY} · This Month Pipeline`} mIdx={thisM} yr={thisY} />
+      <PipelineMonth label={`${MONTH_NAMES[next.getMonth()]} ${next.getFullYear()} · Next Month Pipeline`} mIdx={next.getMonth()} yr={next.getFullYear()} />
+
       <div className="income-filters">
         <FilterDropdown label="Year" value={filters.year} options={['All', ...years.map(String)]} onChange={(v) => setFilter('year', v)} />
         <FilterDropdown label="Month" value={filters.month} options={['All', ...months]} onChange={(v) => setFilter('month', v)} />
@@ -326,9 +329,8 @@ function IncomeInner() {
         </div>
       </div>
 
-      <div
+      <details
         style={{
-          padding: '10px 14px',
           background: '#fff8e1',
           border: '1px solid #f5e3a1',
           color: '#7a6300',
@@ -337,29 +339,34 @@ function IncomeInner() {
           marginBottom: 14,
         }}
       >
-        <strong
+        <summary
           style={{
+            padding: '10px 14px',
+            cursor: 'pointer',
             fontFamily: "'Oswald',sans-serif",
             textTransform: 'uppercase',
             letterSpacing: '.5px',
+            fontWeight: 700,
+            listStyle: 'none',
           }}
         >
-          Comp Formulas:
-        </strong>
-        <br />
-        <strong>LO Gross</strong> = Loan Amount × BPs% (Kyle 130 bps · Missy 120 bps) — editable.{' '}
-        <strong>LO Net</strong> = LO Gross − LOA Fee − Concessions.
-        <br />
-        <strong>Branch Gross</strong> = 10 bps × Loan Amount (30 bps for closings on/after Apr 2026; branch-level revenue, <em>not</em>{' '}
-        Kyle's personal pay).{' '}
-        <strong style={{ color: '#1976d2' }}>Branch Mgr Override</strong> ={' '}
-        <strong>Kyle's personal pay</strong>, 10 bps × Missy's loan amount (not paid on his own
-        loans). Separate from Branch Gross / Branch Net.
-        <br />
-        <span style={{ color: '#1976d2' }}>■ Auto (blue italic)</span> = formula-driven.{' '}
-        <span style={{ color: '#7a6300' }}>■ Manual (bold yellow)</span> = you typed a value
-        directly. Click ↻ to reset to auto.
-      </div>
+          Comp Formulas
+        </summary>
+        <div style={{ padding: '0 14px 12px' }}>
+          <strong>LO Gross</strong> = Loan Amount × BPs% (Kyle 130 bps · Missy 120 bps) — editable.{' '}
+          <strong>LO Net</strong> = LO Gross − LOA Fee − Concessions.
+          <br />
+          <strong>Branch Gross</strong> = 10 bps × Loan Amount (30 bps for closings on/after Apr 2026; branch-level revenue, <em>not</em>{' '}
+          Kyle's personal pay).{' '}
+          <strong style={{ color: '#1976d2' }}>Branch Mgr Override</strong> ={' '}
+          <strong>Kyle's personal pay</strong>, 10 bps × Missy's loan amount (not paid on his own
+          loans). Separate from Branch Gross / Branch Net.
+          <br />
+          <span style={{ color: '#1976d2' }}>■ Auto (blue italic)</span> = formula-driven.{' '}
+          <span style={{ color: '#7a6300' }}>■ Manual (bold yellow)</span> = you typed a value
+          directly. Click ↻ to reset to auto.
+        </div>
+      </details>
 
       <div className="section-card">
         <div className="section-header">
@@ -661,6 +668,71 @@ function KyleTile({ label, dt, s, projected }) {
             {fmt$(Math.round(s.total))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Active (non-adversed, non-funded) pipeline loans projected to close in a
+// given month. Shows the per-loan detail plus a header summary so Kyle can
+// see what's coming down the pipeline beyond just funded comp.
+function PipelineMonth({ label, mIdx, yr }) {
+  const monthLoans = LOANS.filter((l) => {
+    if (l.archived || l.status === 'Adversed') return false;
+    if (!l.closeDate) return false;
+    const d = new Date(l.closeDate);
+    return !isNaN(d) &&
+      d.getMonth() === mIdx &&
+      d.getFullYear() === yr &&
+      l.stage !== 'funded' &&
+      l.stage !== 'cold';
+  }).sort((a, b) => new Date(a.closeDate) - new Date(b.closeDate));
+
+  const totalAmt = monthLoans.reduce((a, l) => a + (l.amount || 0), 0);
+  const bpsRate = (l) => (l.lo === 'Missy' ? 0.012 : 0.013);
+  const totalGross = monthLoans.reduce((a, l) => a + (l.amount || 0) * bpsRate(l), 0);
+
+  return (
+    <div className="section-card" style={{ marginBottom: 14 }}>
+      <div className="section-header">
+        <div className="section-title">{label}</div>
+        <div className="section-sub">
+          {monthLoans.length} loan{monthLoans.length === 1 ? '' : 's'} · {fmt$M(totalAmt)} volume · est. {fmt$(Math.round(totalGross))} LO Gross
+        </div>
+      </div>
+      <div className="section-body" style={{ padding: 0, overflowX: 'auto' }}>
+        {monthLoans.length === 0 ? (
+          <div style={{ padding: '14px 18px', color: '#888', fontSize: 12 }}>
+            No active pipeline loans projected to close.
+          </div>
+        ) : (
+          <table className="income-table">
+            <thead>
+              <tr>
+                <th>Borrower</th>
+                <th>Close Date</th>
+                <th>Status</th>
+                <th>LO</th>
+                <th>Agent</th>
+                <th className="num">Loan Amount</th>
+                <th className="num">Est. LO Gross</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthLoans.map((l) => (
+                <tr key={l.id}>
+                  <td>{l.borrower}</td>
+                  <td>{l.closeDate}</td>
+                  <td>{l.status || '—'}</td>
+                  <td>{l.lo || '—'}</td>
+                  <td>{l.agent || '—'}</td>
+                  <td className="num">{fmt$(l.amount || 0)}</td>
+                  <td className="num">{fmt$(Math.round((l.amount || 0) * bpsRate(l)))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

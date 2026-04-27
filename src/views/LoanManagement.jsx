@@ -41,7 +41,7 @@ function statusSlug(s) {
   return (s || '').toLowerCase().replace(/[^a-z]/g, '');
 }
 
-const STATUSES = ['All','New Contract','Disclosed','Processing','Underwriting','CTC Required','CTC','BTP','Approved','Funded'];
+const STATUSES = ['All','New Contract','Disclosed','Processing','Underwriting','CTC Required','CTC','BTP','Approved','Funded','Adversed'];
 const LOS_LIST = ['All','Kyle','Missy'];
 const TYPES = ['All','CONV','FHA','VA','Jumbo'];
 const SALE_TYPES = ['All','PURCHASE','REFINANCE'];
@@ -208,6 +208,93 @@ function EditCheck({ value, onChange }) {
   );
 }
 
+// ── Click-to-zoom text cell ──────────────────────────────────────
+// Cells in the spreadsheet are narrow, so phone numbers / emails /
+// property addresses / co-borrower fields get truncated to "..." and are
+// hard to read. Clicking opens a centered modal with the value rendered
+// large enough to actually see, plus an editable input for changes.
+function ZoomEditCell({ label, value, onChange, type = 'text', multiline = false }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const handleOpen = () => { setDraft(value ?? ''); setOpen(true); };
+  const handleSave = () => { onChange(draft); setOpen(false); };
+  const handleCancel = () => setOpen(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+      else if (e.key === 'Enter' && !multiline && !e.shiftKey) {
+        onChange(draft);
+        setOpen(false);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, draft, multiline, onChange]);
+
+  const link = (type === 'tel' && value) ? `tel:${value}`
+            : (type === 'email' && value) ? `mailto:${value}`
+            : null;
+
+  return (
+    <>
+      <div
+        onClick={handleOpen}
+        title={value || `Click to edit ${label}`}
+        style={{
+          padding: '6px 10px', fontSize: 11,
+          color: value ? '#222' : '#bbb',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          cursor: 'pointer', height: '100%', display: 'flex', alignItems: 'center',
+        }}
+      >
+        {value || `Click to add ${label.toLowerCase()}`}
+      </div>
+      {open && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) handleCancel(); }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 'min(560px, 92vw)', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#666', marginBottom: 10 }}>
+              {label}
+            </div>
+            {multiline ? (
+              <textarea
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={6}
+                style={{ width: '100%', fontSize: 16, padding: 12, border: '1px solid #d0d0d0', borderRadius: 8, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
+              />
+            ) : (
+              <input
+                autoFocus
+                type={type === 'tel' || type === 'email' ? 'text' : type}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                style={{ width: '100%', fontSize: 20, padding: '12px 14px', border: '1px solid #d0d0d0', borderRadius: 8, fontFamily: 'inherit', boxSizing: 'border-box' }}
+              />
+            )}
+            {link && (
+              <div style={{ marginTop: 12 }}>
+                <a href={link} style={{ fontSize: 14, color: '#1976d2', textDecoration: 'underline' }}>
+                  {type === 'tel' ? `Call ${value}` : `Email ${value}`}
+                </a>
+              </div>
+            )}
+            <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button onClick={handleCancel} style={{ padding: '8px 16px', border: '1px solid #d0d0d0', borderRadius: 6, background: '#fff', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleSave} style={{ padding: '8px 16px', border: 'none', borderRadius: 6, background: 'var(--brand-red, #c62828)', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── Color legend ────────────────────────────────────────────────
 function ColorLegend() {
   const [open, setOpen] = useState(false);
@@ -340,7 +427,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan }) {
                   <td className={`date ${dateClass(l.icdDeadline)}`}><EditInput type="date" value={l.icdDeadline} onChange={(v) => onEdit(l.id, 'icdDeadline', v)} /></td>
                   <td className="cb"><EditCheck value={l.icdSent} onChange={(v) => onEdit(l.id, 'icdSent', v)} /></td>
                   <td className="cb"><EditCheck value={l.icdSigned} onChange={(v) => onEdit(l.id, 'icdSigned', v)} /></td>
-                  <td><EditInput value={l.property} onChange={(v) => onEdit(l.id, 'property', v)} /></td>
+                  <td><ZoomEditCell label="Property" value={l.property} onChange={(v) => onEdit(l.id, 'property', v)} /></td>
                   <td className="money"><EditInput type="number" value={l.price} onChange={(v) => onEdit(l.id, 'price', v)} /></td>
                   <td className="money"><EditInput type="number" value={l.amount} onChange={(v) => onEdit(l.id, 'amount', v)} /></td>
                   <td><EditSelect value={l.type || ''} options={TYPES.filter(x => x !== 'All')} empty="—" onChange={(v) => onEdit(l.id, 'type', v)} /></td>
@@ -354,11 +441,11 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan }) {
                     />
                   </td>
                   <td><EditSelect value={l.leadSource || ''} options={LEAD_SOURCES} empty="—" onChange={(v) => onEdit(l.id, 'leadSource', v)} /></td>
-                  <td><EditInput type="tel" value={l.phone} onChange={(v) => onEdit(l.id, 'phone', v)} /></td>
-                  <td><EditInput type="email" value={l.email} onChange={(v) => onEdit(l.id, 'email', v)} /></td>
-                  <td><EditInput value={l.c2first} onChange={(v) => onEdit(l.id, 'c2first', v)} /></td>
-                  <td><EditInput value={l.c2last} onChange={(v) => onEdit(l.id, 'c2last', v)} /></td>
-                  <td><EditInput type="tel" value={l.c2phone} onChange={(v) => onEdit(l.id, 'c2phone', v)} /></td>
+                  <td><ZoomEditCell label="Phone" type="tel" value={l.phone} onChange={(v) => onEdit(l.id, 'phone', v)} /></td>
+                  <td><ZoomEditCell label="Email" type="email" value={l.email} onChange={(v) => onEdit(l.id, 'email', v)} /></td>
+                  <td><ZoomEditCell label="Co-Borrower First" value={l.c2first} onChange={(v) => onEdit(l.id, 'c2first', v)} /></td>
+                  <td><ZoomEditCell label="Co-Borrower Last" value={l.c2last} onChange={(v) => onEdit(l.id, 'c2last', v)} /></td>
+                  <td><ZoomEditCell label="Co-Borrower Phone" type="tel" value={l.c2phone} onChange={(v) => onEdit(l.id, 'c2phone', v)} /></td>
                 </tr>
               );
             })}
@@ -448,8 +535,10 @@ export default function LoanManagement() {
     year: 'All', month: 'All', status: 'All', lo: 'All', type: 'All', saleType: 'All',
   });
 
+  // Adversed loans are kept in the underlying set so the Adversed status
+  // filter can find them, but hidden by default.
   const losLoans = useMemo(
-    () => LOANS.filter((l) => !l.archived && LOS_STAGES.includes(l.stage)),
+    () => LOANS.filter((l) => !l.archived && (LOS_STAGES.includes(l.stage) || (l.status || '') === 'Adversed')),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -457,6 +546,7 @@ export default function LoanManagement() {
   const filtered = losLoans.filter((r) => {
     const ry = getYearFromDate(r.closeDate);
     const rm = getMonthFromDate(r.closeDate);
+    if ((r.status || '') === 'Adversed' && filters.status !== 'Adversed') return false;
     if (filters.year !== 'All' && ry !== filters.year) return false;
     if (filters.month !== 'All' && rm !== filters.month) return false;
     if (filters.status !== 'All' && (r.status || '') !== filters.status) return false;

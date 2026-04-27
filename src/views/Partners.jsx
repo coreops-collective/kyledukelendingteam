@@ -57,7 +57,7 @@ export default function Partners() {
   const livePipelineByAgent = useMemo(() => {
     const map = {};
     LOANS.forEach((l) => {
-      if (l.archived) return;
+      if (l.archived || l.status === 'Adversed') return;
       if (!l.agent || l.stage === 'funded' || l.stage === 'cold') return;
       if (!map[l.agent]) map[l.agent] = { count: 0, volume: 0 };
       map[l.agent].count += 1;
