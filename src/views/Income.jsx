@@ -258,8 +258,9 @@ function IncomeInner() {
         <KyleTile label="Next Month" dt={next} s={nxt} projected={true} />
       </div>
 
-      <PipelineMonth label={`${MONTH_NAMES[thisM]} ${thisY} · This Month Pipeline`} mIdx={thisM} yr={thisY} />
-      <PipelineMonth label={`${MONTH_NAMES[next.getMonth()]} ${next.getFullYear()} · Next Month Pipeline`} mIdx={next.getMonth()} yr={next.getFullYear()} />
+      <PipelineMonth label={`Last Month · ${MONTH_NAMES[prev.getMonth()]} ${prev.getFullYear()}`} mIdx={prev.getMonth()} yr={prev.getFullYear()} />
+      <PipelineMonth label={`This Month · ${MONTH_NAMES[thisM]} ${thisY}`} mIdx={thisM} yr={thisY} />
+      <PipelineMonth label={`Next Month · ${MONTH_NAMES[next.getMonth()]} ${next.getFullYear()}`} mIdx={next.getMonth()} yr={next.getFullYear()} />
 
       <div className="income-filters">
         <FilterDropdown label="Year" value={filters.year} options={['All', ...years.map(String)]} onChange={(v) => setFilter('year', v)} />
@@ -673,10 +674,11 @@ function KyleTile({ label, dt, s, projected }) {
   );
 }
 
-// Active (non-adversed, non-funded) pipeline loans projected to close in a
-// given month. Shows the per-loan detail plus a header summary so Kyle can
-// see what's coming down the pipeline beyond just funded comp.
-function PipelineMonth({ label, mIdx, yr }) {
+// Active (non-adversed) loans with a close date in a given month, with a
+// per-loan breakdown of estimated LO Gross, Branch Gross, and Branch Mgr
+// Override, plus column totals. Collapsible so Kyle can keep last / this /
+// next month all in view without the page getting unwieldy.
+function PipelineMonth({ label, mIdx, yr, defaultOpen = true }) {
   const monthLoans = LOANS.filter((l) => {
     if (l.archived || l.status === 'Adversed') return false;
     if (!l.closeDate) return false;
@@ -684,26 +686,42 @@ function PipelineMonth({ label, mIdx, yr }) {
     return !isNaN(d) &&
       d.getMonth() === mIdx &&
       d.getFullYear() === yr &&
-      l.stage !== 'funded' &&
       l.stage !== 'cold';
   }).sort((a, b) => new Date(a.closeDate) - new Date(b.closeDate));
 
-  const totalAmt = monthLoans.reduce((a, l) => a + (l.amount || 0), 0);
-  const bpsRate = (l) => (l.lo === 'Missy' ? 0.012 : 0.013);
-  const totalGross = monthLoans.reduce((a, l) => a + (l.amount || 0) * bpsRate(l), 0);
+  const loGrossBps = (l) => (l.lo === 'Missy' ? 0.012 : 0.013);
+  const loGross = (l) => (l.amount || 0) * loGrossBps(l);
+  const branchGross = (l) => computeBranchGross(l.amount, l.closeDate);
+  const branchMgrOverride = (l) => (l.lo === 'Missy' ? (l.amount || 0) * 0.001 : 0);
+
+  const totals = monthLoans.reduce(
+    (acc, l) => ({
+      amt: acc.amt + (l.amount || 0),
+      lo: acc.lo + loGross(l),
+      branch: acc.branch + branchGross(l),
+      override: acc.override + branchMgrOverride(l),
+    }),
+    { amt: 0, lo: 0, branch: 0, override: 0 }
+  );
 
   return (
-    <div className="section-card" style={{ marginBottom: 14 }}>
-      <div className="section-header">
+    <details open={defaultOpen} className="section-card" style={{ marginBottom: 14 }}>
+      <summary
+        className="section-header"
+        style={{ cursor: 'pointer', listStyle: 'none', display: 'block' }}
+      >
         <div className="section-title">{label}</div>
         <div className="section-sub">
-          {monthLoans.length} loan{monthLoans.length === 1 ? '' : 's'} · {fmt$M(totalAmt)} volume · est. {fmt$(Math.round(totalGross))} LO Gross
+          {monthLoans.length} loan{monthLoans.length === 1 ? '' : 's'} · {fmt$M(totals.amt)} volume ·
+          est. {fmt$(Math.round(totals.lo))} LO Gross ·
+          {' '}{fmt$(Math.round(totals.branch))} Branch Gross ·
+          {' '}{fmt$(Math.round(totals.override))} Branch Mgr Override
         </div>
-      </div>
+      </summary>
       <div className="section-body" style={{ padding: 0, overflowX: 'auto' }}>
         {monthLoans.length === 0 ? (
           <div style={{ padding: '14px 18px', color: '#888', fontSize: 12 }}>
-            No active pipeline loans projected to close.
+            No loans with a close date in this month.
           </div>
         ) : (
           <table className="income-table">
@@ -716,6 +734,8 @@ function PipelineMonth({ label, mIdx, yr }) {
                 <th>Agent</th>
                 <th className="num">Loan Amount</th>
                 <th className="num">Est. LO Gross</th>
+                <th className="num">Branch Gross</th>
+                <th className="num">Branch Mgr Override</th>
               </tr>
             </thead>
             <tbody>
@@ -727,13 +747,22 @@ function PipelineMonth({ label, mIdx, yr }) {
                   <td>{l.lo || '—'}</td>
                   <td>{l.agent || '—'}</td>
                   <td className="num">{fmt$(l.amount || 0)}</td>
-                  <td className="num">{fmt$(Math.round((l.amount || 0) * bpsRate(l)))}</td>
+                  <td className="num">{fmt$(Math.round(loGross(l)))}</td>
+                  <td className="num">{fmt$(Math.round(branchGross(l)))}</td>
+                  <td className="num">{branchMgrOverride(l) > 0 ? fmt$(Math.round(branchMgrOverride(l))) : '—'}</td>
                 </tr>
               ))}
+              <tr style={{ fontWeight: 700, background: '#f7f7f7' }}>
+                <td colSpan={5} style={{ textAlign: 'right' }}>Totals</td>
+                <td className="num">{fmt$(Math.round(totals.amt))}</td>
+                <td className="num">{fmt$(Math.round(totals.lo))}</td>
+                <td className="num">{fmt$(Math.round(totals.branch))}</td>
+                <td className="num">{fmt$(Math.round(totals.override))}</td>
+              </tr>
             </tbody>
           </table>
         )}
       </div>
-    </div>
+    </details>
   );
 }
