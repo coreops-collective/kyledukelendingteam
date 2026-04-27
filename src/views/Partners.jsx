@@ -3,7 +3,7 @@ import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
-import { markPartnerDirty, markPartnerNew, subscribePartners } from '../lib/partnersStore.js';
+import { markPartnerDirty, markPartnerNew, savePartnersNow, subscribePartners } from '../lib/partnersStore.js';
 
 // Format helpers — mirror legacy fmt$M / fmt$
 const fmt$ = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -46,15 +46,28 @@ export default function Partners() {
   // immediately instead of waiting for a manual refresh.
   const [partnersVersion, setPartnersVersion] = useState(0);
 
-  // Listen for save errors from partnersStore and surface them as a
-  // visible toast so the user actually sees when a save fails.
+  // Listen for save outcomes from partnersStore and surface them as a
+  // visible toast so the user actually sees what's happening without
+  // having to open DevTools.
   useEffect(() => {
     const onErr = (e) => {
       const msg = e?.detail?.message || 'Save failed';
       setToast({ title: 'Save failed', msg, error: true });
     };
+    const onOk = (e) => {
+      const count = e?.detail?.count || 1;
+      const action = e?.detail?.action || 'save';
+      setToast({
+        title: 'Saved',
+        msg: `${count} partner${count === 1 ? '' : 's'} ${action === 'insert' ? 'added' : 'updated'} in Supabase`,
+      });
+    };
     window.addEventListener('partners:save-error', onErr);
-    return () => window.removeEventListener('partners:save-error', onErr);
+    window.addEventListener('partners:save-success', onOk);
+    return () => {
+      window.removeEventListener('partners:save-error', onErr);
+      window.removeEventListener('partners:save-success', onOk);
+    };
   }, []);
 
   // Subscribe to live changes from other clients so adds/edits made by
@@ -365,7 +378,18 @@ function PartnerDrawer({ partner, onClose }) {
   };
 
   const p = partner;
-  const set = (key, value) => { p[key] = value; markPartnerDirty(p); force((n) => n + 1); };
+  // update — capture every keystroke into the partner object and reset
+  // the debounce timer. We do NOT force a re-render here, otherwise
+  // EditRow (defined inside this component) would unmount on every key
+  // and the user would lose focus mid-typing.
+  // set — same plus a force re-render, used on blur so dependent UI
+  // (e.g. drawer title) refreshes when the user finishes a field.
+  const update = (key, value) => { p[key] = value; markPartnerDirty(p); };
+  const set = (key, value) => { update(key, value); force((n) => n + 1); };
+  // Force-flush any pending debounced save before the drawer unmounts —
+  // mobile users frequently tap Close immediately after typing, and we
+  // can't rely on onBlur firing before unmount.
+  const handleClose = () => { savePartnersNow(); onClose(); };
   const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
   const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4, display: 'block' };
 
@@ -375,6 +399,7 @@ function PartnerDrawer({ partner, onClose }) {
       <input
         type={type}
         defaultValue={p[field] || ''}
+        onChange={(e) => update(field, e.target.value)}
         onBlur={(e) => set(field, e.target.value)}
         style={inputStyle}
       />
@@ -389,10 +414,10 @@ function PartnerDrawer({ partner, onClose }) {
 
   return (
     <>
-      <div className="drawer-overlay open" onClick={onClose} />
+      <div className="drawer-overlay open" onClick={handleClose} />
       <aside className="drawer open" style={{ width: 640, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={handleClose}>×</button>
           <div className="drawer-stage">{p.vip ? 'VIP Partner' : 'Partner'}</div>
           <div className="drawer-borrower">{p.name}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{[p.city, p.state].filter(Boolean).join(', ') || '—'}</div>
@@ -420,6 +445,7 @@ function PartnerDrawer({ partner, onClose }) {
               <label style={labelStyle}>Notes</label>
               <textarea
                 defaultValue={p.notes || ''}
+                onChange={(e) => update('notes', e.target.value)}
                 onBlur={(e) => set('notes', e.target.value)}
                 rows={4}
                 placeholder="Anything memorable — kids' names, coffee order, milestones, gift ideas, etc."
@@ -475,7 +501,7 @@ function PartnerDrawer({ partner, onClose }) {
           </div>
         </div>
         <div className="drawer-actions">
-          <button className="drawer-btn primary" onClick={onClose}>Close</button>
+          <button className="drawer-btn primary" onClick={handleClose}>Close</button>
         </div>
       </aside>
     </>

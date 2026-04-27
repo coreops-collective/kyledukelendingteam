@@ -137,9 +137,9 @@ export async function loadPartnersFromSupabase() {
   }
 }
 
-// Surface save errors to the UI via a window-level event so the Partners
-// view can show a red toast. Without this, errors only land in the
-// console which most users won't think to open.
+// Surface save outcomes to the UI via window-level events so the
+// Partners view can show a green/red toast. Without this, errors only
+// land in the console which most users won't think to open.
 function reportSaveError(prefix, error) {
   const message = error && (error.message || error.details || error.hint)
     ? `${prefix}: ${error.message || error.details || error.hint}`
@@ -147,6 +147,11 @@ function reportSaveError(prefix, error) {
   console.error('[partners]', message, error);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('partners:save-error', { detail: { message, error } }));
+  }
+}
+function reportSaveSuccess(action, count) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('partners:save-success', { detail: { action, count } }));
   }
 }
 
@@ -175,6 +180,8 @@ async function flushPartners() {
         if (error) {
           reportSaveError('update failed', error);
           ids.forEach((id) => dirtyIds.add(id));
+        } else {
+          reportSaveSuccess('update', rows.length);
         }
       }
     }
@@ -196,6 +203,7 @@ async function flushPartners() {
             const p = PARTNERS.find((x) => !x.id && x.name === row.name);
             if (p) p.id = row.id;
           });
+          reportSaveSuccess('insert', data.length);
         }
       }
     }
