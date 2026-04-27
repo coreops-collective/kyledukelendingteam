@@ -181,7 +181,37 @@ async function flushPartners() {
           reportSaveError('update failed', error);
           ids.forEach((id) => dirtyIds.add(id));
         } else {
-          reportSaveSuccess('update', rows.length);
+          // Read the row back to confirm the new columns actually persisted.
+          // If anniversary / favorite_restaurant / notes come back null after
+          // we just sent values, PostgREST silently dropped them — most often
+          // a stale schema cache after ALTER TABLE.
+          const verifyId = rows[0].id;
+          const sent = rows[0];
+          if (verifyId) {
+            const { data: backData } = await supabase
+              .from('partners')
+              .select('id,name,anniversary,favorite_restaurant,notes')
+              .eq('id', verifyId)
+              .maybeSingle();
+            if (backData) {
+              const drops = [];
+              if (sent.anniversary && !backData.anniversary) drops.push('anniversary');
+              if (sent.favorite_restaurant && !backData.favorite_restaurant) drops.push('favorite_restaurant');
+              if (sent.notes && !backData.notes) drops.push('notes');
+              if (drops.length) {
+                reportSaveError(
+                  `Supabase silently dropped: ${drops.join(', ')}. Run "notify pgrst, 'reload schema'" in SQL Editor`,
+                  { message: `dropped columns: ${drops.join(', ')}` }
+                );
+              } else {
+                reportSaveSuccess('update', rows.length);
+              }
+            } else {
+              reportSaveSuccess('update', rows.length);
+            }
+          } else {
+            reportSaveSuccess('update', rows.length);
+          }
         }
       }
     }
