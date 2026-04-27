@@ -674,34 +674,99 @@ function KyleTile({ label, dt, s, projected }) {
   );
 }
 
-// Active (non-adversed) loans with a close date in a given month, with a
-// per-loan breakdown of estimated LO Gross, Branch Gross, and Branch Mgr
-// Override, plus column totals. Collapsible so Kyle can keep last / this /
-// next month all in view without the page getting unwieldy.
+// Per-loan breakdown for a given month, merging the live LOANS pipeline
+// (active + funded but not yet archived) with the PAST_CLIENTS historical
+// list (loans that already closed and made it into the books). Without
+// this merge the breakdown disagrees with the top tiles, which read from
+// PAST_CLIENTS via INITIAL_INCOME.
+//
+// Loans are grouped by LO (Kyle / Missy) with per-group subtotals and a
+// grand total, so Kyle can see at a glance who's responsible for what.
 function PipelineMonth({ label, mIdx, yr, defaultOpen = true }) {
-  const monthLoans = LOANS.filter((l) => {
-    if (l.archived || l.status === 'Adversed') return false;
-    if (!l.closeDate) return false;
-    const d = new Date(l.closeDate);
-    return !isNaN(d) &&
-      d.getMonth() === mIdx &&
-      d.getFullYear() === yr &&
-      l.stage !== 'cold';
-  }).sort((a, b) => new Date(a.closeDate) - new Date(b.closeDate));
+  const matchesMonth = (closeDate) => {
+    if (!closeDate) return false;
+    const d = new Date(closeDate);
+    return !isNaN(d) && d.getMonth() === mIdx && d.getFullYear() === yr;
+  };
 
-  const loGrossBps = (l) => (l.lo === 'Missy' ? 0.012 : 0.013);
-  const loGross = (l) => (l.amount || 0) * loGrossBps(l);
-  const branchGross = (l) => computeBranchGross(l.amount, l.closeDate);
-  const branchMgrOverride = (l) => (l.lo === 'Missy' ? (l.amount || 0) * 0.001 : 0);
+  const fromLoans = LOANS
+    .filter((l) => !l.archived && l.status !== 'Adversed' && l.stage !== 'cold' && matchesMonth(l.closeDate))
+    .map((l) => ({
+      key: `loan-${l.id}`,
+      name: l.borrower || '',
+      closeDate: l.closeDate,
+      amount: l.amount || 0,
+      lo: l.lo || '',
+      agent: l.agent || '',
+      status: l.status || (l.stage === 'funded' ? 'Funded' : (l.stage || '—')),
+    }));
 
-  const totals = monthLoans.reduce(
-    (acc, l) => ({
-      amt: acc.amt + (l.amount || 0),
-      lo: acc.lo + loGross(l),
-      branch: acc.branch + branchGross(l),
-      override: acc.override + branchMgrOverride(l),
+  const seen = new Set(fromLoans.map((r) => `${(r.name || '').toLowerCase()}|${r.closeDate}`));
+  const fromPast = PAST_CLIENTS
+    .filter((pc) => matchesMonth(pc.closeDate))
+    .filter((pc) => !seen.has(`${(pc.name || '').toLowerCase()}|${pc.closeDate}`))
+    .map((pc) => ({
+      key: `past-${pc.name}-${pc.closeDate}`,
+      name: pc.name || '',
+      closeDate: pc.closeDate,
+      amount: pc.amount || 0,
+      lo: pc.lo || 'Kyle',
+      agent: pc.agent || '',
+      status: 'Funded',
+    }));
+
+  const all = [...fromLoans, ...fromPast].sort(
+    (a, b) => new Date(a.closeDate) - new Date(b.closeDate)
+  );
+
+  const loGrossBps = (r) => (r.lo === 'Missy' ? 0.012 : 0.013);
+  const loGross = (r) => (r.amount || 0) * loGrossBps(r);
+  const branchGross = (r) => computeBranchGross(r.amount, r.closeDate);
+  const branchMgrOverride = (r) => (r.lo === 'Missy' ? (r.amount || 0) * 0.001 : 0);
+
+  const sumGroup = (rows) => rows.reduce(
+    (acc, r) => ({
+      units: acc.units + 1,
+      amt: acc.amt + (r.amount || 0),
+      lo: acc.lo + loGross(r),
+      branch: acc.branch + branchGross(r),
+      override: acc.override + branchMgrOverride(r),
     }),
-    { amt: 0, lo: 0, branch: 0, override: 0 }
+    { units: 0, amt: 0, lo: 0, branch: 0, override: 0 }
+  );
+
+  const kyleRows = all.filter((r) => r.lo === 'Kyle');
+  const missyRows = all.filter((r) => r.lo === 'Missy');
+  const otherRows = all.filter((r) => r.lo !== 'Kyle' && r.lo !== 'Missy');
+  const kyleTot = sumGroup(kyleRows);
+  const missyTot = sumGroup(missyRows);
+  const otherTot = sumGroup(otherRows);
+  const grand = sumGroup(all);
+
+  const COLSPAN = 9;
+
+  const renderRow = (r) => (
+    <tr key={r.key}>
+      <td>{r.name}</td>
+      <td>{r.closeDate}</td>
+      <td>{r.status || '—'}</td>
+      <td>{r.lo || '—'}</td>
+      <td>{r.agent || '—'}</td>
+      <td className="num">{fmt$(r.amount || 0)}</td>
+      <td className="num">{fmt$(Math.round(loGross(r)))}</td>
+      <td className="num">{fmt$(Math.round(branchGross(r)))}</td>
+      <td className="num">{branchMgrOverride(r) > 0 ? fmt$(Math.round(branchMgrOverride(r))) : '—'}</td>
+    </tr>
+  );
+
+  const renderSubtotal = (label, t, bg) => (
+    <tr style={{ fontWeight: 700, background: bg }}>
+      <td colSpan={5} style={{ textAlign: 'right' }}>{label} subtotal · {t.units} unit{t.units === 1 ? '' : 's'}</td>
+      <td className="num">{fmt$(Math.round(t.amt))}</td>
+      <td className="num">{fmt$(Math.round(t.lo))}</td>
+      <td className="num">{fmt$(Math.round(t.branch))}</td>
+      <td className="num">{fmt$(Math.round(t.override))}</td>
+    </tr>
   );
 
   return (
@@ -712,14 +777,17 @@ function PipelineMonth({ label, mIdx, yr, defaultOpen = true }) {
       >
         <div className="section-title">{label}</div>
         <div className="section-sub">
-          {monthLoans.length} loan{monthLoans.length === 1 ? '' : 's'} · {fmt$M(totals.amt)} volume ·
-          est. {fmt$(Math.round(totals.lo))} LO Gross ·
-          {' '}{fmt$(Math.round(totals.branch))} Branch Gross ·
-          {' '}{fmt$(Math.round(totals.override))} Branch Mgr Override
+          {grand.units} unit{grand.units === 1 ? '' : 's'} · {fmt$M(grand.amt)} volume
+          {kyleTot.units > 0 && (
+            <> · Kyle: {kyleTot.units} · {fmt$(Math.round(kyleTot.lo))} gross</>
+          )}
+          {missyTot.units > 0 && (
+            <> · Missy: {missyTot.units} · {fmt$(Math.round(missyTot.lo))} gross · {fmt$(Math.round(missyTot.override))} override</>
+          )}
         </div>
       </summary>
       <div className="section-body" style={{ padding: 0, overflowX: 'auto' }}>
-        {monthLoans.length === 0 ? (
+        {all.length === 0 ? (
           <div style={{ padding: '14px 18px', color: '#888', fontSize: 12 }}>
             No loans with a close date in this month.
           </div>
@@ -739,25 +807,45 @@ function PipelineMonth({ label, mIdx, yr, defaultOpen = true }) {
               </tr>
             </thead>
             <tbody>
-              {monthLoans.map((l) => (
-                <tr key={l.id}>
-                  <td>{l.borrower}</td>
-                  <td>{l.closeDate}</td>
-                  <td>{l.status || '—'}</td>
-                  <td>{l.lo || '—'}</td>
-                  <td>{l.agent || '—'}</td>
-                  <td className="num">{fmt$(l.amount || 0)}</td>
-                  <td className="num">{fmt$(Math.round(loGross(l)))}</td>
-                  <td className="num">{fmt$(Math.round(branchGross(l)))}</td>
-                  <td className="num">{branchMgrOverride(l) > 0 ? fmt$(Math.round(branchMgrOverride(l))) : '—'}</td>
-                </tr>
-              ))}
-              <tr style={{ fontWeight: 700, background: '#f7f7f7' }}>
-                <td colSpan={5} style={{ textAlign: 'right' }}>Totals</td>
-                <td className="num">{fmt$(Math.round(totals.amt))}</td>
-                <td className="num">{fmt$(Math.round(totals.lo))}</td>
-                <td className="num">{fmt$(Math.round(totals.branch))}</td>
-                <td className="num">{fmt$(Math.round(totals.override))}</td>
+              {kyleRows.length > 0 && (
+                <>
+                  <tr style={{ background: '#fff8e1', fontWeight: 700 }}>
+                    <td colSpan={COLSPAN} style={{ padding: '8px 12px', fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px', fontSize: 11 }}>
+                      Kyle
+                    </td>
+                  </tr>
+                  {kyleRows.map(renderRow)}
+                  {renderSubtotal('Kyle', kyleTot, '#fafafa')}
+                </>
+              )}
+              {missyRows.length > 0 && (
+                <>
+                  <tr style={{ background: '#e3f2fd', fontWeight: 700 }}>
+                    <td colSpan={COLSPAN} style={{ padding: '8px 12px', fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px', fontSize: 11 }}>
+                      Missy
+                    </td>
+                  </tr>
+                  {missyRows.map(renderRow)}
+                  {renderSubtotal('Missy', missyTot, '#fafafa')}
+                </>
+              )}
+              {otherRows.length > 0 && (
+                <>
+                  <tr style={{ background: '#f5f5f5', fontWeight: 700 }}>
+                    <td colSpan={COLSPAN} style={{ padding: '8px 12px', fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px', fontSize: 11 }}>
+                      Other / Unassigned
+                    </td>
+                  </tr>
+                  {otherRows.map(renderRow)}
+                  {renderSubtotal('Other', otherTot, '#fafafa')}
+                </>
+              )}
+              <tr style={{ fontWeight: 700, background: '#eaeaea' }}>
+                <td colSpan={5} style={{ textAlign: 'right' }}>Grand Total · {grand.units} unit{grand.units === 1 ? '' : 's'}</td>
+                <td className="num">{fmt$(Math.round(grand.amt))}</td>
+                <td className="num">{fmt$(Math.round(grand.lo))}</td>
+                <td className="num">{fmt$(Math.round(grand.branch))}</td>
+                <td className="num">{fmt$(Math.round(grand.override))}</td>
               </tr>
             </tbody>
           </table>
