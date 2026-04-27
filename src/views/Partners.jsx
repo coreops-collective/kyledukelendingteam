@@ -41,6 +41,10 @@ export default function Partners() {
   const [filters, setFilters] = useState({ search: '', state: 'All', tier: 'All', deals: 'All' });
   const [showForm, setShowForm] = useState(false);
   const [toast, setToast] = useState(null);
+  // PARTNERS is a mutable module-level array. Bumping this counter forces the
+  // memos below to recompute after we push a new partner so the list updates
+  // immediately instead of waiting for a manual refresh.
+  const [partnersVersion, setPartnersVersion] = useState(0);
 
   // Compute per-agent live pipeline counts from LOANS (active = not funded/cold).
   const livePipelineByAgent = useMemo(() => {
@@ -61,7 +65,7 @@ export default function Partners() {
       const lp = livePipelineByAgent[p.name];
       return lp ? { ...p, livePipeline: lp.count, livePipelineVolume: lp.volume } : p;
     }),
-    [livePipelineByAgent]
+    [livePipelineByAgent, partnersVersion]
   );
 
   const stateOptions = useMemo(
@@ -69,7 +73,7 @@ export default function Partners() {
       ['All', ...new Set(PARTNERS.map((p) => p.state).filter((s) => s && s !== '—'))].sort(
         (a, b) => (a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b))
       ),
-    []
+    [partnersVersion]
   );
 
   const filtered = useMemo(() => {
@@ -228,6 +232,7 @@ export default function Partners() {
         const added = { ...p, deals: 0, closed: 0, volume: 0, lifetime: 0, vip: p.tier?.startsWith('VIP') };
         PARTNERS.push(added);
         markPartnerNew(added);
+        setPartnersVersion((v) => v + 1);
         setToast({ title: 'Partner Added', msg: `${p.name} — saved to Supabase` });
         setShowForm(false);
       }} />}
