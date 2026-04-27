@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
-import { PAST_CLIENTS } from '../data/pastClients.js';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import { getCurrentUser } from '../lib/auth.js';
+import { getAllFunded } from '../lib/fundedLoans.js';
+import { subscribeLoans } from '../lib/loansStore.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -14,20 +15,29 @@ export default function AllLoans() {
   const [minDrop, setMinDrop] = useState('0.5');
   const [openClient, setOpenClient] = useState(null);
   const [layout, setLayout] = useState('cards'); // cards | table
+  const [, force] = useState(0);
+  const bump = useCallback(() => force((n) => n + 1), []);
+  // Re-fetch the merged funded list whenever a teammate marks a loan funded.
+  useEffect(() => subscribeLoans(bump), [bump]);
   const refiMode = todaysRate !== '' && !isNaN(parseFloat(todaysRate));
 
+  // Merge historical PAST_CLIENTS with anything in LOANS that has been
+  // marked Funded — without this, recently-funded loans wouldn't show up
+  // here until the static seed file is hand-edited.
+  const fundedAll = getAllFunded();
+
   const years = useMemo(
-    () => ['All', ...new Set(PAST_CLIENTS.map((c) => String(c.year || '')).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : Number(b) - Number(a)),
-    []
+    () => ['All', ...new Set(fundedAll.map((c) => String(c.year || '')).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : Number(b) - Number(a)),
+    [fundedAll]
   );
-  const los = useMemo(() => ['All', ...new Set(PAST_CLIENTS.map((c) => c.lo).filter(Boolean))], []);
-  const types = useMemo(() => ['All', ...new Set(PAST_CLIENTS.map((c) => c.type).filter(Boolean))], []);
-  const saleTypes = useMemo(() => ['All', ...new Set(PAST_CLIENTS.map((c) => c.saleType).filter(Boolean))], []);
-  const agents = useMemo(() => ['All', ...new Set(PAST_CLIENTS.map((c) => c.agent).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : a.localeCompare(b)), []);
+  const los = useMemo(() => ['All', ...new Set(fundedAll.map((c) => c.lo).filter(Boolean))], [fundedAll]);
+  const types = useMemo(() => ['All', ...new Set(fundedAll.map((c) => c.type).filter(Boolean))], [fundedAll]);
+  const saleTypes = useMemo(() => ['All', ...new Set(fundedAll.map((c) => c.saleType).filter(Boolean))], [fundedAll]);
+  const agents = useMemo(() => ['All', ...new Set(fundedAll.map((c) => c.agent).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : a.localeCompare(b)), [fundedAll]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return PAST_CLIENTS.filter((c) => {
+    return fundedAll.filter((c) => {
       if (filters.year !== 'All' && String(c.year || '') !== filters.year) return false;
       if (filters.month !== 'All' && c.month !== filters.month) return false;
       if (filters.lo !== 'All' && c.lo !== filters.lo) return false;
@@ -45,7 +55,7 @@ export default function AllLoans() {
       }
       return true;
     });
-  }, [filters, q, refiMode, todaysRate, minDrop]);
+  }, [filters, q, refiMode, todaysRate, minDrop, fundedAll]);
 
   const set = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
 
@@ -68,7 +78,7 @@ export default function AllLoans() {
       }}>
         <div>
           <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.8px' }}>
-            {filtered.length} of {PAST_CLIENTS.length} closings
+            {filtered.length} of {fundedAll.length} closings
           </div>
           <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
             Volume: {fmt$(totalVolume)}

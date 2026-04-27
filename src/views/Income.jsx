@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
-import { PAST_CLIENTS } from '../data/pastClients.js';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { LOANS } from '../data/loans.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import { isBranchManager } from '../lib/auth.js';
+import { getAllFunded } from '../lib/fundedLoans.js';
+import { subscribeLoans } from '../lib/loansStore.js';
 
 // ---- helpers (ported from legacy) ----
 const fmt$ = (n) =>
@@ -53,13 +54,13 @@ function inRateBucket(rate, bucketLabel) {
   return rate >= b.min && rate <= b.max;
 }
 
-// Build INCOME rows from PAST_CLIENTS (historical closings — Funded).
-// No dedupe: All Loans and Income must show the same unit count.
+// Build INCOME rows from the canonical funded ledger (historical
+// PAST_CLIENTS plus anything in LOANS that's been marked Funded). All
+// Loans and Income & Comp share this source so unit counts agree.
 function buildIncome() {
-  const rows = [];
-  PAST_CLIENTS.forEach((pc) => {
+  return getAllFunded().map((pc) => {
     const lo = pc.lo || 'Kyle';
-    rows.push({
+    return {
       client: pc.name,
       date: pc.closeDate,
       status: 'Funded',
@@ -75,19 +76,23 @@ function buildIncome() {
       month: pc.month || '',
       year: pc.year || null,
       rate: pc.rate || null,
-    });
+    };
   });
-  return rows;
 }
 
-const INITIAL_INCOME = buildIncome();
-
-const INCOME_TOTALS = {
-  totalUnits: 368,
-  totalVolume: 101205693,
-  totalLONet: 1215676.31,
-  totalBranchNet: 0,
-};
+// All-time totals are derived from the live funded ledger so they don't
+// drift as new loans fund. See computeAllTimeTotals usage below.
+function computeAllTimeTotals(rows) {
+  return rows.reduce(
+    (acc, r) => ({
+      totalUnits: acc.totalUnits + 1,
+      totalVolume: acc.totalVolume + (r.amount || 0),
+      totalLONet: acc.totalLONet + getIncomeNet(r),
+      totalBranchNet: acc.totalBranchNet + (r.branchNet || 0),
+    }),
+    { totalUnits: 0, totalVolume: 0, totalLONet: 0, totalBranchNet: 0 }
+  );
+}
 
 const getIncomeGross = (r) =>
   r.loGross != null
@@ -115,7 +120,16 @@ export default function Income() {
 }
 
 function IncomeInner() {
-  const [rows, setRows] = useState(INITIAL_INCOME);
+  // rows are derived from the canonical funded ledger and rebuilt whenever
+  // a loan funds in the live pipeline (including realtime updates from
+  // teammates). User-cell edits below are ephemeral (no persistence), so
+  // a rebuild dropping them isn't a regression — it just keeps the
+  // numbers honest with the rest of the app.
+  const [rows, setRows] = useState(buildIncome);
+  const rebuildRows = useCallback(() => setRows(buildIncome()), []);
+  useEffect(() => subscribeLoans(rebuildRows), [rebuildRows]);
+  const allTimeTotals = useMemo(() => computeAllTimeTotals(rows), [rows]);
+
   const [filters, setFilters] = useState({
     year: 'All',
     month: 'All',
@@ -314,19 +328,19 @@ function IncomeInner() {
       <div className="income-kpi-row">
         <div className="income-kpi red">
           <div className="income-kpi-label">Total Volume Funded</div>
-          <div className="income-kpi-value">{fmt$M(INCOME_TOTALS.totalVolume)}</div>
+          <div className="income-kpi-value">{fmt$M(allTimeTotals.totalVolume)}</div>
         </div>
         <div className="income-kpi dark">
           <div className="income-kpi-label">Total LO Net</div>
-          <div className="income-kpi-value">{fmt$(INCOME_TOTALS.totalLONet)}</div>
+          <div className="income-kpi-value">{fmt$(allTimeTotals.totalLONet)}</div>
         </div>
         <div className="income-kpi">
           <div className="income-kpi-label">Total Branch Net</div>
-          <div className="income-kpi-value">{fmt$(INCOME_TOTALS.totalBranchNet)}</div>
+          <div className="income-kpi-value">{fmt$(allTimeTotals.totalBranchNet)}</div>
         </div>
         <div className="income-kpi dark">
           <div className="income-kpi-label">Total Units Closed</div>
-          <div className="income-kpi-value">{INCOME_TOTALS.totalUnits}</div>
+          <div className="income-kpi-value">{allTimeTotals.totalUnits}</div>
         </div>
       </div>
 
@@ -674,14 +688,10 @@ function KyleTile({ label, dt, s, projected }) {
   );
 }
 
-// Per-loan breakdown for a given month, merging the live LOANS pipeline
-// (active + funded but not yet archived) with the PAST_CLIENTS historical
-// list (loans that already closed and made it into the books). Without
-// this merge the breakdown disagrees with the top tiles, which read from
-// PAST_CLIENTS via INITIAL_INCOME.
-//
-// Loans are grouped by LO (Kyle / Missy) with per-group subtotals and a
-// grand total, so Kyle can see at a glance who's responsible for what.
+// Per-loan breakdown for a given month: still-active pipeline loans for
+// the month plus everything that's already funded for the month from the
+// canonical funded ledger (LOANS-funded + PAST_CLIENTS historical, deduped).
+// Grouped by LO with per-group subtotals and a grand total.
 function PipelineMonth({ label, mIdx, yr, defaultOpen = true }) {
   const matchesMonth = (closeDate) => {
     if (!closeDate) return false;
@@ -689,8 +699,13 @@ function PipelineMonth({ label, mIdx, yr, defaultOpen = true }) {
     return !isNaN(d) && d.getMonth() === mIdx && d.getFullYear() === yr;
   };
 
-  const fromLoans = LOANS
-    .filter((l) => !l.archived && l.status !== 'Adversed' && l.stage !== 'cold' && matchesMonth(l.closeDate))
+  // In-flight pipeline (anything still active in LOANS for this month).
+  const inFlight = LOANS
+    .filter((l) =>
+      !l.archived && l.status !== 'Adversed' && l.stage !== 'cold' &&
+      l.stage !== 'funded' && (l.status || '') !== 'Funded' &&
+      matchesMonth(l.closeDate)
+    )
     .map((l) => ({
       key: `loan-${l.id}`,
       name: l.borrower || '',
@@ -698,24 +713,23 @@ function PipelineMonth({ label, mIdx, yr, defaultOpen = true }) {
       amount: l.amount || 0,
       lo: l.lo || '',
       agent: l.agent || '',
-      status: l.status || (l.stage === 'funded' ? 'Funded' : (l.stage || '—')),
+      status: l.status || l.stage || '—',
     }));
 
-  const seen = new Set(fromLoans.map((r) => `${(r.name || '').toLowerCase()}|${r.closeDate}`));
-  const fromPast = PAST_CLIENTS
-    .filter((pc) => matchesMonth(pc.closeDate))
-    .filter((pc) => !seen.has(`${(pc.name || '').toLowerCase()}|${pc.closeDate}`))
-    .map((pc) => ({
-      key: `past-${pc.name}-${pc.closeDate}`,
-      name: pc.name || '',
-      closeDate: pc.closeDate,
-      amount: pc.amount || 0,
-      lo: pc.lo || 'Kyle',
-      agent: pc.agent || '',
+  // Funded ledger (LOANS-funded + PAST_CLIENTS historical, deduped).
+  const funded = getAllFunded()
+    .filter((r) => matchesMonth(r.closeDate))
+    .map((r, i) => ({
+      key: `funded-${r.id || r.name}-${r.closeDate}-${i}`,
+      name: r.name || '',
+      closeDate: r.closeDate,
+      amount: r.amount || 0,
+      lo: r.lo || 'Kyle',
+      agent: r.agent || '',
       status: 'Funded',
     }));
 
-  const all = [...fromLoans, ...fromPast].sort(
+  const all = [...inFlight, ...funded].sort(
     (a, b) => new Date(a.closeDate) - new Date(b.closeDate)
   );
 
