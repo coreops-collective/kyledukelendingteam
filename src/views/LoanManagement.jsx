@@ -553,11 +553,12 @@ export default function LoanManagement() {
   });
 
   // Adversed loans are kept in the underlying set so the Adversed status
-  // filter can find them, but hidden by default.
-  const losLoans = useMemo(
-    () => LOANS.filter((l) => !l.archived && (LOS_STAGES.includes(l.stage) || (l.status || '') === 'Adversed')),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+  // filter can find them, but hidden by default. Recomputed every render
+  // so realtime echoes that swap loan references in LOANS are picked up
+  // — memoizing with [] deps was capturing stale references and made
+  // checkboxes look like they weren't toggling.
+  const losLoans = LOANS.filter(
+    (l) => !l.archived && (LOS_STAGES.includes(l.stage) || (l.status || '') === 'Adversed')
   );
 
   const filtered = losLoans.filter((r) => {
