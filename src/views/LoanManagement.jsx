@@ -16,14 +16,33 @@ function parseDate(s) {
   const d = new Date(s);
   return isNaN(d) ? null : d;
 }
-function dateClass(s) {
+function dateClass(s, done) {
   const d = parseDate(s);
   if (!d) return '';
+  // If the deadline has been satisfied (e.g. ICD signed), color it yellow
+  // instead of red so it reads "complete, no longer urgent" rather than
+  // "you missed it".
+  if (done) return 'done';
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const days = Math.ceil((d - today) / 86400000);
   if (days < 0) return 'overdue';
   if (days <= 7) return 'soon';
   return '';
+}
+
+// Compute the ICD deadline as 3 days before close date, where Saturdays
+// count as a day but Sundays do not. Returns YYYY-MM-DD or '' if the
+// close date is missing / invalid.
+function computeIcdDeadline(closeDate) {
+  const d = parseDate(closeDate);
+  if (!d) return '';
+  const out = new Date(d);
+  let counted = 0;
+  while (counted < 3) {
+    out.setDate(out.getDate() - 1);
+    if (out.getDay() !== 0) counted++; // 0 = Sunday
+  }
+  return out.toISOString().slice(0, 10);
 }
 function getYearFromDate(s) {
   const d = parseDate(s);
@@ -441,7 +460,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                   <td className="cb"><EditCheck value={l.apprReceived} onChange={(v) => onEdit(l.id, 'apprReceived', v)} /></td>
                   <td className="cb"><EditCheck value={l.titleReceived} onChange={(v) => onEdit(l.id, 'titleReceived', v)} /></td>
                   <td className={`date ${dateClass(l.lockExp)}`}><EditInput type="date" value={l.lockExp} onChange={(v) => onEdit(l.id, 'lockExp', v)} /></td>
-                  <td className={`date ${dateClass(l.icdDeadline)}`}><EditInput type="date" value={l.icdDeadline} onChange={(v) => onEdit(l.id, 'icdDeadline', v)} /></td>
+                  <td className={`date ${dateClass(l.icdDeadline, l.icdSigned)}`}><EditInput type="date" value={l.icdDeadline} onChange={(v) => onEdit(l.id, 'icdDeadline', v)} /></td>
                   <td className="cb"><EditCheck value={l.icdSent} onChange={(v) => onEdit(l.id, 'icdSent', v)} /></td>
                   <td className="cb"><EditCheck value={l.icdSigned} onChange={(v) => onEdit(l.id, 'icdSigned', v)} /></td>
                   <td><ZoomEditCell label="Property" value={l.property} onChange={(v) => onEdit(l.id, 'property', v)} /></td>
@@ -627,11 +646,17 @@ export default function LoanManagement() {
   const years = ['All', ...new Set(losLoans.map(r => getYearFromDate(r.closeDate)).filter(Boolean))]
     .sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : Number(b) - Number(a));
 
-  // Mutate the shared LOANS array (same pattern as legacy) + force re-render
+  // Mutate the shared LOANS array (same pattern as legacy) + force re-render.
+  // Editing the close date auto-recomputes the ICD deadline (3 days back,
+  // skipping Sundays) so the team doesn't have to do the math by hand.
   const handleEdit = useCallback((id, key, value) => {
     const loan = LOANS.find((l) => l.id === id);
     if (!loan) return;
     loan[key] = value;
+    if (key === 'closeDate') {
+      const auto = computeIcdDeadline(value);
+      if (auto) loan.icdDeadline = auto;
+    }
     markLoansDirty(loan);
     bump();
   }, [bump]);

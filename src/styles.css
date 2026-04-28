@@ -258,6 +258,8 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
 .lm-table td.date.overdue input{color:#c62828;font-weight:700}
 .lm-table td.date.soon{background:#fff8e1}
 .lm-table td.date.soon input{color:#e65100;font-weight:700}
+.lm-table td.date.done{background:#fff8e1}
+.lm-table td.date.done input{color:#7a6300;font-weight:700}
 .lm-row.approved td{background:#f1f8f1}
 .lm-row.approved td:first-child{background:#dcedc8;border-left:4px solid #2e7d32}
 .lm-row.ctc td{background:#fff8e1}
