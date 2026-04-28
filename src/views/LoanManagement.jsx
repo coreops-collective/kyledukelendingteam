@@ -456,10 +456,10 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                   <td><EditSelect value={l.loa || ''} options={['Kim', 'Abel']} empty="—" onChange={(v) => onEdit(l.id, 'loa', v)} /></td>
                   <td><EditSelect value={l.saleType || ''} options={SALE_TYPES.filter(x => x !== 'All')} empty="—" onChange={(v) => onEdit(l.id, 'saleType', v)} /></td>
                   <td className="cb"><EditCheck value={l.apprOrdered} onChange={(v) => onEdit(l.id, 'apprOrdered', v)} /></td>
-                  <td className={`date ${dateClass(l.apprDeadline)}`}><EditInput type="date" value={l.apprDeadline} onChange={(v) => onEdit(l.id, 'apprDeadline', v)} /></td>
+                  <td className={`date ${dateClass(l.apprDeadline, l.apprReceived)}`}><EditInput type="date" value={l.apprDeadline} onChange={(v) => onEdit(l.id, 'apprDeadline', v)} /></td>
                   <td className="cb"><EditCheck value={l.apprReceived} onChange={(v) => onEdit(l.id, 'apprReceived', v)} /></td>
                   <td className="cb"><EditCheck value={l.titleReceived} onChange={(v) => onEdit(l.id, 'titleReceived', v)} /></td>
-                  <td className={`date ${dateClass(l.lockExp)}`}><EditInput type="date" value={l.lockExp} onChange={(v) => onEdit(l.id, 'lockExp', v)} /></td>
+                  <td className={`date ${dateClass(l.lockExp, l.stage === 'funded' || l.status === 'Funded')}`}><EditInput type="date" value={l.lockExp} onChange={(v) => onEdit(l.id, 'lockExp', v)} /></td>
                   <td className={`date ${dateClass(l.icdDeadline, l.icdSigned)}`}><EditInput type="date" value={l.icdDeadline} onChange={(v) => onEdit(l.id, 'icdDeadline', v)} /></td>
                   <td className="cb"><EditCheck value={l.icdSent} onChange={(v) => onEdit(l.id, 'icdSent', v)} /></td>
                   <td className="cb"><EditCheck value={l.icdSigned} onChange={(v) => onEdit(l.id, 'icdSigned', v)} /></td>
@@ -566,6 +566,24 @@ export default function LoanManagement() {
   const [newLoanOpen, setNewLoanOpen] = useState(false);
 
   useEffect(() => subscribeLoans(bump), [bump]);
+
+  // One-time backfill: any loan with a close date but no ICD deadline gets
+  // the auto-computed value (3 days back, skipping Sundays). Existing
+  // manual ICD deadlines are left alone.
+  useEffect(() => {
+    let changed = false;
+    LOANS.forEach((l) => {
+      if (l.closeDate && !l.icdDeadline) {
+        const auto = computeIcdDeadline(l.closeDate);
+        if (auto) {
+          l.icdDeadline = auto;
+          markLoansDirty(l);
+          changed = true;
+        }
+      }
+    });
+    if (changed) bump();
+  }, [bump]);
 
   const [filters, setFilters] = useState({
     year: 'All', month: 'All', status: 'All', lo: 'All', type: 'All', saleType: 'All',
