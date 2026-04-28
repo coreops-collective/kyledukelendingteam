@@ -318,6 +318,11 @@ function applyRowToPartner(p, row) {
 // event will fire for it too. We dedupe by id first; if no id match, we
 // look for a same-name local partner that hasn't been assigned an id yet
 // (the in-flight insert) and just adopt the id.
+//
+// We also skip UPDATE echoes for partners with unsaved local changes —
+// otherwise an earlier save's echo can race in and clobber edits the
+// user just made before the next debounced flush has a chance to send
+// them. The next flush will broadcast the canonical state.
 export function subscribePartners(onChange) {
   const seedByName = new Map(PARTNERS.map((p) => [p.name, p]));
   const channel = supabase
@@ -335,6 +340,7 @@ export function subscribePartners(onChange) {
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partners' }, ({ new: row }) => {
       if (!row) return;
+      if (dirtyIds.has(row.id)) return; // user has unsaved local edits
       const existing = PARTNERS.find((p) => p.id === row.id);
       if (existing) {
         applyRowToPartner(existing, row);

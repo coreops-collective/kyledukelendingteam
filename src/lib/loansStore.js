@@ -104,9 +104,12 @@ if (typeof window !== 'undefined') {
 // as a jsonb blob in `data`, so applying an event is just "drop in the new
 // data". Calls onChange() after every applied event. Returns unsubscribe fn.
 //
-// Echo: a write from this client also fires an UPDATE event. Replacing the
-// in-memory loan with the same data is a no-op, so we don't bother
-// suppressing echoes.
+// Echo handling: a write from this client also fires an UPDATE event back.
+// Normally that's harmless (the data matches), but when the user is making
+// rapid edits a previous save's echo can race in and overwrite their newer
+// in-flight changes. We skip the echo if the loan is currently dirty —
+// the next debounced flush will send the latest state and the echo from
+// THAT save will be applied safely.
 export function subscribeLoans(onChange) {
   const channel = supabase
     .channel('loans-changes')
@@ -118,6 +121,8 @@ export function subscribeLoans(onChange) {
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'loans' }, ({ new: row }) => {
       if (!row || !row.data) return;
+      // Skip the echo if we have unsaved local changes for this loan.
+      if (dirtyIds.has(row.id) || allDirty) return;
       const idx = LOANS.findIndex((l) => l.id === row.id);
       if (idx >= 0) {
         LOANS[idx] = row.data;
