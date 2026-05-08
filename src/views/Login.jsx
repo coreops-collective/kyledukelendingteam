@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { USERS } from '../data/users.js';
 import { setCurrentUser } from '../lib/auth.js';
+import { supabase } from '../lib/supabase.js';
 
 const REMEMBER_KEY = 'kdt.rememberEmail';
 const REMEMBER_PASS_KEY = 'kdt.rememberPass';
@@ -26,21 +27,44 @@ export default function Login({ onSuccess }) {
     if (savedPass) { setPass(decodePass(savedPass)); }
   }, []);
 
-  function onSubmit(ev) {
+  const [submitting, setSubmitting] = useState(false);
+
+  async function onSubmit(ev) {
     ev.preventDefault();
-    const user = USERS.find(
-      (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === pass
-    );
-    if (!user) { setErr('Invalid email or password'); return; }
-    if (remember) {
-      localStorage.setItem(REMEMBER_KEY, email.trim());
-      localStorage.setItem(REMEMBER_PASS_KEY, encodePass(pass));
-    } else {
-      localStorage.removeItem(REMEMBER_KEY);
-      localStorage.removeItem(REMEMBER_PASS_KEY);
+    setErr('');
+    setSubmitting(true);
+    try {
+      // Login goes through a SECURITY DEFINER Postgres function so the
+      // public.users table can stay locked behind RLS. The function
+      // returns the matching row's non-password fields, or zero rows
+      // for invalid creds.
+      const { data, error } = await supabase.rpc('login', {
+        p_email: email.trim(),
+        p_password: pass,
+      });
+      let user = !error && Array.isArray(data) && data.length ? data[0] : null;
+
+      // Local-seed fallback so dev / offline / pre-migration environments
+      // still work. In production the RPC is the source of truth.
+      if (!user) {
+        user = USERS.find(
+          (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === pass
+        ) || null;
+      }
+      if (!user) { setErr('Invalid email or password'); return; }
+
+      if (remember) {
+        localStorage.setItem(REMEMBER_KEY, email.trim());
+        localStorage.setItem(REMEMBER_PASS_KEY, encodePass(pass));
+      } else {
+        localStorage.removeItem(REMEMBER_KEY);
+        localStorage.removeItem(REMEMBER_PASS_KEY);
+      }
+      setCurrentUser(user);
+      onSuccess?.(user);
+    } finally {
+      setSubmitting(false);
     }
-    setCurrentUser(user);
-    onSuccess?.(user);
   }
 
   async function submitForgot(ev) {
@@ -131,7 +155,9 @@ export default function Login({ onSuccess }) {
             </button>
           </div>
 
-          <button type="submit" className="login-btn">Sign In</button>
+          <button type="submit" className="login-btn" disabled={submitting}>
+            {submitting ? 'Signing In…' : 'Sign In'}
+          </button>
           {err && <div className="login-error">{err}</div>}
         </form>
 
