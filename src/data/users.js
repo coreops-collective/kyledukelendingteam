@@ -1,14 +1,21 @@
 import { supabase } from '../lib/supabase.js';
 
+// SEED_USERS is the immutable seed shipped with the bundle. It's the
+// last-resort login path when (a) Supabase is unreachable, (b) RLS hides
+// the password column, or (c) loadUsersFromSupabase has overwritten the
+// mutable USERS array with passwordless rows. Keep this small and only
+// for accounts that need a guaranteed offline login.
+export const SEED_USERS = Object.freeze([
+  Object.freeze({ id: 'u1', name: 'Kyle Duke',   email: 'kyle@valorhl.com',   password: 'kyle',   role: 'branch_manager', initials: 'KD', nmls: '2172565' }),
+  Object.freeze({ id: 'u2', name: 'Missy',       email: 'missy@valorhl.com',  password: 'missy',  role: 'loan_officer',   initials: 'MS', nmls: '' }),
+  Object.freeze({ id: 'u3', name: 'Amber Chen',  email: 'amber@valorhl.com',  password: 'amber',  role: 'admin',          initials: 'AC', nmls: '' }),
+  Object.freeze({ id: 'u4', name: 'Marcus Reid', email: 'marcus@valorhl.com', password: 'marcus', role: 'loan_officer',   initials: 'MR', nmls: '' }),
+]);
+
 // USERS — mutable module-level array. Seeded with a fallback that matches
 // the legacy seed, then replaced on app mount by the real Supabase `users`
 // rows (same pattern the legacy app uses via loadUsersFromSupabase).
-export const USERS = [
-  { id: 'u1', name: 'Kyle Duke',   email: 'kyle@valorhl.com',   password: 'kyle',   role: 'branch_manager', initials: 'KD', nmls: '2172565' },
-  { id: 'u2', name: 'Missy',       email: 'missy@valorhl.com',  password: 'missy',  role: 'loan_officer',   initials: 'MS', nmls: '' },
-  { id: 'u3', name: 'Amber Chen',  email: 'amber@valorhl.com',  password: 'amber',  role: 'admin',          initials: 'AC', nmls: '' },
-  { id: 'u4', name: 'Marcus Reid', email: 'marcus@valorhl.com', password: 'marcus', role: 'loan_officer',   initials: 'MR', nmls: '' },
-];
+export const USERS = SEED_USERS.map((u) => ({ ...u }));
 
 export const ROLE_LABELS = {
   branch_manager: 'Branch Manager',

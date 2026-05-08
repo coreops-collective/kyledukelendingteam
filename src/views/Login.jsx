@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { USERS } from '../data/users.js';
+import { USERS, SEED_USERS } from '../data/users.js';
 import { setCurrentUser } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 
@@ -45,12 +45,15 @@ export default function Login({ onSuccess }) {
       let user = !error && Array.isArray(data) && data.length ? data[0] : null;
 
       // Local-seed fallback so dev / offline / pre-migration environments
-      // still work. In production the RPC is the source of truth.
-      if (!user) {
-        user = USERS.find(
-          (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === pass
-        ) || null;
-      }
+      // still work. In production the RPC is the source of truth. Try the
+      // mutable USERS first (which may have been replaced with live DB
+      // rows via loadUsersFromSupabase), then the immutable SEED_USERS so
+      // the original kyle/missy/amber/marcus credentials always have a
+      // guaranteed offline login path even if Supabase is degraded.
+      const matches = (u) =>
+        u.email.toLowerCase() === email.trim().toLowerCase() && u.password === pass;
+      if (!user) user = USERS.find(matches) || null;
+      if (!user) user = SEED_USERS.find(matches) || null;
       if (!user) { setErr('Invalid email or password'); return; }
 
       if (remember) {
