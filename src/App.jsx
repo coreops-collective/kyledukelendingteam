@@ -17,6 +17,7 @@ import Snapshot from './views/Snapshot.jsx';
 import RateLocks from './views/RateLocks.jsx';
 import Performance from './views/Performance.jsx';
 import Income from './views/Income.jsx';
+import NetIncomeCalc from './views/NetIncomeCalc.jsx';
 import Login from './views/Login.jsx';
 import Welcome from './views/Welcome.jsx';
 import Setup from './views/Setup.jsx';
@@ -42,6 +43,7 @@ const PAGE_META = {
   '/closingcalc':   { title: 'Closing Costs Calculator' },
   '/setup':         { title: 'User Setup' },
   '/income':        { title: 'Income & Comp' },
+  '/netincome':     { title: 'Net Income Calculator' },
   '/newloan':       { title: 'New Loan Intake' },
 };
 
@@ -54,6 +56,9 @@ function RoleGuard({ path, children }) {
   // Check synchronously so restricted views never render even briefly
   // to unauthorized users. Also covers direct-URL access (no flash).
   if (path === '/income' && !isBranchManager()) {
+    return <Navigate to="/snapshot" replace />;
+  }
+  if (path === '/netincome' && !isBranchManager()) {
     return <Navigate to="/snapshot" replace />;
   }
   if (path === '/setup' && !isAdmin()) {
@@ -149,6 +154,7 @@ export default function App() {
             <Route path="/closingcalc" element={<ClosingCalc />} />
             <Route path="/setup" element={<RoleGuard path="/setup"><Setup /></RoleGuard>} />
             <Route path="/income" element={<RoleGuard path="/income"><Income /></RoleGuard>} />
+            <Route path="/netincome" element={<RoleGuard path="/netincome"><NetIncomeCalc /></RoleGuard>} />
             <Route path="/newloan" element={<NewLoan />} />
             <Route path="*" element={<Placeholder title="Not Found" />} />
           </Routes>
