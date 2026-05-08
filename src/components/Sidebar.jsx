@@ -33,6 +33,7 @@ const NAV_GROUPS = [
   ]},
   { label: 'Restricted', className: 'restricted-label', labelStyle: { color: '#7a3030' }, items: [
     { view: 'income', path: '/income', text: 'Income & Comp', wrap: true },
+    { view: 'netincome', path: '/netincome', text: 'Net Income Calculator', wrap: true },
   ]},
 ];
 
@@ -58,6 +59,7 @@ export default function Sidebar({ user, open = false }) {
             // Hide restricted nav items based on current user's role.
             const filteredItems = group.items.filter((item) => {
               if (item.path === '/income') return isBranchManager();
+              if (item.path === '/netincome') return isBranchManager();
               if (item.path === '/setup') return isAdmin();
               return true;
             });
