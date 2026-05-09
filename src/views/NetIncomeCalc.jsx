@@ -144,10 +144,12 @@ function pipelineGrossInRange(loans, from, to) {
   }, 0);
 }
 
-// Walk Kyle's funded loans for the year in close-date order, treating each
-// one as a paycheck. For each, compute the marginal federal/FICA/state tax
-// slice on TOP of the running YTD total — so the per-paycheck tax reflects
-// the bracket Kyle is actually in when that loan funds (not a flat rate).
+// Walk Kyle's funded loans for the year grouped by close-month: every
+// loan that closed in a calendar month rolls into a single paycheck on
+// the 15th of the following month (e.g. April closings → May 15 check).
+// For each monthly check, compute the marginal federal/FICA/state tax
+// slice on TOP of the running YTD total — so the per-paycheck tax
+// reflects the bracket Kyle is actually in when that check pays.
 // CTC is intentionally not pro-rated here; it's an annual credit applied
 // at filing, so per-paycheck "net" matches what hits the bank account.
 function computePaychecks(funded, year, opts) {
@@ -155,43 +157,74 @@ function computePaychecks(funded, year, opts) {
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year, 11, 31, 23, 59, 59, 999);
 
-  const inYear = funded
-    .filter((r) => {
-      if (!r.closeDate) return false;
-      const d = new Date(r.closeDate);
-      return !isNaN(d) && d >= yearStart && d <= yearEnd;
-    })
-    .map((r) => {
-      let gross = 0;
-      if (r.lo === 'Kyle') gross = (r.amount || 0) * KYLE_BPS;
-      else if (r.lo === 'Missy') gross = (r.amount || 0) * MISSY_OVERRIDE_BPS;
-      return { name: r.name, closeDate: r.closeDate, lo: r.lo, gross };
-    })
-    .filter((r) => r.gross > 0)
-    .sort((a, b) => new Date(a.closeDate) - new Date(b.closeDate));
+  // Bucket loans by close month-year.
+  const grouped = new Map();
+  for (const r of funded) {
+    if (!r.closeDate) continue;
+    const d = new Date(r.closeDate);
+    if (isNaN(d) || d < yearStart || d > yearEnd) continue;
+    let gross = 0;
+    if (r.lo === 'Kyle') gross = (r.amount || 0) * KYLE_BPS;
+    else if (r.lo === 'Missy') gross = (r.amount || 0) * MISSY_OVERRIDE_BPS;
+    if (gross <= 0) continue;
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        closeYear: d.getFullYear(),
+        closeMonth: d.getMonth(),
+        gross: 0,
+        units: 0,
+      });
+    }
+    const g = grouped.get(key);
+    g.gross += gross;
+    g.units += 1;
+  }
+
+  // Oldest first so the cumulative bracket walk is deterministic.
+  const groups = [...grouped.values()].sort((a, b) =>
+    a.closeYear !== b.closeYear ? a.closeYear - b.closeYear : a.closeMonth - b.closeMonth
+  );
 
   let cum = 0;
   const ssRate = ficaMode === 'self_employed' ? 0.124 : ficaMode === 'w2' ? 0.062 : 0;
   const mcRate = ficaMode === 'self_employed' ? 0.029 : ficaMode === 'w2' ? 0.0145 : 0;
   const addlThreshold = ADDL_MEDICARE_THRESHOLD[filingStatus] || 200000;
 
-  return inYear.map((r) => {
+  return groups.map((g) => {
     const before = cum;
-    cum += r.gross;
+    cum += g.gross;
 
     const taxableBefore = Math.max(0, before - preTax - stdDeduction);
     const taxableAfter = Math.max(0, cum - preTax - stdDeduction);
     const fed = calcFederalTax(taxableAfter, brackets) - calcFederalTax(taxableBefore, brackets);
 
     const ss = (Math.min(cum, SS_WAGE_BASE) - Math.min(before, SS_WAGE_BASE)) * ssRate;
-    const medicare = r.gross * mcRate;
+    const medicare = g.gross * mcRate;
     const addl = (Math.max(0, cum - addlThreshold) - Math.max(0, before - addlThreshold)) * ADDL_MEDICARE_RATE;
     const fica = ss + medicare + addl;
 
-    const state = r.gross * (stateRate / 100);
+    const state = g.gross * (stateRate / 100);
     const tax = fed + fica + state;
-    const net = r.gross - tax;
-    return { ...r, fed, fica, state, tax, net, takeHomeRate: r.gross > 0 ? net / r.gross : 0 };
+    const net = g.gross - tax;
+
+    // Pay on the 15th of the month AFTER the close-month. Date constructor
+    // rolls December → next-year January automatically.
+    const payDate = new Date(g.closeYear, g.closeMonth + 1, 15);
+
+    return {
+      payDate,
+      closeYear: g.closeYear,
+      closeMonth: g.closeMonth,
+      units: g.units,
+      gross: g.gross,
+      fed,
+      fica,
+      state,
+      tax,
+      net,
+      takeHomeRate: g.gross > 0 ? net / g.gross : 0,
+    };
   });
 }
 
@@ -455,16 +488,16 @@ function Inner() {
 
           <div className="form-card">
             <div className="section-header">
-              <div className="section-title">Per-Paycheck Breakdown · {year}</div>
+              <div className="section-title">Monthly Paycheck Breakdown · {year}</div>
               <div className="section-sub">
-                Each funded loan, sorted newest first. Tax is the marginal slice taken
-                at Kyle's running YTD position when that loan funded — so the rate
-                climbs as the year progresses. CTC isn't shown per-paycheck because
-                it's an annual credit applied at filing.
+                One row per paycheck. Loans closed in a calendar month are paid
+                together on the 15th of the following month (e.g. April closings
+                → May 15). Tax is the marginal slice on Kyle's running YTD at that
+                check; CTC isn't pro-rated because it's an annual credit at filing.
               </div>
             </div>
             <div style={{ padding: 0, overflowX: 'auto' }}>
-              <PaycheckTable rows={paychecksDisplay} />
+              <PaycheckTable rows={paychecksDisplay} today={today} />
             </div>
           </div>
         </div>
@@ -625,7 +658,12 @@ function BracketTable({ taxable, brackets }) {
   );
 }
 
-function PaycheckTable({ rows }) {
+const MONTH_NAMES_FULL = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function PaycheckTable({ rows, today }) {
   if (!rows || rows.length === 0) {
     return (
       <div style={{ padding: '14px 18px', color: '#888', fontSize: 12 }}>
@@ -635,19 +673,22 @@ function PaycheckTable({ rows }) {
   }
   const totals = rows.reduce(
     (acc, r) => ({
+      units: acc.units + r.units,
       gross: acc.gross + r.gross,
       tax: acc.tax + r.tax,
       net: acc.net + r.net,
     }),
-    { gross: 0, tax: 0, net: 0 }
+    { units: 0, gross: 0, tax: 0, net: 0 }
   );
+  const fmtPay = (d) =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   return (
     <table className="income-table">
       <thead>
         <tr>
-          <th>Close</th>
-          <th>Borrower</th>
-          <th>LO</th>
+          <th>Pay Date</th>
+          <th>Closing Period</th>
+          <th className="num">Units</th>
           <th className="num">Gross</th>
           <th className="num">Federal</th>
           <th className="num">FICA</th>
@@ -658,24 +699,38 @@ function PaycheckTable({ rows }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((r, i) => (
-          <tr key={`${r.closeDate}-${r.name}-${i}`}>
-            <td>{r.closeDate}</td>
-            <td><strong>{r.name}</strong></td>
-            <td>{r.lo}</td>
-            <td className="num money">{fmt$(r.gross)}</td>
-            <td className="num money">{fmt$(r.fed)}</td>
-            <td className="num money">{fmt$(r.fica)}</td>
-            <td className="num money">{fmt$(r.state)}</td>
-            <td className="num money">{fmt$(r.tax)}</td>
-            <td className="num money" style={{ color: '#1a6b4a', fontWeight: 700 }}>{fmt$(r.net)}</td>
-            <td className="num">{fmtPct(r.takeHomeRate)}</td>
-          </tr>
-        ))}
-        <tr style={{ fontWeight: 700, background: '#fafafa' }}>
-          <td colSpan={3} style={{ textAlign: 'right' }}>
-            YTD · {rows.length} loan{rows.length === 1 ? '' : 's'}
+        {rows.map((r, i) => {
+          const pending = today && r.payDate > today;
+          return (
+            <tr
+              key={`${r.closeYear}-${r.closeMonth}-${i}`}
+              style={pending ? { opacity: 0.7, background: '#fafafa' } : undefined}
+            >
+              <td>
+                {fmtPay(r.payDate)}
+                {pending ? (
+                  <span style={{ marginLeft: 6, fontSize: 9, color: '#888', textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                    upcoming
+                  </span>
+                ) : null}
+              </td>
+              <td><strong>{MONTH_NAMES_FULL[r.closeMonth]} {r.closeYear}</strong></td>
+              <td className="num">{r.units}</td>
+              <td className="num money">{fmt$(r.gross)}</td>
+              <td className="num money">{fmt$(r.fed)}</td>
+              <td className="num money">{fmt$(r.fica)}</td>
+              <td className="num money">{fmt$(r.state)}</td>
+              <td className="num money">{fmt$(r.tax)}</td>
+              <td className="num money" style={{ color: '#1a6b4a', fontWeight: 700 }}>{fmt$(r.net)}</td>
+              <td className="num">{fmtPct(r.takeHomeRate)}</td>
+            </tr>
+          );
+        })}
+        <tr style={{ fontWeight: 700, background: '#eaeaea' }}>
+          <td colSpan={2} style={{ textAlign: 'right' }}>
+            YTD Total · {rows.length} paycheck{rows.length === 1 ? '' : 's'}
           </td>
+          <td className="num">{totals.units}</td>
           <td className="num money">{fmt$(totals.gross)}</td>
           <td className="num money" colSpan={3}>{fmt$(totals.tax)} total tax</td>
           <td className="num money" />
