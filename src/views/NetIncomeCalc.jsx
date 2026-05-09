@@ -144,6 +144,57 @@ function pipelineGrossInRange(loans, from, to) {
   }, 0);
 }
 
+// Walk Kyle's funded loans for the year in close-date order, treating each
+// one as a paycheck. For each, compute the marginal federal/FICA/state tax
+// slice on TOP of the running YTD total — so the per-paycheck tax reflects
+// the bracket Kyle is actually in when that loan funds (not a flat rate).
+// CTC is intentionally not pro-rated here; it's an annual credit applied
+// at filing, so per-paycheck "net" matches what hits the bank account.
+function computePaychecks(funded, year, opts) {
+  const { brackets, stdDeduction, preTax, ficaMode, filingStatus, stateRate } = opts;
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year, 11, 31, 23, 59, 59, 999);
+
+  const inYear = funded
+    .filter((r) => {
+      if (!r.closeDate) return false;
+      const d = new Date(r.closeDate);
+      return !isNaN(d) && d >= yearStart && d <= yearEnd;
+    })
+    .map((r) => {
+      let gross = 0;
+      if (r.lo === 'Kyle') gross = (r.amount || 0) * KYLE_BPS;
+      else if (r.lo === 'Missy') gross = (r.amount || 0) * MISSY_OVERRIDE_BPS;
+      return { name: r.name, closeDate: r.closeDate, lo: r.lo, gross };
+    })
+    .filter((r) => r.gross > 0)
+    .sort((a, b) => new Date(a.closeDate) - new Date(b.closeDate));
+
+  let cum = 0;
+  const ssRate = ficaMode === 'self_employed' ? 0.124 : ficaMode === 'w2' ? 0.062 : 0;
+  const mcRate = ficaMode === 'self_employed' ? 0.029 : ficaMode === 'w2' ? 0.0145 : 0;
+  const addlThreshold = ADDL_MEDICARE_THRESHOLD[filingStatus] || 200000;
+
+  return inYear.map((r) => {
+    const before = cum;
+    cum += r.gross;
+
+    const taxableBefore = Math.max(0, before - preTax - stdDeduction);
+    const taxableAfter = Math.max(0, cum - preTax - stdDeduction);
+    const fed = calcFederalTax(taxableAfter, brackets) - calcFederalTax(taxableBefore, brackets);
+
+    const ss = (Math.min(cum, SS_WAGE_BASE) - Math.min(before, SS_WAGE_BASE)) * ssRate;
+    const medicare = r.gross * mcRate;
+    const addl = (Math.max(0, cum - addlThreshold) - Math.max(0, before - addlThreshold)) * ADDL_MEDICARE_RATE;
+    const fica = ss + medicare + addl;
+
+    const state = r.gross * (stateRate / 100);
+    const tax = fed + fica + state;
+    const net = r.gross - tax;
+    return { ...r, fed, fica, state, tax, net, takeHomeRate: r.gross > 0 ? net / r.gross : 0 };
+  });
+}
+
 function Blocked() {
   return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Restricted — Branch Manager only.</div>;
 }
@@ -225,6 +276,17 @@ function Inner() {
   const projectedTax = projectedFed + projectedState + projectedFica.total;
   const projectedNet = projectedGross - projectedTax - (preTax || 0);
   const projectedMarginal = calcMarginalRate(projectedTaxable, brackets);
+
+  const paychecks = computePaychecks(funded, year, {
+    brackets,
+    stdDeduction: stdDeduction || 0,
+    preTax: preTax || 0,
+    ficaMode,
+    filingStatus,
+    stateRate: stateRate || 0,
+  });
+  // Newest first for the UI; the math itself runs oldest-first inside.
+  const paychecksDisplay = [...paychecks].reverse();
 
   const onChangeStd = (v) => {
     setStdTouched(true);
@@ -390,6 +452,21 @@ function Inner() {
               <BracketTable taxable={taxableYtd} brackets={brackets} />
             </div>
           </div>
+
+          <div className="form-card">
+            <div className="section-header">
+              <div className="section-title">Per-Paycheck Breakdown · {year}</div>
+              <div className="section-sub">
+                Each funded loan, sorted newest first. Tax is the marginal slice taken
+                at Kyle's running YTD position when that loan funded — so the rate
+                climbs as the year progresses. CTC isn't shown per-paycheck because
+                it's an annual credit applied at filing.
+              </div>
+            </div>
+            <div style={{ padding: 0, overflowX: 'auto' }}>
+              <PaycheckTable rows={paychecksDisplay} />
+            </div>
+          </div>
         </div>
 
         <div className="calc-result">
@@ -543,6 +620,68 @@ function BracketTable({ taxable, brackets }) {
             </tr>
           );
         })}
+      </tbody>
+    </table>
+  );
+}
+
+function PaycheckTable({ rows }) {
+  if (!rows || rows.length === 0) {
+    return (
+      <div style={{ padding: '14px 18px', color: '#888', fontSize: 12 }}>
+        No funded loans yet this year.
+      </div>
+    );
+  }
+  const totals = rows.reduce(
+    (acc, r) => ({
+      gross: acc.gross + r.gross,
+      tax: acc.tax + r.tax,
+      net: acc.net + r.net,
+    }),
+    { gross: 0, tax: 0, net: 0 }
+  );
+  return (
+    <table className="income-table">
+      <thead>
+        <tr>
+          <th>Close</th>
+          <th>Borrower</th>
+          <th>LO</th>
+          <th className="num">Gross</th>
+          <th className="num">Federal</th>
+          <th className="num">FICA</th>
+          <th className="num">State</th>
+          <th className="num">Total Tax</th>
+          <th className="num">Net</th>
+          <th className="num">Take-Home %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={`${r.closeDate}-${r.name}-${i}`}>
+            <td>{r.closeDate}</td>
+            <td><strong>{r.name}</strong></td>
+            <td>{r.lo}</td>
+            <td className="num money">{fmt$(r.gross)}</td>
+            <td className="num money">{fmt$(r.fed)}</td>
+            <td className="num money">{fmt$(r.fica)}</td>
+            <td className="num money">{fmt$(r.state)}</td>
+            <td className="num money">{fmt$(r.tax)}</td>
+            <td className="num money" style={{ color: '#1a6b4a', fontWeight: 700 }}>{fmt$(r.net)}</td>
+            <td className="num">{fmtPct(r.takeHomeRate)}</td>
+          </tr>
+        ))}
+        <tr style={{ fontWeight: 700, background: '#fafafa' }}>
+          <td colSpan={3} style={{ textAlign: 'right' }}>
+            YTD · {rows.length} loan{rows.length === 1 ? '' : 's'}
+          </td>
+          <td className="num money">{fmt$(totals.gross)}</td>
+          <td className="num money" colSpan={3}>{fmt$(totals.tax)} total tax</td>
+          <td className="num money" />
+          <td className="num money" style={{ color: '#1a6b4a' }}>{fmt$(totals.net)}</td>
+          <td className="num">{totals.gross > 0 ? fmtPct(totals.net / totals.gross) : '—'}</td>
+        </tr>
       </tbody>
     </table>
   );
