@@ -38,10 +38,25 @@ export default function Login({ onSuccess }) {
       // public.users table can stay locked behind RLS. The function
       // returns the matching row's non-password fields, or zero rows
       // for invalid creds.
-      const { data, error } = await supabase.rpc('login', {
-        p_email: email.trim(),
-        p_password: pass,
-      });
+      let rpcResult;
+      try {
+        rpcResult = await supabase.rpc('login', {
+          p_email: email.trim(),
+          p_password: pass,
+        });
+      } catch (thrown) {
+        rpcResult = { data: null, error: thrown };
+      }
+      const { data, error } = rpcResult || {};
+      // Surface the exact failure so we can see what's wrong rather
+      // than masking everything as "Invalid email or password."
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error('[login] RPC error:', error);
+      } else {
+        // eslint-disable-next-line no-console
+        console.log('[login] RPC data:', data);
+      }
       let user = !error && Array.isArray(data) && data.length ? data[0] : null;
 
       // Local-seed fallback so dev / offline / pre-migration environments
@@ -51,7 +66,16 @@ export default function Login({ onSuccess }) {
           (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === pass
         ) || null;
       }
-      if (!user) { setErr('Invalid email or password'); return; }
+      if (!user) {
+        if (error) {
+          const msg = error.message || error.toString();
+          const code = error.code || error.hint || '';
+          setErr(`Login failed: ${msg}${code ? ` [${code}]` : ''}`);
+        } else {
+          setErr('Invalid email or password');
+        }
+        return;
+      }
 
       if (remember) {
         localStorage.setItem(REMEMBER_KEY, email.trim());
@@ -62,6 +86,10 @@ export default function Login({ onSuccess }) {
       }
       setCurrentUser(user);
       onSuccess?.(user);
+    } catch (thrown) {
+      // eslint-disable-next-line no-console
+      console.error('[login] unexpected error:', thrown);
+      setErr(`Unexpected error: ${thrown?.message || thrown}`);
     } finally {
       setSubmitting(false);
     }
