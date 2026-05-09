@@ -66,6 +66,28 @@ const ADDL_MEDICARE_THRESHOLD = {
 };
 const ADDL_MEDICARE_RATE = 0.009;
 
+// Child Tax Credit (post-OBBBA). $2,200/qualifying-child for 2025+ with
+// minor inflation adjustments thereafter; $500 for "other dependents."
+// Both phase out together: $50 reduction per $1,000 (or fraction) over
+// the AGI threshold for filing status.
+const CTC_PER_CHILD = 2200;
+const ODC_PER_DEP = 500;
+const CTC_PHASEOUT_THRESHOLD = {
+  single: 200000,
+  married_jointly: 400000,
+  head_of_household: 200000,
+};
+
+function calcChildTaxCredit(numChildren, numOtherDeps, agi, filingStatus) {
+  const baseCredit = (numChildren || 0) * CTC_PER_CHILD + (numOtherDeps || 0) * ODC_PER_DEP;
+  if (baseCredit <= 0) return 0;
+  const threshold = CTC_PHASEOUT_THRESHOLD[filingStatus] || 200000;
+  const over = Math.max(0, agi - threshold);
+  // Round excess up to next $1,000 increment, then $50 per increment.
+  const reduction = Math.ceil(over / 1000) * 50;
+  return Math.max(0, baseCredit - reduction);
+}
+
 function calcFederalTax(taxable, brackets) {
   if (taxable <= 0) return 0;
   let tax = 0;
@@ -152,10 +174,15 @@ function Inner() {
   const [stdTouched, setStdTouched] = useState(false);
   const [preTax, setPreTax] = useState(0);
   const [otherIncome, setOtherIncome] = useState(0);
+  // Florida: 0% state income tax. Hillsborough County levies no local
+  // income tax either, so this defaults to 0 and the field is mostly a
+  // safety valve for future moves.
   const [stateRate, setStateRate] = useState(0);
   const [ficaMode, setFicaMode] = useState('w2');
   const [overrideGross, setOverrideGross] = useState('');
   const [taxesWithheldYtd, setTaxesWithheldYtd] = useState(0);
+  const [numChildren, setNumChildren] = useState(3);
+  const [numOtherDeps, setNumOtherDeps] = useState(0);
 
   // Reset std deduction to status default if the user hasn't manually edited it.
   useEffect(() => {
@@ -170,7 +197,14 @@ function Inner() {
 
   const brackets = FEDERAL_BRACKETS[filingStatus] || FEDERAL_BRACKETS.single;
   const taxableYtd = Math.max(0, ytdGross - (preTax || 0) - (stdDeduction || 0));
-  const fedYtd = calcFederalTax(taxableYtd, brackets);
+  const fedYtdGross = calcFederalTax(taxableYtd, brackets);
+  // CTC is an annual credit applied against the year-end liability, but
+  // for paystub-level YTD we apportion it against YTD federal so the
+  // YTD net reflects the credit Kyle will eventually claim. Phaseout is
+  // calculated against AGI (gross − pre-tax), not taxable income.
+  const ytdAgi = Math.max(0, ytdGross - (preTax || 0));
+  const ctcYtd = calcChildTaxCredit(numChildren, numOtherDeps, ytdAgi, filingStatus);
+  const fedYtd = Math.max(0, fedYtdGross - ctcYtd);
   const stateYtd = ytdGross * ((stateRate || 0) / 100);
   const ficaYtd = calcFica(ytdGross, ficaMode, filingStatus);
   const totalTaxYtd = fedYtd + stateYtd + ficaYtd.total;
@@ -182,7 +216,10 @@ function Inner() {
   // End-of-year projection: YTD funded + rest-of-year pipeline + other income.
   const projectedGross = projectedEoyGross + (otherIncome || 0);
   const projectedTaxable = Math.max(0, projectedGross - (preTax || 0) - (stdDeduction || 0));
-  const projectedFed = calcFederalTax(projectedTaxable, brackets);
+  const projectedFedGross = calcFederalTax(projectedTaxable, brackets);
+  const projectedAgi = Math.max(0, projectedGross - (preTax || 0));
+  const projectedCtc = calcChildTaxCredit(numChildren, numOtherDeps, projectedAgi, filingStatus);
+  const projectedFed = Math.max(0, projectedFedGross - projectedCtc);
   const projectedState = projectedGross * ((stateRate || 0) / 100);
   const projectedFica = calcFica(projectedGross, ficaMode, filingStatus);
   const projectedTax = projectedFed + projectedState + projectedFica.total;
@@ -288,12 +325,34 @@ function Inner() {
                   />
                 </div>
                 <div className="form-field">
-                  <label>State Tax Rate (%)</label>
+                  <label>State Tax Rate (%) · Florida = 0%</label>
                   <input
                     type="number"
                     step="0.01"
                     value={stateRate}
                     onChange={(e) => setStateRate(parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+              <div className="calc-input-row">
+                <div className="form-field">
+                  <label>Children under 17 (CTC)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={numChildren}
+                    onChange={(e) => setNumChildren(parseInt(e.target.value, 10) || 0)}
+                  />
+                </div>
+                <div className="form-field">
+                  <label>Other Dependents (ODC)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={numOtherDeps}
+                    onChange={(e) => setNumOtherDeps(parseInt(e.target.value, 10) || 0)}
                   />
                 </div>
               </div>
@@ -312,8 +371,9 @@ function Inner() {
                 </div>
               </div>
               <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
-                Federal brackets are 2026 IRS-projected tables. Standard deduction auto-fills by
-                filing status; override above if itemizing.
+                Florida · Hillsborough County: no state or local income tax. Federal brackets are
+                2026 IRS-projected tables. Standard deduction auto-fills by filing status. CTC is
+                $2,200/child + $500/other dependent, phased out $50 per $1k over $400k AGI (MFJ).
               </div>
             </div>
           </div>
@@ -339,7 +399,19 @@ function Inner() {
             of {fmt$(ytdGross)} gross · {fmtPct(effectiveRate)} effective rate
           </div>
           <div className="calc-result-row">
-            <span className="lbl">Federal Tax YTD</span>
+            <span className="lbl">Federal Tax YTD (gross)</span>
+            <span className="val">{fmt$(fedYtdGross)}</span>
+          </div>
+          {(numChildren > 0 || numOtherDeps > 0) && (
+            <div className="calc-result-row">
+              <span className="lbl" style={{ paddingLeft: 12 }}>
+                · Child Tax Credit ({numChildren}c · {numOtherDeps}d)
+              </span>
+              <span className="val">−{fmt$(ctcYtd)}</span>
+            </div>
+          )}
+          <div className="calc-result-row">
+            <span className="lbl">Federal Tax YTD (after credits)</span>
             <span className="val">{fmt$(fedYtd)}</span>
           </div>
           <div className="calc-result-row">
@@ -398,6 +470,12 @@ function Inner() {
               <span className="lbl">Projected Total Tax</span>
               <span className="val">{fmt$(projectedTax)}</span>
             </div>
+            {(numChildren > 0 || numOtherDeps > 0) && (
+              <div className="calc-result-row">
+                <span className="lbl">Projected CTC (after phaseout)</span>
+                <span className="val">{fmt$(projectedCtc)}</span>
+              </div>
+            )}
             <div className="calc-result-row">
               <span className="lbl">Pipeline Rest-of-Year</span>
               <span className="val">{fmt$(restOfYearPipeline)}</span>
