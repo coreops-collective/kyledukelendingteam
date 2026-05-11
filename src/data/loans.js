@@ -2,7 +2,7 @@
 // Source of truth will move to Supabase later; for now this drives the views.
 export const LOANS = [
   // --- Kyle's Pipeline: HOT PA ---
-  { id: 'P001', borrower: 'Earley, Preston', phone: '850-241-3830', email: 'prestonel@gmail.com', amount: 250000, stage: 'hotpa', type: 'CONV', purpose: 'Purchase', lo: 'Kyle', agent: 'Montana Branca - KYLE', dateApplied: '3/3/2025', notes: 'Yes — called out', property: 'TBD' },
+  { id: 'P001', borrower: 'Earley, Preston', phone: '850-241-3830', email: 'prestonel@gmail.com', amount: 250000, stage: 'hotpa', type: 'CONV', purpose: 'Purchase', lo: 'Kyle', agent: 'Montana Branco - KYLE', dateApplied: '3/3/2025', notes: 'Yes — called out', property: 'TBD' },
   { id: 'P002', borrower: 'Emmanuel, Kimberly', amount: 360000, stage: 'hotpa', type: 'FHA', purpose: 'Purchase', lo: 'Kyle', agent: 'Charlie Ann Turner', notes: '', property: 'TBD' },
   { id: 'P003', borrower: 'Engelhardt, Barbara', amount: 400000, stage: 'hotpa', type: 'CONV', purpose: 'Purchase', lo: 'Kyle', agent: 'Allisha Eytcheson Smith', property: 'TBD' },
   { id: 'P004', borrower: 'Goodwin, Michele / Donovan', phone: '860-381-3144', amount: 650000, stage: 'hotpa', type: 'VA', purpose: 'Purchase', lo: 'Kyle', agent: 'Olivia Evans', property: 'TBD' },
