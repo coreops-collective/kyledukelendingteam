@@ -125,7 +125,22 @@ export default function Partners() {
   const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
 
   const [openedPartner, setOpenedPartner] = useState(null);
-  const openPartner = (p) => setOpenedPartner(p);
+  // partnersWithLive returns a SHALLOW COPY for any partner that has loans
+  // referencing them by name (livePipelineByAgent decoration). Editing that
+  // shallow copy in the drawer would land mutations on a throw-away object,
+  // and the debounced flush — which looks up the canonical entry by id from
+  // PARTNERS — would persist the un-edited row instead. Always resolve to
+  // the canonical PARTNERS entry before opening the drawer so edits stick
+  // for live-pipeline agents (Olivia Evans, etc.) the same way they do for
+  // partners without active loans (Lauren Neu, Montana).
+  const openPartner = (p) => {
+    if (!p) return;
+    const canonical =
+      (p.id && PARTNERS.find((x) => x.id === p.id)) ||
+      PARTNERS.find((x) => x.name === p.name) ||
+      p;
+    setOpenedPartner(canonical);
+  };
 
   return (
     <div>
