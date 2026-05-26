@@ -6,6 +6,7 @@ import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, saveLoansNow, subscribeLoans } from '../lib/loansStore.js';
+import { appendNotesHistory, loadNotesHistory } from '../lib/notesHistory.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -149,11 +150,23 @@ function DeadlinesPanel({ loans, onOpen }) {
 // ── Notes drawer ────────────────────────────────────────────────
 function NotesDrawer({ loan, onSave, onClose }) {
   const [notes, setNotes] = useState(loan.notes || '');
+  const [history, setHistory] = useState(null); // null = not loaded, [] = empty, [...] = loaded
+  const [showHistory, setShowHistory] = useState(false);
+
+  const toggleHistory = async () => {
+    if (showHistory) { setShowHistory(false); return; }
+    if (history === null) {
+      const rows = await loadNotesHistory(loan.id);
+      setHistory(rows);
+    }
+    setShowHistory(true);
+  };
+
   if (!loan) return null;
   return (
     <>
       <div className="drawer-overlay open" onClick={onClose} />
-      <aside className="drawer open" style={{ width: 620, maxWidth: '95vw' }}>
+      <aside className="drawer open" style={{ width: 720, maxWidth: '95vw' }}>
         <div className="drawer-head">
           <button className="drawer-close" onClick={onClose}>×</button>
           <div className="drawer-stage">Notes</div>
@@ -162,7 +175,16 @@ function NotesDrawer({ loan, onSave, onClose }) {
         </div>
         <div className="drawer-body">
           <div className="form-field">
-            <label>Loan Notes · all text visible and editable</label>
+            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Loan Notes · all text visible and editable</span>
+              <button
+                type="button"
+                onClick={toggleHistory}
+                style={{ background: 'transparent', border: '1px solid #d0d0d0', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}
+              >
+                {showHistory ? 'Hide history' : 'View history'}
+              </button>
+            </label>
             <textarea
               autoFocus
               value={notes}
@@ -174,8 +196,48 @@ function NotesDrawer({ loan, onSave, onClose }) {
               }}
             />
           </div>
+
+          {showHistory && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eee' }}>
+              <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 10 }}>
+                Previous Versions
+              </div>
+              {history && history.length === 0 ? (
+                <div style={{ color: '#888', fontSize: 12, fontStyle: 'italic' }}>
+                  No prior versions yet. Future edits will appear here.
+                </div>
+              ) : history ? (
+                <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                  {history.map((h) => (
+                    <div key={h.id} style={{ marginBottom: 12, padding: 10, background: '#fafafa', border: '1px solid #eee', borderRadius: 6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <div style={{ fontSize: 11, color: '#555' }}>
+                          {new Date(h.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                          {h.edited_by ? ` · ${h.edited_by}` : ''}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setNotes(h.notes || '')}
+                          style={{ background: '#fff', border: '1px solid #d0d0d0', borderRadius: 6, padding: '3px 8px', fontSize: 10, cursor: 'pointer' }}
+                          title="Restore this version into the editor (save to commit)"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, color: '#222', lineHeight: 1.5 }}>
+                        {h.notes || '(empty)'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ color: '#888', fontSize: 12 }}>Loading…</div>
+              )}
+            </div>
+          )}
+
           <div style={{ fontSize: 11, color: '#888', marginTop: 10, fontStyle: 'italic' }}>
-            Supports line breaks. Saves back to the loan record and reflects everywhere.
+            Supports line breaks. Saves back to the loan record and reflects everywhere. Each save snapshots the previous notes so accidental clears can be recovered.
           </div>
         </div>
         <div className="drawer-actions">
@@ -695,6 +757,11 @@ export default function LoanManagement() {
   const handleSaveNotes = useCallback((value) => {
     if (!notesFor) return;
     const loan = LOANS.find((l) => l.id === notesFor);
+    // Snapshot the prior notes before overwriting so the team can recover.
+    // Fire-and-forget — never block the local save on the history insert.
+    if (loan && (loan.notes || '') !== (value || '')) {
+      appendNotesHistory(loan.id, loan.notes || '');
+    }
     if (loan) {
       loan.notes = value;
       markLoansDirty(loan);
