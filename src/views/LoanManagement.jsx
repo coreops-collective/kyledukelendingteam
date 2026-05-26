@@ -482,54 +482,116 @@ function ColorLegend() {
 }
 
 // ── Table view (spreadsheet) ────────────────────────────────────
-function SortHeader({ field, label, width, sort, onSort }) {
+function SortHeader({ field, label, width, onStartResize, sort, onSort }) {
   const active = sort && sort.key === field;
   const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
   return (
     <th
-      style={{ width, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      style={{ width, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', position: 'relative' }}
       onClick={() => onSort && onSort(field)}
       title={`Sort by ${label}`}
     >
       {label}{arrow}
+      {onStartResize && <ColResizeHandle onMouseDown={onStartResize} stopClick />}
     </th>
   );
 }
 
+// Visible 6px col-resize handle that sits on the right edge of any th.
+// Subtle gradient so users can see it's a draggable border without it
+// being visually noisy. Hover thickens the highlight to brand red.
+function ColResizeHandle({ onMouseDown, stopClick }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <span
+      onMouseDown={onMouseDown}
+      onClick={stopClick ? (e) => e.stopPropagation() : undefined}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title="Drag to resize column"
+      style={{
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        width: 6,
+        cursor: 'col-resize',
+        userSelect: 'none',
+        background: hover
+          ? 'rgba(198,40,40,.55)'
+          : 'linear-gradient(to right, transparent 0%, rgba(0,0,0,.18) 100%)',
+        transition: 'background .12s',
+      }}
+    />
+  );
+}
+
+// Plain (non-sortable) resizable column header.
+function ResizableHeader({ label, width, onStartResize }) {
+  return (
+    <th style={{ width, position: 'relative', userSelect: 'none', whiteSpace: 'nowrap' }}>
+      {label}
+      {onStartResize && <ColResizeHandle onMouseDown={onStartResize} />}
+    </th>
+  );
+}
+
+// Default starting width for every column in the Loan Management table.
+// User-edited widths layer on top of these via localStorage.
+const COL_DEFAULTS = {
+  borrower: 180, closeDate: 130, status: 150, notes: 320, lo: 100, loa: 110,
+  saleType: 140, apprOrdered: 80, apprDeadline: 140, apprReceived: 80, titleReceived: 80,
+  lockExp: 140, icdDeadline: 140, icdSent: 80, icdSigned: 80, property: 280,
+  price: 140, amount: 140, type: 100, rate: 100, agent: 200, leadSource: 160,
+  phone: 150, email: 220, coFirst: 140, coLast: 140, coPhone: 150,
+};
+
 function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort, onSort }) {
   const agentOpts = [...PARTNERS].map(p => p.name).sort((a,b) => a.localeCompare(b));
-  const SH = (field, label, width) => (
-    <SortHeader field={field} label={label} width={width} sort={sort} onSort={onSort} />
-  );
 
-  // Notes column is drag-resizable. Width persists across sessions via
-  // localStorage so each user keeps the column at the size that works
-  // for them. Min 180px so it can't collapse to nothing, max 1200px.
-  const [notesWidth, setNotesWidth] = useState(() => {
-    const stored = parseInt(localStorage.getItem('kdt-notes-col-width') || '', 10);
-    return Number.isFinite(stored) && stored >= 180 ? stored : 320;
+  // ── Spreadsheet-style column resizing ──────────────────────────
+  // Every column has a 6px drag handle on its right edge. Widths
+  // persist per user via localStorage so the layout sticks across
+  // refreshes. Min 60px (so cells can't collapse), max 1200px.
+  const [colWidths, setColWidths] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('kdt-col-widths') || '{}');
+      return { ...COL_DEFAULTS, ...stored };
+    } catch { return { ...COL_DEFAULTS }; }
   });
-  const startResize = (e) => {
+  const colWidthsRef = useRef(colWidths);
+  useEffect(() => { colWidthsRef.current = colWidths; }, [colWidths]);
+  const startResize = (key) => (e) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
-    const startW = notesWidth;
+    const startW = colWidthsRef.current[key] || COL_DEFAULTS[key] || 120;
     const onMove = (ev) => {
-      const next = Math.min(1200, Math.max(180, startW + (ev.clientX - startX)));
-      setNotesWidth(next);
+      const next = Math.min(1200, Math.max(60, startW + (ev.clientX - startX)));
+      setColWidths((w) => ({ ...w, [key]: next }));
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      try { localStorage.setItem('kdt-notes-col-width', String(notesWidthRef.current)); } catch {}
+      try { localStorage.setItem('kdt-col-widths', JSON.stringify(colWidthsRef.current)); } catch {}
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   };
-  // Keep a ref to the latest width so the mouseup handler closes over the
-  // current value instead of the stale closure copy.
-  const notesWidthRef = useRef(notesWidth);
-  useEffect(() => { notesWidthRef.current = notesWidth; }, [notesWidth]);
+  const w = (key) => colWidths[key] || COL_DEFAULTS[key];
+  const SH = (field, label) => (
+    <SortHeader
+      field={field}
+      label={label}
+      width={w(field)}
+      onStartResize={startResize(field)}
+      sort={sort}
+      onSort={onSort}
+    />
+  );
+  const RH = (key, label) => (
+    <ResizableHeader label={label} width={w(key)} onStartResize={startResize(key)} />
+  );
 
   return (
     <>
@@ -539,49 +601,33 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
         <table className="lm-table">
           <thead>
             <tr>
-              {SH('borrower', 'Client', 180)}
-              {SH('closeDate', 'Closing Date', 130)}
-              {SH('status', 'Status', 150)}
-              <th style={{ width: notesWidth, position: 'relative' }}>
-                Notes
-                <span
-                  onMouseDown={startResize}
-                  title="Drag to resize"
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    right: 0,
-                    bottom: 0,
-                    width: 8,
-                    cursor: 'col-resize',
-                    userSelect: 'none',
-                    background: 'linear-gradient(to right, transparent, rgba(0,0,0,.08))',
-                  }}
-                />
-              </th>
-              {SH('lo', 'LO', 100)}
-              {SH('loa', 'LOA', 110)}
-              {SH('saleType', 'Sale Type', 140)}
-              <th style={{ width: 80 }}>Appr Ord</th>
-              {SH('apprDeadline', 'Appr Deadline', 140)}
-              <th style={{ width: 80 }}>Appr Rcvd</th>
-              <th style={{ width: 80 }}>Title Rcvd</th>
-              {SH('lockExp', 'Lock Expires', 140)}
-              {SH('icdDeadline', 'ICD Deadline', 140)}
-              <th style={{ width: 80 }}>ICD Sent</th>
-              <th style={{ width: 80 }}>ICD Signed</th>
-              {SH('property', 'Property', 280)}
-              {SH('price', 'Purchase Price', 140)}
-              {SH('amount', 'Loan Amount', 140)}
-              {SH('type', 'Type', 100)}
-              {SH('rate', 'Rate', 100)}
-              {SH('agent', 'Agent', 200)}
-              {SH('leadSource', 'Lead Source', 160)}
-              <th style={{ width: 150 }}>Phone</th>
-              <th style={{ width: 220 }}>Email</th>
-              <th style={{ width: 140 }}>Co-Borrower First</th>
-              <th style={{ width: 140 }}>Co-Borrower Last</th>
-              <th style={{ width: 150 }}>Co-Borrower Phone</th>
+              {SH('borrower', 'Client')}
+              {SH('closeDate', 'Closing Date')}
+              {SH('status', 'Status')}
+              {RH('notes', 'Notes')}
+              {SH('lo', 'LO')}
+              {SH('loa', 'LOA')}
+              {SH('saleType', 'Sale Type')}
+              {RH('apprOrdered', 'Appr Ord')}
+              {SH('apprDeadline', 'Appr Deadline')}
+              {RH('apprReceived', 'Appr Rcvd')}
+              {RH('titleReceived', 'Title Rcvd')}
+              {SH('lockExp', 'Lock Expires')}
+              {SH('icdDeadline', 'ICD Deadline')}
+              {RH('icdSent', 'ICD Sent')}
+              {RH('icdSigned', 'ICD Signed')}
+              {SH('property', 'Property')}
+              {SH('price', 'Purchase Price')}
+              {SH('amount', 'Loan Amount')}
+              {SH('type', 'Type')}
+              {SH('rate', 'Rate')}
+              {SH('agent', 'Agent')}
+              {SH('leadSource', 'Lead Source')}
+              {RH('phone', 'Phone')}
+              {RH('email', 'Email')}
+              {RH('coFirst', 'Co-Borrower First')}
+              {RH('coLast', 'Co-Borrower Last')}
+              {RH('coPhone', 'Co-Borrower Phone')}
             </tr>
           </thead>
           <tbody>
@@ -899,6 +945,19 @@ export default function LoanManagement() {
           >
             Save Now
           </button>
+          {layout === 'table' && (
+            <button
+              type="button"
+              className="form-btn"
+              title="Reset every column width back to the default size"
+              onClick={() => {
+                localStorage.removeItem('kdt-col-widths');
+                window.location.reload();
+              }}
+            >
+              Reset Columns
+            </button>
+          )}
           <button type="button" onClick={() => setNewLoanOpen(true)} className="form-btn primary">+ New Loan Intake</button>
         </div>
       </div>

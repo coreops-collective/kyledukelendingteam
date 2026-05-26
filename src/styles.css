@@ -243,7 +243,7 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
    count. */
 .lm-scroll{overflow:auto;max-width:100%;max-height:calc(100vh - 280px);min-height:400px}
 .lm-table{border-collapse:separate;border-spacing:0;font-size:12px;min-width:2600px;table-layout:fixed}
-.lm-table th{background:linear-gradient(135deg,#0A0A0A,#2d0d0d);color:#fff;font-family:'Oswald',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:14px 12px;text-align:left;border-right:1px solid #333;border-bottom:3px solid var(--brand-red);position:sticky;top:0;z-index:5;white-space:nowrap;resize:horizontal;overflow:hidden;min-width:60px}
+.lm-table th{background:linear-gradient(135deg,#0A0A0A,#2d0d0d);color:#fff;font-family:'Oswald',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:14px 12px;text-align:left;border-right:1px solid #333;border-bottom:3px solid var(--brand-red);position:sticky;top:0;z-index:5;white-space:nowrap;min-width:60px}
 .lm-col-resizer{position:absolute;top:0;right:0;bottom:0;width:6px;cursor:col-resize;user-select:none;z-index:6}
 .lm-col-resizer:hover,.lm-col-resizer.active{background:var(--brand-red)}
 .lm-table th:first-child{position:sticky;left:0;z-index:6;border-right:2px solid var(--brand-red)}
