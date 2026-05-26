@@ -482,7 +482,7 @@ function ColorLegend() {
 }
 
 // ── Table view (spreadsheet) ────────────────────────────────────
-function SortHeader({ field, label, width, onStartResize, sort, onSort }) {
+function SortHeader({ field, label, width, onCommitWidth, sort, onSort }) {
   const active = sort && sort.key === field;
   const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
   return (
@@ -492,46 +492,90 @@ function SortHeader({ field, label, width, onStartResize, sort, onSort }) {
       title={`Sort by ${label}`}
     >
       {label}{arrow}
-      {onStartResize && <ColResizeHandle onMouseDown={onStartResize} stopClick />}
+      {onCommitWidth && <ColResizeHandle colKey={field} onCommit={onCommitWidth} stopClick />}
     </th>
   );
 }
 
-// Visible 6px col-resize handle that sits on the right edge of any th.
-// Subtle gradient so users can see it's a draggable border without it
-// being visually noisy. Hover thickens the highlight to brand red.
-function ColResizeHandle({ onMouseDown, stopClick }) {
-  const [hover, setHover] = useState(false);
+// Spreadsheet-style column resize handle. Uses pointer events with
+// setPointerCapture so the drag stays bound to this element even if the
+// cursor leaves the table, and writes the new width directly to the
+// parent th's DOM style during the drag for instant visual feedback —
+// then commits to React state + localStorage on pointer up.
+//
+// Why direct DOM during drag: setState every mousemove rebuilds the
+// table on each frame, which was lagging hard enough that some users
+// thought the drag wasn't working at all.
+function ColResizeHandle({ colKey, onCommit, stopClick }) {
+  const onPointerDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const handle = e.currentTarget;
+    const th = handle.parentElement;
+    if (!th) return;
+    const startX = e.clientX;
+    const startW = th.offsetWidth;
+    handle.setPointerCapture(e.pointerId);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const compute = (ev) => Math.min(1200, Math.max(60, startW + (ev.clientX - startX)));
+
+    const onMove = (ev) => {
+      th.style.width = compute(ev) + 'px';
+    };
+    const onUp = (ev) => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      try { handle.releasePointerCapture(e.pointerId); } catch {}
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      onCommit(colKey, compute(ev));
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+  };
+
   return (
     <span
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       onClick={stopClick ? (e) => e.stopPropagation() : undefined}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
       title="Drag to resize column"
       style={{
         position: 'absolute',
         top: 0,
-        right: 0,
+        right: -5,
         bottom: 0,
-        width: 6,
+        width: 12,
         cursor: 'col-resize',
         userSelect: 'none',
-        background: hover
-          ? 'rgba(198,40,40,.55)'
-          : 'linear-gradient(to right, transparent 0%, rgba(0,0,0,.18) 100%)',
-        transition: 'background .12s',
+        touchAction: 'none',
+        zIndex: 10,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'stretch',
       }}
-    />
+    >
+      <span
+        style={{
+          width: 2,
+          background: 'rgba(255,255,255,.25)',
+          margin: '0 5px',
+          pointerEvents: 'none',
+        }}
+      />
+    </span>
   );
 }
 
 // Plain (non-sortable) resizable column header.
-function ResizableHeader({ label, width, onStartResize }) {
+function ResizableHeader({ colKey, label, width, onCommitWidth }) {
   return (
     <th style={{ width, position: 'relative', userSelect: 'none', whiteSpace: 'nowrap' }}>
       {label}
-      {onStartResize && <ColResizeHandle onMouseDown={onStartResize} />}
+      {onCommitWidth && <ColResizeHandle colKey={colKey} onCommit={onCommitWidth} />}
     </th>
   );
 }
@@ -550,47 +594,36 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
   const agentOpts = [...PARTNERS].map(p => p.name).sort((a,b) => a.localeCompare(b));
 
   // ── Spreadsheet-style column resizing ──────────────────────────
-  // Every column has a 6px drag handle on its right edge. Widths
-  // persist per user via localStorage so the layout sticks across
-  // refreshes. Min 60px (so cells can't collapse), max 1200px.
+  // Every column has a 12px drag handle straddling its right edge.
+  // Widths persist per user via localStorage. The actual drag moves
+  // the th's width directly through the DOM (see ColResizeHandle);
+  // we only commit to React state on pointer up.
   const [colWidths, setColWidths] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('kdt-col-widths') || '{}');
       return { ...COL_DEFAULTS, ...stored };
     } catch { return { ...COL_DEFAULTS }; }
   });
-  const colWidthsRef = useRef(colWidths);
-  useEffect(() => { colWidthsRef.current = colWidths; }, [colWidths]);
-  const startResize = (key) => (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const startX = e.clientX;
-    const startW = colWidthsRef.current[key] || COL_DEFAULTS[key] || 120;
-    const onMove = (ev) => {
-      const next = Math.min(1200, Math.max(60, startW + (ev.clientX - startX)));
-      setColWidths((w) => ({ ...w, [key]: next }));
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      try { localStorage.setItem('kdt-col-widths', JSON.stringify(colWidthsRef.current)); } catch {}
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
+  const commitColWidth = useCallback((key, width) => {
+    setColWidths((prev) => {
+      const next = { ...prev, [key]: width };
+      try { localStorage.setItem('kdt-col-widths', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
   const w = (key) => colWidths[key] || COL_DEFAULTS[key];
   const SH = (field, label) => (
     <SortHeader
       field={field}
       label={label}
       width={w(field)}
-      onStartResize={startResize(field)}
+      onCommitWidth={commitColWidth}
       sort={sort}
       onSort={onSort}
     />
   );
   const RH = (key, label) => (
-    <ResizableHeader label={label} width={w(key)} onStartResize={startResize(key)} />
+    <ResizableHeader colKey={key} label={label} width={w(key)} onCommitWidth={commitColWidth} />
   );
 
   return (
