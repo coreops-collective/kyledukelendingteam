@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar.jsx';
+import UpdateBanner from './components/UpdateBanner.jsx';
 import Pipeline from './views/Pipeline.jsx';
 import NewLoan from './views/NewLoan.jsx';
 import Placeholder from './views/Placeholder.jsx';
@@ -103,18 +104,29 @@ export default function App() {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  if (!usersReady) return null;
+  if (!usersReady) return <UpdateBanner />;
 
   if (!user) {
-    return <Login onSuccess={() => setJustLoggedIn(true)} />;
+    return (
+      <>
+        <UpdateBanner />
+        <Login onSuccess={() => setJustLoggedIn(true)} />
+      </>
+    );
   }
 
   if (justLoggedIn) {
-    return <Welcome user={user} onDismiss={() => setJustLoggedIn(false)} />;
+    return (
+      <>
+        <UpdateBanner />
+        <Welcome user={user} onDismiss={() => setJustLoggedIn(false)} />
+      </>
+    );
   }
 
   return (
     <div className="hub-layout">
+      <UpdateBanner />
       <button
         className={`mobile-menu-btn${mobileOpen ? ' open' : ''}`}
         id="mobileMenuBtn"
