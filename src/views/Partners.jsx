@@ -36,9 +36,32 @@ const AGENT_TOUCHPOINTS = {
 const DEAL_BUCKETS = ['All', '1+ deals', '5+ deals', '10+ deals', '25+ deals'];
 const DEAL_MIN = { All: 0, '1+ deals': 1, '5+ deals': 5, '10+ deals': 10, '25+ deals': 25 };
 const TIER_OPTIONS = ['All', 'VIP', 'Standard'];
+const LO_OPTIONS = ['All', 'Kyle', 'Missy'];
+
+// Derive each partner's primary LO from the LOANS pipeline: whichever LO
+// has the most loans (active or funded, excluding adversed/archived) with
+// that agent's name. A manual `primary_lo` field on the partner overrides
+// this. Returns a map of partner name -> 'Kyle' | 'Missy' | ''.
+function derivePrimaryLoByName() {
+  const counts = {};
+  LOANS.forEach((l) => {
+    if (l.archived || l.status === 'Adversed') return;
+    if (!l.agent || !l.lo) return;
+    counts[l.agent] = counts[l.agent] || {};
+    counts[l.agent][l.lo] = (counts[l.agent][l.lo] || 0) + 1;
+  });
+  const result = {};
+  Object.entries(counts).forEach(([agent, byLo]) => {
+    let best = '';
+    let bestN = 0;
+    Object.entries(byLo).forEach(([lo, n]) => { if (n > bestN) { best = lo; bestN = n; } });
+    result[agent] = best;
+  });
+  return result;
+}
 
 export default function Partners() {
-  const [filters, setFilters] = useState({ search: '', state: 'All', tier: 'All', deals: 'All' });
+  const [filters, setFilters] = useState({ search: '', state: 'All', tier: 'All', deals: 'All', lo: 'All' });
   const [showForm, setShowForm] = useState(false);
   const [toast, setToast] = useState(null);
   // PARTNERS is a mutable module-level array. Bumping this counter forces the
@@ -90,13 +113,19 @@ export default function Partners() {
     return map;
   }, []);
 
-  // Decorate partners with live pipeline data (keeps PARTNERS source intact).
+  // Decorate partners with live pipeline data and a derived primary LO.
+  // The manual primary_lo field (if set) takes precedence over the derived
+  // value so the user can override the heuristic when needed.
+  const primaryLoByName = useMemo(derivePrimaryLoByName, [partnersVersion]);
   const partnersWithLive = useMemo(
     () => PARTNERS.map((p) => {
       const lp = livePipelineByAgent[p.name];
-      return lp ? { ...p, livePipeline: lp.count, livePipelineVolume: lp.volume } : p;
+      const primaryLo = p.primary_lo || p.primaryLo || primaryLoByName[p.name] || '';
+      const base = lp ? { ...p, livePipeline: lp.count, livePipelineVolume: lp.volume } : { ...p };
+      base.derivedLo = primaryLo;
+      return base;
     }),
-    [livePipelineByAgent, partnersVersion]
+    [livePipelineByAgent, partnersVersion, primaryLoByName]
   );
 
   const stateOptions = useMemo(
@@ -114,6 +143,7 @@ export default function Partners() {
       if (filters.state !== 'All' && p.state !== filters.state) return false;
       if (filters.tier === 'VIP' && !p.vip) return false;
       if (filters.tier === 'Standard' && p.vip) return false;
+      if (filters.lo !== 'All' && (p.derivedLo || '') !== filters.lo) return false;
       if ((p.deals || 0) < dealMin) return false;
       return true;
     });
@@ -197,6 +227,7 @@ export default function Partners() {
         />
         <FilterDropdown label="State" value={filters.state} options={stateOptions} onChange={(v) => setFilter('state', v)} />
         <FilterDropdown label="Tier" value={filters.tier} options={TIER_OPTIONS} onChange={(v) => setFilter('tier', v)} />
+        <FilterDropdown label="LO" value={filters.lo} options={LO_OPTIONS} onChange={(v) => setFilter('lo', v)} />
         <FilterDropdown label="Deals" value={filters.deals} options={DEAL_BUCKETS} onChange={(v) => setFilter('deals', v)} />
         <div
           className="income-filter"
@@ -456,6 +487,18 @@ function PartnerDrawer({ partner, onClose }) {
             <EditRow label="Favorite Restaurant" field="restaurant" />
             <div style={{ gridColumn: '1/-1' }}><EditRow label="Mailing Address" field="addr" /></div>
             <EditRow label="Social Handle" field="social" />
+            <div>
+              <label style={labelStyle}>Primary LO (override)</label>
+              <select
+                defaultValue={p.primary_lo || p.primaryLo || ''}
+                onChange={(e) => set('primary_lo', e.target.value)}
+                style={inputStyle}
+              >
+                <option value="">— Auto from loans —</option>
+                <option value="Kyle">Kyle</option>
+                <option value="Missy">Missy</option>
+              </select>
+            </div>
             <div style={{ gridColumn: '1/-1' }}>
               <label style={labelStyle}>Notes</label>
               <textarea

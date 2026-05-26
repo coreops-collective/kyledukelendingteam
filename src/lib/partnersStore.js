@@ -51,6 +51,8 @@ function rowToPartner(row, seedByName) {
     social_handle: row.social_handle || '',
     social: row.social_handle || '',
     notes: row.notes || '',
+    primary_lo: row.primary_lo || '',
+    primaryLo: row.primary_lo || '',
     tier: row.tier || 'Standard',
     lead_source: row.lead_source || '',
     src: row.lead_source || '',
@@ -88,6 +90,7 @@ function partnerToRow(p) {
     tier: p.tier || 'Standard',
     lead_source: p.lead_source || p.src || null,
     notes: p.notes || null,
+    primary_lo: p.primary_lo || p.primaryLo || null,
     touches: Array.isArray(p.touches) ? p.touches : [],
   };
   if (p.id) row.id = p.id;
@@ -304,6 +307,8 @@ function applyRowToPartner(p, row) {
   p.social_handle = row.social_handle || '';
   p.social = row.social_handle || '';
   p.notes = row.notes || '';
+  p.primary_lo = row.primary_lo || '';
+  p.primaryLo = row.primary_lo || '';
   p.tier = row.tier || 'Standard';
   p.lead_source = row.lead_source || '';
   p.src = row.lead_source || '';
