@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { USERS, ROLE_LABELS } from '../data/users.js';
+import { useState, useMemo, useEffect } from 'react';
+import { USERS, ROLE_LABELS, sbUpdateUser } from '../data/users.js';
 
 // The legacy app derives live pipeline/MTD stats from LOANS + PAST_CLIENTS +
 // LOAN_MGMT. That wiring is deferred — we display zeros with the same layout
@@ -18,26 +18,39 @@ const fmt$M = (n) => {
 export default function Team() {
   const [showForm, setShowForm] = useState(false);
   const [toast, setToast] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [, force] = useState(0);
+  const bump = () => force((n) => n + 1);
 
-  const team = useMemo(
-    () =>
-      USERS.map((u) => {
-        const stats = teamStatsFor(u.name);
-        return {
-          id: u.id,
-          initials: u.initials,
-          name: u.name,
-          email: u.email,
-          role: ROLE_LABELS[u.role] || 'Team Member',
-          nmls: u.nmls || '',
-          pipeline: stats.pipelineCount,
-          volume: stats.pipelineVol,
-          fundedMTD: stats.fundedMTD,
-          fundedCountMTD: stats.fundedCountMTD,
-        };
-      }),
-    []
-  );
+  // Re-render when the users list finishes loading from Supabase.
+  useEffect(() => {
+    const onLoaded = () => bump();
+    window.addEventListener('kdt-users-loaded', onLoaded);
+    return () => window.removeEventListener('kdt-users-loaded', onLoaded);
+  }, []);
+
+  // Recomputed every render so date edits (which mutate USERS in place
+  // and bump) show up immediately.
+  const team = USERS.map((u) => {
+    const stats = teamStatsFor(u.name);
+    return {
+      id: u.id,
+      initials: u.initials,
+      name: u.name,
+      email: u.email,
+      role: ROLE_LABELS[u.role] || 'Team Member',
+      nmls: u.nmls || '',
+      birthday: u.birthday || '',
+      spouse_name: u.spouse_name || '',
+      spouse_birthday: u.spouse_birthday || '',
+      marriage_anniversary: u.marriage_anniversary || '',
+      work_anniversary: u.work_anniversary || '',
+      pipeline: stats.pipelineCount,
+      volume: stats.pipelineVol,
+      fundedMTD: stats.fundedMTD,
+      fundedCountMTD: stats.fundedCountMTD,
+    };
+  });
 
   return (
     <div>
@@ -61,7 +74,7 @@ export default function Team() {
             key={t.id}
             className="team-card"
             style={{ cursor: 'pointer', position: 'relative' }}
-            onClick={() => setToast({ title: 'Team Member', msg: `${t.name} — edit drawer not yet ported` })}
+            onClick={() => setEditing(t)}
           >
             <div style={{ position: 'absolute', top: 10, right: 10, fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px' }}>
               Edit ›
@@ -80,6 +93,19 @@ export default function Team() {
           </div>
         ))}
       </div>
+
+      <ImportantDatesSection team={team} onEditMember={setEditing} />
+
+      {editing && (
+        <TeamDatesDrawer
+          user={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(msg) => {
+            setToast({ title: 'Saved', msg });
+            bump();
+          }}
+        />
+      )}
 
       {showForm && (
         <NewTeamMemberModal
@@ -201,6 +227,185 @@ function NewTeamMemberModal({ onClose, onSubmit }) {
         <div className="drawer-actions">
           <button className="drawer-btn" type="button" onClick={onClose}>Cancel</button>
           <button className="drawer-btn primary" type="button" onClick={submit}>Add Team Member</button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// Annualize a date so "next occurrence relative to today" can be computed
+// regardless of what year the original date was recorded. Returns the
+// upcoming Date object for the same month/day. If the date is invalid,
+// returns null.
+function nextOccurrence(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const next = new Date(today.getFullYear(), d.getMonth(), d.getDate());
+  if (next < today) next.setFullYear(today.getFullYear() + 1);
+  return next;
+}
+
+function daysUntil(date) {
+  if (!date) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((date - today) / 86400000);
+}
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function fmtMonthDay(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function ImportantDatesSection({ team, onEditMember }) {
+  // Build a flat list of every recorded date across the team, sorted by
+  // how soon the next occurrence is. Filters out blank dates.
+  const all = [];
+  team.forEach((t) => {
+    const fields = [
+      { key: 'birthday', label: 'Birthday', value: t.birthday, who: t.name },
+      { key: 'spouse_birthday', label: `${t.spouse_name || 'Spouse'}'s Birthday`, value: t.spouse_birthday, who: t.name },
+      { key: 'marriage_anniversary', label: 'Marriage Anniversary', value: t.marriage_anniversary, who: t.name },
+      { key: 'work_anniversary', label: 'Work Anniversary', value: t.work_anniversary, who: t.name },
+    ];
+    fields.forEach((f) => {
+      if (!f.value) return;
+      const next = nextOccurrence(f.value);
+      all.push({
+        member: t,
+        label: f.label,
+        original: f.value,
+        next,
+        daysAway: daysUntil(next),
+      });
+    });
+  });
+  all.sort((a, b) => (a.daysAway ?? 9999) - (b.daysAway ?? 9999));
+
+  const upcoming = all.filter((d) => d.daysAway !== null && d.daysAway <= 60);
+  const later = all.filter((d) => d.daysAway === null || d.daysAway > 60);
+
+  return (
+    <div className="section-card" style={{ marginTop: 18 }}>
+      <div className="section-header">
+        <div className="section-title">Important Dates</div>
+        <div className="section-sub">Birthdays, spouse birthdays, marriage and work anniversaries · click a team member's card above to edit</div>
+      </div>
+      <div className="section-body" style={{ padding: 0 }}>
+        {all.length === 0 ? (
+          <div style={{ padding: '14px 18px', color: '#888', fontSize: 12 }}>
+            No dates recorded yet. Click any team card to add birthdays, spouse birthday, marriage anniversary, and work anniversary.
+          </div>
+        ) : (
+          <>
+            {upcoming.length > 0 && (
+              <div style={{ padding: '10px 18px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: '#7a3030' }}>
+                Next 60 days
+              </div>
+            )}
+            <DatesList rows={upcoming} onEditMember={onEditMember} highlight />
+            {later.length > 0 && (
+              <div style={{ padding: '14px 18px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: '#888', borderTop: '1px solid #eee', marginTop: 6 }}>
+                Later this year
+              </div>
+            )}
+            <DatesList rows={later} onEditMember={onEditMember} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DatesList({ rows, onEditMember, highlight }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <div>
+      {rows.map((r, i) => (
+        <div
+          key={`${r.member.id}-${r.label}-${i}`}
+          onClick={() => onEditMember(r.member)}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr 90px',
+            gap: 10,
+            padding: '10px 18px',
+            borderTop: '1px solid #f1f1f1',
+            alignItems: 'center',
+            cursor: 'pointer',
+            background: highlight ? '#fff8e1' : '#fff',
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>{r.member.name}</div>
+          <div style={{ color: '#555' }}>{r.label}</div>
+          <div style={{ color: '#222' }}>{fmtMonthDay(r.original)}{r.label === 'Birthday' || r.label === 'Marriage Anniversary' || r.label === 'Work Anniversary' ? '' : ''}</div>
+          <div style={{ textAlign: 'right', fontSize: 11, color: r.daysAway !== null && r.daysAway <= 7 ? '#c62828' : '#888', fontWeight: r.daysAway !== null && r.daysAway <= 7 ? 700 : 400 }}>
+            {r.daysAway === null ? '' : r.daysAway === 0 ? 'TODAY' : `${r.daysAway}d away`}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TeamDatesDrawer({ user, onClose, onSaved }) {
+  const target = USERS.find((u) => u.id === user.id) || user;
+  const [f, setF] = useState({
+    birthday: target.birthday || '',
+    spouse_name: target.spouse_name || '',
+    spouse_birthday: target.spouse_birthday || '',
+    marriage_anniversary: target.marriage_anniversary || '',
+    work_anniversary: target.work_anniversary || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+
+  const save = async () => {
+    setSaving(true);
+    Object.assign(target, f); // mutate in-memory USERS entry so UI reflects immediately
+    await sbUpdateUser(target.id, f);
+    setSaving(false);
+    onSaved && onSaved(`${target.name} updated`);
+    onClose();
+  };
+
+  const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
+  const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4, display: 'block' };
+
+  return (
+    <>
+      <div className="drawer-overlay open" onClick={onClose} />
+      <aside className="drawer open" style={{ width: 560, maxWidth: '95vw' }}>
+        <div className="drawer-head">
+          <button className="drawer-close" onClick={onClose}>×</button>
+          <div className="drawer-stage">Team Member · Important Dates</div>
+          <div className="drawer-borrower">{target.name}</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{target.email}</div>
+        </div>
+        <div className="drawer-body">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label style={labelStyle}>Birthday</label><input type="date" value={f.birthday} onChange={set('birthday')} style={inputStyle} /></div>
+            <div><label style={labelStyle}>Work Anniversary (hire date)</label><input type="date" value={f.work_anniversary} onChange={set('work_anniversary')} style={inputStyle} /></div>
+            <div><label style={labelStyle}>Spouse / Partner Name</label><input value={f.spouse_name} onChange={set('spouse_name')} style={inputStyle} /></div>
+            <div><label style={labelStyle}>Spouse / Partner Birthday</label><input type="date" value={f.spouse_birthday} onChange={set('spouse_birthday')} style={inputStyle} /></div>
+            <div style={{ gridColumn: '1/-1' }}><label style={labelStyle}>Marriage Anniversary</label><input type="date" value={f.marriage_anniversary} onChange={set('marriage_anniversary')} style={inputStyle} /></div>
+          </div>
+        </div>
+        <div className="drawer-actions">
+          <button className="drawer-btn" type="button" onClick={onClose}>Cancel</button>
+          <button className="drawer-btn primary" type="button" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
         </div>
       </aside>
     </>

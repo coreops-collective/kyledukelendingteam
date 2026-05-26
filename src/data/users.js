@@ -29,9 +29,12 @@ export async function sbInsertUser(user) {
 }
 
 export async function sbUpdateUser(id, patch) {
-  const allowed = ['name', 'email', 'password', 'role', 'initials', 'nmls', 'phone'];
+  const allowed = [
+    'name', 'email', 'password', 'role', 'initials', 'nmls', 'phone',
+    'birthday', 'spouse_name', 'spouse_birthday', 'marriage_anniversary', 'work_anniversary',
+  ];
   const row = {};
-  allowed.forEach(k => { if (patch[k] !== undefined) row[k] = patch[k]; });
+  allowed.forEach(k => { if (patch[k] !== undefined) row[k] = patch[k] || null; });
   if (!Object.keys(row).length) return;
   try {
     const { error } = await supabase.from('users').update(row).eq('id', id);
@@ -63,6 +66,11 @@ export async function loadUsersFromSupabase() {
       initials: u.initials || '??',
       nmls: u.nmls || '',
       phone: u.phone || '',
+      birthday: u.birthday || '',
+      spouse_name: u.spouse_name || '',
+      spouse_birthday: u.spouse_birthday || '',
+      marriage_anniversary: u.marriage_anniversary || '',
+      work_anniversary: u.work_anniversary || '',
     })));
     window.dispatchEvent(new Event('kdt-users-loaded'));
     return true;
