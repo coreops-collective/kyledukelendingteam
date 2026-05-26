@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { LOANS } from '../data/loans.js';
 import { LOS_STAGES, STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
@@ -153,6 +153,35 @@ function NotesDrawer({ loan, onSave, onClose }) {
   const [history, setHistory] = useState(null); // null = not loaded, [] = empty, [...] = loaded
   const [showHistory, setShowHistory] = useState(false);
 
+  // Drawer width is drag-resizable from the left edge and persists so the
+  // team can keep it as wide as they like across sessions. Default 720px,
+  // min 420 (still readable on phones), max 95vw.
+  const [drawerWidth, setDrawerWidth] = useState(() => {
+    const stored = parseInt(localStorage.getItem('kdt-notes-drawer-width') || '', 10);
+    return Number.isFinite(stored) && stored >= 420 ? stored : 720;
+  });
+  const drawerWidthRef = useRef(drawerWidth);
+  useEffect(() => { drawerWidthRef.current = drawerWidth; }, [drawerWidth]);
+  const startDrawerResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = drawerWidth;
+    const maxW = Math.floor(window.innerWidth * 0.95);
+    const onMove = (ev) => {
+      // Dragging LEFT (clientX decreasing) makes the drawer wider, since
+      // the drawer is anchored to the right edge.
+      const next = Math.min(maxW, Math.max(420, startW + (startX - ev.clientX)));
+      setDrawerWidth(next);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      try { localStorage.setItem('kdt-notes-drawer-width', String(drawerWidthRef.current)); } catch {}
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
   const toggleHistory = async () => {
     if (showHistory) { setShowHistory(false); return; }
     if (history === null) {
@@ -166,7 +195,21 @@ function NotesDrawer({ loan, onSave, onClose }) {
   return (
     <>
       <div className="drawer-overlay open" onClick={onClose} />
-      <aside className="drawer open" style={{ width: 720, maxWidth: '95vw' }}>
+      <aside className="drawer open" style={{ width: drawerWidth, maxWidth: '95vw', position: 'relative' }}>
+        <span
+          onMouseDown={startDrawerResize}
+          title="Drag to resize"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            bottom: 0,
+            width: 8,
+            cursor: 'col-resize',
+            zIndex: 2,
+            background: 'linear-gradient(to right, rgba(0,0,0,.06), transparent)',
+          }}
+        />
         <div className="drawer-head">
           <button className="drawer-close" onClick={onClose}>×</button>
           <div className="drawer-stage">Notes</div>
@@ -192,7 +235,8 @@ function NotesDrawer({ loan, onSave, onClose }) {
               style={{
                 minHeight: 420, width: '100%', padding: 14,
                 fontFamily: 'inherit', fontSize: 13, lineHeight: 1.6,
-                border: '1px solid var(--border)', borderRadius: 8, resize: 'vertical',
+                border: '1px solid var(--border)', borderRadius: 8, resize: 'both',
+                boxSizing: 'border-box',
               }}
             />
           </div>
@@ -457,6 +501,36 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
   const SH = (field, label, width) => (
     <SortHeader field={field} label={label} width={width} sort={sort} onSort={onSort} />
   );
+
+  // Notes column is drag-resizable. Width persists across sessions via
+  // localStorage so each user keeps the column at the size that works
+  // for them. Min 180px so it can't collapse to nothing, max 1200px.
+  const [notesWidth, setNotesWidth] = useState(() => {
+    const stored = parseInt(localStorage.getItem('kdt-notes-col-width') || '', 10);
+    return Number.isFinite(stored) && stored >= 180 ? stored : 320;
+  });
+  const startResize = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = notesWidth;
+    const onMove = (ev) => {
+      const next = Math.min(1200, Math.max(180, startW + (ev.clientX - startX)));
+      setNotesWidth(next);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      try { localStorage.setItem('kdt-notes-col-width', String(notesWidthRef.current)); } catch {}
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+  // Keep a ref to the latest width so the mouseup handler closes over the
+  // current value instead of the stale closure copy.
+  const notesWidthRef = useRef(notesWidth);
+  useEffect(() => { notesWidthRef.current = notesWidth; }, [notesWidth]);
+
   return (
     <>
     <ColorLegend />
@@ -468,7 +542,23 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
               {SH('borrower', 'Client', 180)}
               {SH('closeDate', 'Closing Date', 130)}
               {SH('status', 'Status', 150)}
-              <th style={{ width: 260 }}>Notes</th>
+              <th style={{ width: notesWidth, position: 'relative' }}>
+                Notes
+                <span
+                  onMouseDown={startResize}
+                  title="Drag to resize"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: 8,
+                    cursor: 'col-resize',
+                    userSelect: 'none',
+                    background: 'linear-gradient(to right, transparent, rgba(0,0,0,.08))',
+                  }}
+                />
+              </th>
               {SH('lo', 'LO', 100)}
               {SH('loa', 'LOA', 110)}
               {SH('saleType', 'Sale Type', 140)}
