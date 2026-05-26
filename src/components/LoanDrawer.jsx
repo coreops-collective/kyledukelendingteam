@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import { markLoansDirty } from '../lib/loansStore.js';
@@ -86,10 +86,51 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     </label>
   );
 
+  // Drawer width is drag-resizable from the left edge; width persists per
+  // user via localStorage. Same UX as the dedicated Notes drawer so users
+  // get consistent behavior wherever they're editing notes.
+  const [drawerWidth, setDrawerWidth] = useState(() => {
+    const stored = parseInt(localStorage.getItem('kdt-loan-drawer-width') || '', 10);
+    return Number.isFinite(stored) && stored >= 420 ? stored : 720;
+  });
+  const drawerWidthRef = useRef(drawerWidth);
+  useEffect(() => { drawerWidthRef.current = drawerWidth; }, [drawerWidth]);
+  const startDrawerResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = drawerWidth;
+    const maxW = Math.floor(window.innerWidth * 0.95);
+    const onMove = (ev) => {
+      const next = Math.min(maxW, Math.max(420, startW + (startX - ev.clientX)));
+      setDrawerWidth(next);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      try { localStorage.setItem('kdt-loan-drawer-width', String(drawerWidthRef.current)); } catch {}
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
   return (
     <>
       <div className="drawer-overlay open" onClick={onClose} />
-      <aside className="drawer open" style={{ width: 720, maxWidth: '95vw' }}>
+      <aside className="drawer open" style={{ width: drawerWidth, maxWidth: '95vw', position: 'relative' }}>
+        <span
+          onMouseDown={startDrawerResize}
+          title="Drag to resize"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            bottom: 0,
+            width: 8,
+            cursor: 'col-resize',
+            zIndex: 2,
+            background: 'linear-gradient(to right, rgba(0,0,0,.06), transparent)',
+          }}
+        />
         <div className="drawer-head">
           <button className="drawer-close" onClick={onClose}>×</button>
           <div className="drawer-stage">{loan.status || STAGE_TO_STATUS[loan.stage] || loan.stage || 'Loan'}</div>
@@ -181,9 +222,9 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
                 defaultValue={loan.notes || ''}
                 onBlur={(e) => set('notes', e.target.value)}
                 style={{
-                  width: '100%', minHeight: 140, padding: 12, fontFamily: 'inherit',
+                  width: '100%', minHeight: 260, padding: 12, fontFamily: 'inherit',
                   fontSize: 13, lineHeight: 1.55, border: '1px solid #d0d0d0',
-                  borderRadius: 6, resize: 'vertical', boxSizing: 'border-box',
+                  borderRadius: 6, resize: 'both', boxSizing: 'border-box',
                 }}
               />
             </Field>
