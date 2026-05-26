@@ -24,7 +24,7 @@ export default function ClosingCalc() {
         <div className="form-card">
           <div className="section-header">
             <div className="section-title">Closing Costs Calculator</div>
-            <div className="section-sub">The Kyle Duke Team &middot; estimated cash to close</div>
+            <div className="section-sub">The Kyle Duke Home Loan Team &middot; estimated cash to close</div>
           </div>
           <div style={{ padding: 20 }}>
             <div className="calc-input-row">
@@ -70,7 +70,7 @@ export default function ClosingCalc() {
 
       <div id="closeCalcResult" className="calc-result">
         <div style={{ width: 64, height: 64, margin: '0 auto 14px', color: '#fff' }} dangerouslySetInnerHTML={{ __html: LOGO_SVG }} />
-        <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', fontSize: 12, color: '#fff', textAlign: 'center', marginBottom: 2 }}>The Kyle Duke Team</div>
+        <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', fontSize: 12, color: '#fff', textAlign: 'center', marginBottom: 2 }}>The Kyle Duke Home Loan Team</div>
         <div style={{ fontSize: 9, color: '#888', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '.8px', marginBottom: 16 }}>Powered by Valor Home Loans</div>
         <div className="calc-result-label">Estimated Cash to Close</div>
         <div className="calc-result-value">{fmt$(Math.round(r.totalCash))}</div>
@@ -92,7 +92,7 @@ export default function ClosingCalc() {
         <div className="calc-result-row"><span className="lbl">+ Down Payment</span><span className="val">{fmt$(s.price - s.loan)}</span></div>
         <div className="calc-result-row total"><span className="lbl">Total Cash to Close</span><span className="val">{fmt$(Math.round(r.totalCash))}</span></div>
         <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #333', fontSize: 10, color: '#888', textAlign: 'center' }}>
-          The Kyle Duke Team &middot; NMLS #2172565<br />Estimate only. Final figures provided in your Loan Estimate.
+          The Kyle Duke Home Loan Team &middot; NMLS #2172565<br />Estimate only. Final figures provided in your Loan Estimate.
         </div>
       </div>
     </div>

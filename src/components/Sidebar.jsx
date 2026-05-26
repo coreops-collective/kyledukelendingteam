@@ -44,12 +44,12 @@ export default function Sidebar({ user, open = false }) {
     <aside className={`hub-sidebar${open ? ' open' : ''}`} id="hubSidebar">
       <div className="sidebar-brand">
         <div className="brand-crest">
-          <img src="/brand-crest.jpeg" alt="The Kyle Duke Team"
+          <img src="/brand-crest.jpeg" alt="The Kyle Duke Home Loan Team"
                onError={(e) => { e.currentTarget.style.display = 'none'; }}
                style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
         <div>
-          <div className="brand-title">The Kyle Duke Team</div>
+          <div className="brand-title">The Kyle Duke Home Loan Team</div>
           <div className="brand-sub">Powered by Valor Home Loans</div>
         </div>
       </div>

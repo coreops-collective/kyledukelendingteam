@@ -29,7 +29,7 @@ export default function MortgageCalc() {
         <div className="form-card">
           <div className="section-header">
             <div className="section-title">Mortgage Calculator</div>
-            <div className="section-sub">The Kyle Duke Team &middot; Fannie Mae / Freddie Mac / VA guidelines</div>
+            <div className="section-sub">The Kyle Duke Home Loan Team &middot; Fannie Mae / Freddie Mac / VA guidelines</div>
           </div>
           <div style={{ padding: 20 }}>
             <div className="calc-input-row">
@@ -101,7 +101,7 @@ export default function MortgageCalc() {
 
       <div id="mtgCalcResult" className="calc-result">
         <div style={{ width: 64, height: 64, margin: '0 auto 14px', color: '#fff' }} dangerouslySetInnerHTML={{ __html: LOGO_SVG }} />
-        <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', fontSize: 12, color: '#fff', textAlign: 'center', marginBottom: 2 }}>The Kyle Duke Team</div>
+        <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', fontSize: 12, color: '#fff', textAlign: 'center', marginBottom: 2 }}>The Kyle Duke Home Loan Team</div>
         <div style={{ fontSize: 9, color: '#888', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '.8px', marginBottom: 16 }}>Powered by Valor Home Loans</div>
         <div className="calc-result-label">Estimated Monthly Payment</div>
         <div className="calc-result-value">{fmt$(Math.round(r.total))}</div>
@@ -119,7 +119,7 @@ export default function MortgageCalc() {
           </div>
         )}
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #333', fontSize: 10, color: '#888', textAlign: 'center' }}>
-          The Kyle Duke Team &middot; NMLS #2172565<br />Estimate only. Actual payment may vary.
+          The Kyle Duke Home Loan Team &middot; NMLS #2172565<br />Estimate only. Actual payment may vary.
         </div>
       </div>
     </div>

@@ -129,7 +129,7 @@ export default function App() {
         <header className="hub-header">
           <div>
             <div className="page-title" id="pageTitle">{meta.title}</div>
-            <div className="page-sub" id="pageSub">The Kyle Duke Team · Lending Hub</div>
+            <div className="page-sub" id="pageSub">The Kyle Duke Home Loan Team · Lending Hub</div>
           </div>
           <div className="header-right">
             <span className="chip" id="todayChip">{todayString()}</span>

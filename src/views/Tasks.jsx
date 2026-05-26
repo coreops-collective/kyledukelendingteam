@@ -275,7 +275,7 @@ function SiriPanel({ onClose }) {
     <div className="tk-sms-panel">
       <h3>{'\u{1F399}\uFE0F "Hey Siri, New Task" \u2192 Claude API'}</h3>
       <div style={{fontSize:12,color:'#aaa',marginBottom:14,lineHeight:1.5}}>
-        Siri grabs what you say, sends it to the Kyle Duke Team's Claude endpoint, Claude parses it into a structured task, and it lands on this board. Only enabled for Kyle + Missy.
+        Siri grabs what you say, sends it to the Kyle Duke Home Loan Team's Claude endpoint, Claude parses it into a structured task, and it lands on this board. Only enabled for Kyle + Missy.
       </div>
       <div className="tk-sms-step">
         <div className="tk-sms-num">1</div>

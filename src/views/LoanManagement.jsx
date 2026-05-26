@@ -5,7 +5,7 @@ import { PARTNERS } from '../data/partners.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
-import { markLoansDirty, subscribeLoans } from '../lib/loansStore.js';
+import { markLoansDirty, saveLoansNow, subscribeLoans } from '../lib/loansStore.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -30,9 +30,9 @@ function dateClass(s, done) {
   return '';
 }
 
-// Compute the ICD deadline as 3 days before close date, where Saturdays
-// count as a day but Sundays do not. Returns YYYY-MM-DD or '' if the
-// close date is missing / invalid.
+// Compute the ICD deadline as 3 business days before close date — Mon-Fri
+// only. Weekends are skipped because the team can't send ICDs on Sat/Sun.
+// Returns YYYY-MM-DD or '' if the close date is missing / invalid.
 function computeIcdDeadline(closeDate) {
   const d = parseDate(closeDate);
   if (!d) return '';
@@ -40,7 +40,8 @@ function computeIcdDeadline(closeDate) {
   let counted = 0;
   while (counted < 3) {
     out.setDate(out.getDate() - 1);
-    if (out.getDay() !== 0) counted++; // 0 = Sunday
+    const dow = out.getDay();
+    if (dow !== 0 && dow !== 6) counted++; // 0=Sun, 6=Sat
   }
   return out.toISOString().slice(0, 10);
 }
@@ -60,7 +61,7 @@ function statusSlug(s) {
   return (s || '').toLowerCase().replace(/[^a-z]/g, '');
 }
 
-const STATUSES = ['All','New Contract','Disclosed','Processing','Underwriting','CTC Required','CTC','BTP','Approved','Funded','Adversed'];
+const STATUSES = ['All','New Contract','Disclosed','Processing','Underwriting','CTC Required','CTC','BTP','Approved','Funded','Adversed','Archived'];
 const LOS_LIST = ['All','Kyle','Missy'];
 const TYPES = ['All','CONV','FHA','VA','Jumbo'];
 const SALE_TYPES = ['All','PURCHASE','REFINANCE'];
@@ -445,11 +446,11 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                   </td>
                   <td
                     onClick={(e) => { e.stopPropagation(); onOpenNotes(l.id); }}
-                    style={{ cursor: 'pointer' }}
+                    style={{ cursor: 'pointer', verticalAlign: 'top' }}
                     title="Click to edit full notes"
                   >
-                    <div style={{ padding: '8px 10px', fontSize: 11, color: l.notes ? '#5a4a1a' : '#bbb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
-                      {l.notes ? l.notes.replace(/\n/g, ' · ') : 'Click to add notes'}
+                    <div style={{ padding: '8px 10px', fontSize: 11, color: l.notes ? '#5a4a1a' : '#bbb', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.35, maxHeight: 160, overflowY: 'auto' }}>
+                      {l.notes || 'Click to add notes'}
                     </div>
                   </td>
                   <td><EditSelect value={l.lo || ''} options={LOS_LIST.filter(x => x !== 'All')} onChange={(v) => onEdit(l.id, 'lo', v)} /></td>
@@ -564,6 +565,7 @@ export default function LoanManagement() {
   const [notesFor, setNotesFor] = useState(null);
   const [loanFor, setLoanFor] = useState(null);
   const [newLoanOpen, setNewLoanOpen] = useState(false);
+  const [saveToast, setSaveToast] = useState(null);
 
   useEffect(() => subscribeLoans(bump), [bump]);
 
@@ -589,14 +591,15 @@ export default function LoanManagement() {
     year: 'All', month: 'All', status: 'All', lo: 'All', type: 'All', saleType: 'All',
   });
 
-  // Adversed loans are kept in the underlying set so the Adversed status
-  // filter can find them, but hidden by default. Recomputed every render
-  // so realtime echoes that swap loan references in LOANS are picked up
-  // — memoizing with [] deps was capturing stale references and made
-  // checkboxes look like they weren't toggling.
-  const losLoans = LOANS.filter(
-    (l) => !l.archived && (LOS_STAGES.includes(l.stage) || (l.status || '') === 'Adversed')
-  );
+  // Adversed and Archived loans are kept available so the Status filter
+  // can surface them on demand, but hidden by default. Recomputed every
+  // render so realtime echoes that swap loan references in LOANS are
+  // picked up.
+  const losLoans = LOANS.filter((l) => {
+    if (filters.status === 'Archived') return l.archived;
+    if (l.archived) return false;
+    return LOS_STAGES.includes(l.stage) || (l.status || '') === 'Adversed';
+  });
 
   const filtered = losLoans.filter((r) => {
     const ry = getYearFromDate(r.closeDate);
@@ -604,7 +607,7 @@ export default function LoanManagement() {
     if ((r.status || '') === 'Adversed' && filters.status !== 'Adversed') return false;
     if (filters.year !== 'All' && ry !== filters.year) return false;
     if (filters.month !== 'All' && rm !== filters.month) return false;
-    if (filters.status !== 'All' && (r.status || '') !== filters.status) return false;
+    if (filters.status !== 'All' && filters.status !== 'Archived' && (r.status || '') !== filters.status) return false;
     if (filters.lo !== 'All' && r.lo !== filters.lo) return false;
     if (filters.type !== 'All' && r.type !== filters.type) return false;
     if (filters.saleType !== 'All' && r.saleType !== filters.saleType) return false;
@@ -727,6 +730,18 @@ export default function LoanManagement() {
             <button className={layout === 'cards' ? 'active' : ''} onClick={() => setLayout('cards')}>Cards</button>
             <button className={layout === 'table' ? 'active' : ''} onClick={() => setLayout('table')}>Spreadsheet</button>
           </div>
+          <button
+            type="button"
+            className="form-btn"
+            title="Force-save any pending changes to Supabase right now"
+            onClick={async () => {
+              await saveLoansNow();
+              setSaveToast('Saved');
+              setTimeout(() => setSaveToast(null), 1800);
+            }}
+          >
+            Save Now
+          </button>
           <button type="button" onClick={() => setNewLoanOpen(true)} className="form-btn primary">+ New Loan Intake</button>
         </div>
       </div>
@@ -755,6 +770,13 @@ export default function LoanManagement() {
       {layout === 'table'
         ? <TableView loans={sortedFiltered} onEdit={handleEdit} onEditStatus={handleEditStatus} onOpenNotes={setNotesFor} onOpenLoan={handleOpenLoan} sort={sort} onSort={onSort} />
         : <CardsView loans={filtered} onOpenNotes={setNotesFor} onOpenLoan={handleOpenLoan} />}
+
+      {saveToast && (
+        <div className="toast" onClick={() => setSaveToast(null)}>
+          <strong>Saved</strong>
+          <div>{saveToast === 'Saved' ? 'All pending edits flushed to Supabase.' : saveToast}</div>
+        </div>
+      )}
 
       {notesLoan && (
         <NotesDrawer
