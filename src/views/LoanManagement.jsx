@@ -615,12 +615,87 @@ function ResizableHeader({ colKey, label, width, onCommitWidth }) {
 // Default starting width for every column in the Loan Management table.
 // User-edited widths layer on top of these via localStorage.
 const COL_DEFAULTS = {
-  borrower: 180, closeDate: 130, status: 150, notes: 320, lo: 100, loa: 110,
+  borrower: 180, closeDate: 130, status: 150, notes: 500, lo: 100, loa: 110,
   saleType: 140, apprOrdered: 80, apprDeadline: 140, apprReceived: 80, titleReceived: 80,
   lockExp: 140, icdDeadline: 140, icdSent: 80, icdSigned: 80, property: 280,
   price: 140, amount: 140, type: 100, rate: 100, agent: 200, leadSource: 160,
   phone: 150, email: 220, coFirst: 140, coLast: 140, coPhone: 150,
 };
+
+const COL_LABELS = {
+  borrower: 'Client', closeDate: 'Closing Date', status: 'Status', notes: 'Notes',
+  lo: 'LO', loa: 'LOA', saleType: 'Sale Type', apprOrdered: 'Appr Ord',
+  apprDeadline: 'Appr Deadline', apprReceived: 'Appr Rcvd', titleReceived: 'Title Rcvd',
+  lockExp: 'Lock Expires', icdDeadline: 'ICD Deadline', icdSent: 'ICD Sent',
+  icdSigned: 'ICD Signed', property: 'Property', price: 'Purchase Price',
+  amount: 'Loan Amount', type: 'Type', rate: 'Rate', agent: 'Agent',
+  leadSource: 'Lead Source', phone: 'Phone', email: 'Email',
+  coFirst: 'Co-Borrower First', coLast: 'Co-Borrower Last', coPhone: 'Co-Borrower Phone',
+};
+
+// Modal-style picker for setting column widths by typing a number per
+// column. This is the bulletproof fallback for environments where the
+// drag handle doesn't behave (trackpad gestures, browser extensions,
+// etc.). Save writes to localStorage and reloads, same as the drag
+// commit path.
+function ColumnWidthsModal({ initial, onClose }) {
+  const [vals, setVals] = useState(() => ({ ...initial }));
+  const save = () => {
+    const clamped = {};
+    Object.entries(vals).forEach(([k, v]) => {
+      const n = parseInt(v, 10);
+      if (Number.isFinite(n)) clamped[k] = Math.min(1200, Math.max(60, n));
+    });
+    localStorage.setItem('kdt-col-widths', JSON.stringify(clamped));
+    window.location.reload();
+  };
+  return (
+    <>
+      <div className="drawer-overlay open" onClick={onClose} />
+      <aside className="drawer open" style={{ width: 520, maxWidth: '95vw' }}>
+        <div className="drawer-head">
+          <button className="drawer-close" onClick={onClose}>×</button>
+          <div className="drawer-stage">Spreadsheet</div>
+          <div className="drawer-borrower">Column Widths</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>Type a pixel width for any column · 60–1200 · Save reloads</div>
+        </div>
+        <div className="drawer-body">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8, alignItems: 'center' }}>
+            {Object.keys(COL_DEFAULTS).map((key) => (
+              <div key={key} style={{ display: 'contents' }}>
+                <label style={{ fontSize: 12, color: '#222' }}>{COL_LABELS[key] || key}</label>
+                <input
+                  type="number"
+                  min={60}
+                  max={1200}
+                  step={20}
+                  value={vals[key] ?? COL_DEFAULTS[key]}
+                  onChange={(e) => setVals((p) => ({ ...p, [key]: e.target.value }))}
+                  style={{ width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box' }}
+                />
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 14, padding: 10, background: '#fff8e1', border: '1px solid #f5e7a3', borderRadius: 6, fontSize: 11, color: '#5a4a1a' }}>
+            Tip: Notes defaults to 500px. Bump it to 700 or 900 if you want lots of room. The page will reload when you save.
+          </div>
+        </div>
+        <div className="drawer-actions">
+          <button className="drawer-btn" type="button" onClick={onClose}>Cancel</button>
+          <button
+            className="drawer-btn"
+            type="button"
+            onClick={() => setVals({ ...COL_DEFAULTS })}
+            title="Reset all values to defaults (doesn't save until you click Save)"
+          >
+            Reset to defaults
+          </button>
+          <button className="drawer-btn primary" type="button" onClick={save}>Save & Reload</button>
+        </div>
+      </aside>
+    </>
+  );
+}
 
 function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort, onSort }) {
   const agentOpts = [...PARTNERS].map(p => p.name).sort((a,b) => a.localeCompare(b));
@@ -845,6 +920,7 @@ export default function LoanManagement() {
   const [notesFor, setNotesFor] = useState(null);
   const [loanFor, setLoanFor] = useState(null);
   const [newLoanOpen, setNewLoanOpen] = useState(false);
+  const [colWidthsOpen, setColWidthsOpen] = useState(false);
   const [saveToast, setSaveToast] = useState(null);
 
   useEffect(() => subscribeLoans(bump), [bump]);
@@ -1028,35 +1104,14 @@ export default function LoanManagement() {
             Save Now
           </button>
           {layout === 'table' && (
-            <>
-              <button
-                type="button"
-                className="form-btn"
-                title="Make the Notes column 200px wider — quick test that column widths can change at all"
-                onClick={() => {
-                  let stored = {};
-                  try { stored = JSON.parse(localStorage.getItem('kdt-col-widths') || '{}'); } catch {}
-                  const current = stored.notes || 320;
-                  const next = Math.min(1200, current + 200);
-                  stored.notes = next;
-                  localStorage.setItem('kdt-col-widths', JSON.stringify(stored));
-                  window.location.reload();
-                }}
-              >
-                + Wider Notes
-              </button>
-              <button
-                type="button"
-                className="form-btn"
-                title="Reset every column width back to the default size"
-                onClick={() => {
-                  localStorage.removeItem('kdt-col-widths');
-                  window.location.reload();
-                }}
-              >
-                Reset Columns
-              </button>
-            </>
+            <button
+              type="button"
+              className="form-btn"
+              title="Set the pixel width for every column (works even if drag-resize doesn't behave)"
+              onClick={() => setColWidthsOpen(true)}
+            >
+              Column Sizes
+            </button>
           )}
           <button type="button" onClick={() => setNewLoanOpen(true)} className="form-btn primary">+ New Loan Intake</button>
         </div>
@@ -1111,6 +1166,16 @@ export default function LoanManagement() {
       )}
 
       {newLoanOpen && <NewLoanDrawer onClose={() => setNewLoanOpen(false)} />}
+      {colWidthsOpen && (() => {
+        let initial = {};
+        try { initial = JSON.parse(localStorage.getItem('kdt-col-widths') || '{}'); } catch {}
+        return (
+          <ColumnWidthsModal
+            initial={{ ...COL_DEFAULTS, ...initial }}
+            onClose={() => setColWidthsOpen(false)}
+          />
+        );
+      })()}
     </div>
   );
 }
