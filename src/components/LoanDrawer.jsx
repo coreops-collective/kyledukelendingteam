@@ -116,7 +116,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
   return (
     <>
       <div className="drawer-overlay open" onClick={onClose} />
-      <aside className="drawer open" style={{ width: drawerWidth, maxWidth: '95vw', position: 'relative' }}>
+      <aside className="drawer open" style={{ width: drawerWidth, maxWidth: '95vw' }}>
         <span
           onMouseDown={startDrawerResize}
           title="Drag to resize"
