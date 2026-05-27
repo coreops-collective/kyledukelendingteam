@@ -576,7 +576,17 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
   const [colWidths, setColWidths] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('kdt-col-widths') || '{}');
-      return { ...COL_DEFAULTS, ...stored };
+      // Sanity check: if a previous (broken) iteration of the resize
+      // code saved unreasonably-narrow values, ignore them and reset to
+      // defaults. Otherwise the user can never escape "Notes is too
+      // skinny" no matter how many times they click [+] (because their
+      // saved value was 80px and they're clicking up from there).
+      const sanitized = {};
+      Object.entries(stored).forEach(([k, v]) => {
+        const n = Number(v);
+        if (Number.isFinite(n) && n >= 80) sanitized[k] = n;
+      });
+      return { ...COL_DEFAULTS, ...sanitized };
     } catch { return { ...COL_DEFAULTS }; }
   });
   const adjustColWidth = useCallback((key, delta) => {
@@ -634,7 +644,19 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
     <ColorLegend />
     <div className="lm-wrap">
       <div className="lm-scroll">
-        <table className="lm-table">
+        <table
+          className="lm-table"
+          style={{
+            // Inline styles override any cached CSS file. Forces auto
+            // layout so col widths actually drive column sizing, and
+            // pins the total table width to the sum of column widths so
+            // browsers can't quietly shrink/expand columns away from
+            // what we asked for.
+            tableLayout: 'auto',
+            width: COL_ORDER.reduce((sum, k) => sum + w(k), 0),
+            minWidth: 'unset',
+          }}
+        >
           <colgroup>
             {COL_ORDER.map((key) => (
               <col key={key} data-col-key={key} style={{ width: w(key) }} />
