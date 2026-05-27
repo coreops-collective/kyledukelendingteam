@@ -507,48 +507,79 @@ function SortHeader({ field, label, width, onCommitWidth, sort, onSort }) {
 // table on each frame, which was lagging hard enough that some users
 // thought the drag wasn't working at all.
 function ColResizeHandle({ colKey, onCommit, stopClick }) {
-  const onPointerDown = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const handle = e.currentTarget;
-    const th = handle.parentElement;
-    if (!th) return;
-    const startX = e.clientX;
-    const startW = th.offsetWidth;
-    handle.setPointerCapture(e.pointerId);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+  const ref = useRef(null);
 
-    const compute = (ev) => Math.min(1200, Math.max(60, startW + (ev.clientX - startX)));
+  // Attach NATIVE listeners directly to the DOM node. React's synthetic
+  // event system has had intermittent issues with drag interactions
+  // (event pooling, capture/target mismatches across browsers), and the
+  // single biggest source of "the drag doesn't work" complaints. Going
+  // raw bypasses all of that.
+  useEffect(() => {
+    const handle = ref.current;
+    if (!handle) return;
 
-    const onMove = (ev) => {
-      th.style.width = compute(ev) + 'px';
+    const onDown = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const th = handle.parentElement;
+      let table = th;
+      while (table && table.tagName !== 'TABLE') table = table.parentElement;
+      const col = table ? table.querySelector(`col[data-col-key="${colKey}"]`) : null;
+      if (!th) return;
+      const startX = e.clientX;
+      const startW = th.offsetWidth;
+      try { handle.setPointerCapture(e.pointerId); } catch {}
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      const compute = (clientX) =>
+        Math.min(1200, Math.max(60, startW + (clientX - startX)));
+      const apply = (px) => {
+        const v = px + 'px';
+        th.style.width = v;
+        if (col) col.style.width = v;
+      };
+
+      const onMove = (ev) => apply(compute(ev.clientX));
+      const onUp = (ev) => {
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        try { handle.releasePointerCapture(e.pointerId); } catch {}
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        const final = compute(ev.clientX);
+        apply(final);
+        onCommit(colKey, final);
+      };
+
+      // Listen on both the handle (for pointer capture) AND the window
+      // (belt + suspenders — if capture fails on a browser, the window
+      // listeners still see the events).
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
     };
-    const onUp = (ev) => {
-      handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', onUp);
-      handle.removeEventListener('pointercancel', onUp);
-      try { handle.releasePointerCapture(e.pointerId); } catch {}
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      onCommit(colKey, compute(ev));
-    };
-    handle.addEventListener('pointermove', onMove);
-    handle.addEventListener('pointerup', onUp);
-    handle.addEventListener('pointercancel', onUp);
-  };
+
+    handle.addEventListener('pointerdown', onDown);
+    return () => handle.removeEventListener('pointerdown', onDown);
+  }, [colKey, onCommit]);
 
   return (
     <span
-      onPointerDown={onPointerDown}
+      ref={ref}
       onClick={stopClick ? (e) => e.stopPropagation() : undefined}
       title="Drag to resize column"
       style={{
         position: 'absolute',
         top: 0,
-        right: -5,
+        right: -8,
         bottom: 0,
-        width: 12,
+        width: 16,
         cursor: 'col-resize',
         userSelect: 'none',
         touchAction: 'none',
@@ -560,10 +591,11 @@ function ColResizeHandle({ colKey, onCommit, stopClick }) {
     >
       <span
         style={{
-          width: 2,
-          background: 'rgba(255,255,255,.25)',
-          margin: '0 5px',
+          width: 4,
+          background: 'var(--brand-red, #c62828)',
+          margin: '0 6px',
           pointerEvents: 'none',
+          borderRadius: 1,
         }}
       />
     </span>
@@ -626,12 +658,29 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
     <ResizableHeader colKey={key} label={label} width={w(key)} onCommitWidth={commitColWidth} />
   );
 
+  // Order of columns in the table — used to render the <colgroup> below
+  // so column widths are controlled at the COL element level (most
+  // reliable cross-browser anchor for table-layout: fixed) in addition
+  // to the th width. Direct DOM updates during drag target both.
+  const COL_ORDER = [
+    'borrower', 'closeDate', 'status', 'notes', 'lo', 'loa', 'saleType',
+    'apprOrdered', 'apprDeadline', 'apprReceived', 'titleReceived',
+    'lockExp', 'icdDeadline', 'icdSent', 'icdSigned',
+    'property', 'price', 'amount', 'type', 'rate', 'agent', 'leadSource',
+    'phone', 'email', 'coFirst', 'coLast', 'coPhone',
+  ];
+
   return (
     <>
     <ColorLegend />
     <div className="lm-wrap">
       <div className="lm-scroll">
         <table className="lm-table">
+          <colgroup>
+            {COL_ORDER.map((key) => (
+              <col key={key} data-col-key={key} style={{ width: w(key) }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               {SH('borrower', 'Client')}
@@ -979,17 +1028,35 @@ export default function LoanManagement() {
             Save Now
           </button>
           {layout === 'table' && (
-            <button
-              type="button"
-              className="form-btn"
-              title="Reset every column width back to the default size"
-              onClick={() => {
-                localStorage.removeItem('kdt-col-widths');
-                window.location.reload();
-              }}
-            >
-              Reset Columns
-            </button>
+            <>
+              <button
+                type="button"
+                className="form-btn"
+                title="Make the Notes column 200px wider — quick test that column widths can change at all"
+                onClick={() => {
+                  let stored = {};
+                  try { stored = JSON.parse(localStorage.getItem('kdt-col-widths') || '{}'); } catch {}
+                  const current = stored.notes || 320;
+                  const next = Math.min(1200, current + 200);
+                  stored.notes = next;
+                  localStorage.setItem('kdt-col-widths', JSON.stringify(stored));
+                  window.location.reload();
+                }}
+              >
+                + Wider Notes
+              </button>
+              <button
+                type="button"
+                className="form-btn"
+                title="Reset every column width back to the default size"
+                onClick={() => {
+                  localStorage.removeItem('kdt-col-widths');
+                  window.location.reload();
+                }}
+              >
+                Reset Columns
+              </button>
+            </>
           )}
           <button type="button" onClick={() => setNewLoanOpen(true)} className="form-btn primary">+ New Loan Intake</button>
         </div>
