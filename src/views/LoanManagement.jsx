@@ -482,7 +482,7 @@ function ColorLegend() {
 }
 
 // ── Table view (spreadsheet) ────────────────────────────────────
-function SortHeader({ field, label, width, onCommitWidth, sort, onSort }) {
+function SortHeader({ field, label, width, onAdjustWidth, sort, onSort }) {
   const active = sort && sort.key === field;
   const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
   return (
@@ -491,8 +491,10 @@ function SortHeader({ field, label, width, onCommitWidth, sort, onSort }) {
       onClick={() => onSort && onSort(field)}
       title={`Sort by ${label}`}
     >
-      {label}{arrow}
-      {onCommitWidth && <ColResizeHandle colKey={field} onCommit={onCommitWidth} stopClick />}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <span>{label}{arrow}</span>
+        {onAdjustWidth && <ColWidthButtons onAdjust={(d) => onAdjustWidth(field, d)} />}
+      </span>
     </th>
   );
 }
@@ -506,108 +508,48 @@ function SortHeader({ field, label, width, onCommitWidth, sort, onSort }) {
 // Why direct DOM during drag: setState every mousemove rebuilds the
 // table on each frame, which was lagging hard enough that some users
 // thought the drag wasn't working at all.
-function ColResizeHandle({ colKey, onCommit, stopClick }) {
-  const ref = useRef(null);
-
-  // Attach NATIVE listeners directly to the DOM node. React's synthetic
-  // event system has had intermittent issues with drag interactions
-  // (event pooling, capture/target mismatches across browsers), and the
-  // single biggest source of "the drag doesn't work" complaints. Going
-  // raw bypasses all of that.
-  useEffect(() => {
-    const handle = ref.current;
-    if (!handle) return;
-
-    const onDown = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const th = handle.parentElement;
-      let table = th;
-      while (table && table.tagName !== 'TABLE') table = table.parentElement;
-      const col = table ? table.querySelector(`col[data-col-key="${colKey}"]`) : null;
-      if (!th) return;
-      const startX = e.clientX;
-      const startW = th.offsetWidth;
-      try { handle.setPointerCapture(e.pointerId); } catch {}
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-
-      const compute = (clientX) =>
-        Math.min(1200, Math.max(60, startW + (clientX - startX)));
-      const apply = (px) => {
-        const v = px + 'px';
-        th.style.width = v;
-        if (col) col.style.width = v;
-      };
-
-      const onMove = (ev) => apply(compute(ev.clientX));
-      const onUp = (ev) => {
-        handle.removeEventListener('pointermove', onMove);
-        handle.removeEventListener('pointerup', onUp);
-        handle.removeEventListener('pointercancel', onUp);
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        try { handle.releasePointerCapture(e.pointerId); } catch {}
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        const final = compute(ev.clientX);
-        apply(final);
-        onCommit(colKey, final);
-      };
-
-      // Listen on both the handle (for pointer capture) AND the window
-      // (belt + suspenders — if capture fails on a browser, the window
-      // listeners still see the events).
-      handle.addEventListener('pointermove', onMove);
-      handle.addEventListener('pointerup', onUp);
-      handle.addEventListener('pointercancel', onUp);
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-    };
-
-    handle.addEventListener('pointerdown', onDown);
-    return () => handle.removeEventListener('pointerdown', onDown);
-  }, [colKey, onCommit]);
-
+// Plus / minus buttons next to a column header label. Each click bumps
+// that column's width by 50px (clamped 60–1200). The drag-resize handle
+// approach was flaky enough across browsers / trackpads that the team
+// gave up on it; explicit buttons work everywhere.
+//
+// Shift-click multiplies the step by 4 (200px) for big jumps.
+function ColWidthButtons({ onAdjust }) {
+  const btn = (sign) => (e) => {
+    e.stopPropagation(); // don't trigger column sort
+    const step = e.shiftKey ? 200 : 50;
+    onAdjust(sign * step);
+  };
+  const style = {
+    background: 'rgba(255,255,255,.18)',
+    border: '1px solid rgba(255,255,255,.35)',
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 700,
+    padding: 0,
+    width: 20,
+    height: 18,
+    borderRadius: 3,
+    cursor: 'pointer',
+    lineHeight: 1,
+    fontFamily: 'inherit',
+  };
   return (
-    <span
-      ref={ref}
-      onClick={stopClick ? (e) => e.stopPropagation() : undefined}
-      title="Drag to resize column"
-      style={{
-        position: 'absolute',
-        top: 0,
-        right: -8,
-        bottom: 0,
-        width: 16,
-        cursor: 'col-resize',
-        userSelect: 'none',
-        touchAction: 'none',
-        zIndex: 10,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'stretch',
-      }}
-    >
-      <span
-        style={{
-          width: 4,
-          background: 'var(--brand-red, #c62828)',
-          margin: '0 6px',
-          pointerEvents: 'none',
-          borderRadius: 1,
-        }}
-      />
+    <span style={{ display: 'inline-flex', gap: 2, marginLeft: 4 }}>
+      <button type="button" onClick={btn(-1)} title="Narrower (−50px · Shift = −200)" style={style}>−</button>
+      <button type="button" onClick={btn(+1)} title="Wider (+50px · Shift = +200)" style={style}>+</button>
     </span>
   );
 }
 
-// Plain (non-sortable) resizable column header.
-function ResizableHeader({ colKey, label, width, onCommitWidth }) {
+// Plain (non-sortable) header with the same +/− width buttons.
+function ResizableHeader({ colKey, label, width, onAdjustWidth }) {
   return (
     <th style={{ width, position: 'relative', userSelect: 'none', whiteSpace: 'nowrap' }}>
-      {label}
-      {onCommitWidth && <ColResizeHandle colKey={colKey} onCommit={onCommitWidth} />}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <span>{label}</span>
+        {onAdjustWidth && <ColWidthButtons onAdjust={(d) => onAdjustWidth(colKey, d)} />}
+      </span>
     </th>
   );
 }
@@ -622,98 +564,25 @@ const COL_DEFAULTS = {
   phone: 150, email: 220, coFirst: 140, coLast: 140, coPhone: 150,
 };
 
-const COL_LABELS = {
-  borrower: 'Client', closeDate: 'Closing Date', status: 'Status', notes: 'Notes',
-  lo: 'LO', loa: 'LOA', saleType: 'Sale Type', apprOrdered: 'Appr Ord',
-  apprDeadline: 'Appr Deadline', apprReceived: 'Appr Rcvd', titleReceived: 'Title Rcvd',
-  lockExp: 'Lock Expires', icdDeadline: 'ICD Deadline', icdSent: 'ICD Sent',
-  icdSigned: 'ICD Signed', property: 'Property', price: 'Purchase Price',
-  amount: 'Loan Amount', type: 'Type', rate: 'Rate', agent: 'Agent',
-  leadSource: 'Lead Source', phone: 'Phone', email: 'Email',
-  coFirst: 'Co-Borrower First', coLast: 'Co-Borrower Last', coPhone: 'Co-Borrower Phone',
-};
-
-// Modal-style picker for setting column widths by typing a number per
-// column. This is the bulletproof fallback for environments where the
-// drag handle doesn't behave (trackpad gestures, browser extensions,
-// etc.). Save writes to localStorage and reloads, same as the drag
-// commit path.
-function ColumnWidthsModal({ initial, onClose }) {
-  const [vals, setVals] = useState(() => ({ ...initial }));
-  const save = () => {
-    const clamped = {};
-    Object.entries(vals).forEach(([k, v]) => {
-      const n = parseInt(v, 10);
-      if (Number.isFinite(n)) clamped[k] = Math.min(1200, Math.max(60, n));
-    });
-    localStorage.setItem('kdt-col-widths', JSON.stringify(clamped));
-    window.location.reload();
-  };
-  return (
-    <>
-      <div className="drawer-overlay open" onClick={onClose} />
-      <aside className="drawer open" style={{ width: 520, maxWidth: '95vw' }}>
-        <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
-          <div className="drawer-stage">Spreadsheet</div>
-          <div className="drawer-borrower">Column Widths</div>
-          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>Type a pixel width for any column · 60–1200 · Save reloads</div>
-        </div>
-        <div className="drawer-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8, alignItems: 'center' }}>
-            {Object.keys(COL_DEFAULTS).map((key) => (
-              <div key={key} style={{ display: 'contents' }}>
-                <label style={{ fontSize: 12, color: '#222' }}>{COL_LABELS[key] || key}</label>
-                <input
-                  type="number"
-                  min={60}
-                  max={1200}
-                  step={20}
-                  value={vals[key] ?? COL_DEFAULTS[key]}
-                  onChange={(e) => setVals((p) => ({ ...p, [key]: e.target.value }))}
-                  style={{ width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box' }}
-                />
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 14, padding: 10, background: '#fff8e1', border: '1px solid #f5e7a3', borderRadius: 6, fontSize: 11, color: '#5a4a1a' }}>
-            Tip: Notes defaults to 500px. Bump it to 700 or 900 if you want lots of room. The page will reload when you save.
-          </div>
-        </div>
-        <div className="drawer-actions">
-          <button className="drawer-btn" type="button" onClick={onClose}>Cancel</button>
-          <button
-            className="drawer-btn"
-            type="button"
-            onClick={() => setVals({ ...COL_DEFAULTS })}
-            title="Reset all values to defaults (doesn't save until you click Save)"
-          >
-            Reset to defaults
-          </button>
-          <button className="drawer-btn primary" type="button" onClick={save}>Save & Reload</button>
-        </div>
-      </aside>
-    </>
-  );
-}
 
 function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort, onSort }) {
   const agentOpts = [...PARTNERS].map(p => p.name).sort((a,b) => a.localeCompare(b));
 
-  // ── Spreadsheet-style column resizing ──────────────────────────
-  // Every column has a 12px drag handle straddling its right edge.
-  // Widths persist per user via localStorage. The actual drag moves
-  // the th's width directly through the DOM (see ColResizeHandle);
-  // we only commit to React state on pointer up.
+  // ── Spreadsheet column widths ──────────────────────────────────
+  // Every column header has [−] / [+] buttons. Click [+] to widen by
+  // 50px, [−] to shrink. Shift-click multiplies the step by 4. Widths
+  // persist per user via localStorage. Drag-based resize was unreliable
+  // across browsers / trackpads, so we use explicit buttons instead.
   const [colWidths, setColWidths] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('kdt-col-widths') || '{}');
       return { ...COL_DEFAULTS, ...stored };
     } catch { return { ...COL_DEFAULTS }; }
   });
-  const commitColWidth = useCallback((key, width) => {
+  const adjustColWidth = useCallback((key, delta) => {
     setColWidths((prev) => {
-      const next = { ...prev, [key]: width };
+      const current = prev[key] ?? COL_DEFAULTS[key] ?? 120;
+      const next = { ...prev, [key]: Math.min(1200, Math.max(60, current + delta)) };
       try { localStorage.setItem('kdt-col-widths', JSON.stringify(next)); } catch {}
       return next;
     });
@@ -724,13 +593,13 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
       field={field}
       label={label}
       width={w(field)}
-      onCommitWidth={commitColWidth}
+      onAdjustWidth={adjustColWidth}
       sort={sort}
       onSort={onSort}
     />
   );
   const RH = (key, label) => (
-    <ResizableHeader colKey={key} label={label} width={w(key)} onCommitWidth={commitColWidth} />
+    <ResizableHeader colKey={key} label={label} width={w(key)} onAdjustWidth={adjustColWidth} />
   );
 
   // Order of columns in the table — used to render the <colgroup> below
@@ -920,7 +789,6 @@ export default function LoanManagement() {
   const [notesFor, setNotesFor] = useState(null);
   const [loanFor, setLoanFor] = useState(null);
   const [newLoanOpen, setNewLoanOpen] = useState(false);
-  const [colWidthsOpen, setColWidthsOpen] = useState(false);
   const [saveToast, setSaveToast] = useState(null);
 
   useEffect(() => subscribeLoans(bump), [bump]);
@@ -1107,10 +975,13 @@ export default function LoanManagement() {
             <button
               type="button"
               className="form-btn"
-              title="Set the pixel width for every column (works even if drag-resize doesn't behave)"
-              onClick={() => setColWidthsOpen(true)}
+              title="Put every column back to the default width"
+              onClick={() => {
+                localStorage.removeItem('kdt-col-widths');
+                window.location.reload();
+              }}
             >
-              Column Sizes
+              Reset Columns
             </button>
           )}
           <button type="button" onClick={() => setNewLoanOpen(true)} className="form-btn primary">+ New Loan Intake</button>
@@ -1166,16 +1037,6 @@ export default function LoanManagement() {
       )}
 
       {newLoanOpen && <NewLoanDrawer onClose={() => setNewLoanOpen(false)} />}
-      {colWidthsOpen && (() => {
-        let initial = {};
-        try { initial = JSON.parse(localStorage.getItem('kdt-col-widths') || '{}'); } catch {}
-        return (
-          <ColumnWidthsModal
-            initial={{ ...COL_DEFAULTS, ...initial }}
-            onClose={() => setColWidthsOpen(false)}
-          />
-        );
-      })()}
     </div>
   );
 }
