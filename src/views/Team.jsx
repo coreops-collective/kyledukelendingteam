@@ -1,11 +1,69 @@
 import { useState, useMemo, useEffect } from 'react';
 import { USERS, ROLE_LABELS, sbUpdateUser } from '../data/users.js';
+import { LOANS } from '../data/loans.js';
 
-// The legacy app derives live pipeline/MTD stats from LOANS + PAST_CLIENTS +
-// LOAN_MGMT. That wiring is deferred — we display zeros with the same layout
-// so the view matches the legacy shape 1:1.
-function teamStatsFor(/* userName */) {
-  return { pipelineCount: 0, pipelineVol: 0, fundedMTD: 0, fundedCountMTD: 0 };
+// Match a team member's name to a loan's LO or LOA field. The pipeline
+// uses first-name-only values like "Kyle" / "Missy" / "Abel" / "Kim",
+// while users.name is the full "Kyle Duke" / "Kimberly Chinquee". This
+// matches in either direction: exact, prefix, or short form.
+function matchesUser(userName, loanVal) {
+  if (!userName || !loanVal) return false;
+  const first = userName.trim().split(/\s+/)[0].toLowerCase();
+  const v = String(loanVal).trim().toLowerCase();
+  return v === first || first.startsWith(v) || v.startsWith(first);
+}
+
+// Compute pipeline + MTD funded for one team member directly from LOANS.
+// "Pipeline" = anything assigned to them (lo OR loa) that isn't funded,
+// adversed, or archived. "Funded MTD" = funded loans closed in the
+// current calendar month.
+function teamStatsFor(userName) {
+  const now = new Date();
+  const mtdMonth = now.getMonth();
+  const mtdYear = now.getFullYear();
+  let pipelineCount = 0;
+  let pipelineVol = 0;
+  let fundedMTD = 0;
+  let fundedCountMTD = 0;
+  LOANS.forEach((l) => {
+    const mine = matchesUser(userName, l.lo) || matchesUser(userName, l.loa);
+    if (!mine) return;
+    const status = l.status || '';
+    const stage = l.stage || '';
+    const isFunded = status === 'Funded' || stage === 'funded';
+    const isAdversed = status === 'Adversed';
+    if (l.archived || isAdversed) return;
+    if (!isFunded) {
+      pipelineCount += 1;
+      pipelineVol += Number(l.amount || 0);
+      return;
+    }
+    // Funded — check if it closed this calendar month.
+    const closed = parseLocalDate(l.fundedDate || l.closeDate || '');
+    if (closed && closed.getMonth() === mtdMonth && closed.getFullYear() === mtdYear) {
+      fundedCountMTD += 1;
+      fundedMTD += Number(l.amount || 0);
+    }
+  });
+  return { pipelineCount, pipelineVol, fundedMTD, fundedCountMTD };
+}
+
+// Parse a YYYY-MM-DD or M/D/YYYY string into a LOCAL Date (midnight).
+// Using `new Date('2026-10-22')` interprets as UTC midnight, which then
+// renders as Oct 21 in any US timezone — that's why birthdays were
+// showing one day earlier than expected.
+function parseLocalDate(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  // ISO (YYYY-MM-DD) — what <input type="date"> emits.
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  // US format (M/D/YYYY).
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2]));
+  // Fallback — let Date constructor try; may still shift by timezone.
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
 }
 
 const fmt$M = (n) => {
@@ -238,9 +296,8 @@ function NewTeamMemberModal({ onClose, onSubmit }) {
 // upcoming Date object for the same month/day. If the date is invalid,
 // returns null.
 function nextOccurrence(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (isNaN(d)) return null;
+  const d = parseLocalDate(dateStr);
+  if (!d) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const next = new Date(today.getFullYear(), d.getMonth(), d.getDate());
   if (next < today) next.setFullYear(today.getFullYear() + 1);
@@ -254,16 +311,14 @@ function daysUntil(date) {
 }
 
 function fmtDate(dateStr) {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d)) return dateStr;
+  const d = parseLocalDate(dateStr);
+  if (!d) return dateStr || '—';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function fmtMonthDay(dateStr) {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d)) return dateStr;
+  const d = parseLocalDate(dateStr);
+  if (!d) return dateStr || '—';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 

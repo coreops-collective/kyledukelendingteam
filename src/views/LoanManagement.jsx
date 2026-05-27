@@ -582,8 +582,23 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
   const adjustColWidth = useCallback((key, delta) => {
     setColWidths((prev) => {
       const current = prev[key] ?? COL_DEFAULTS[key] ?? 120;
-      const next = { ...prev, [key]: Math.min(1200, Math.max(60, current + delta)) };
+      const newW = Math.min(1200, Math.max(60, current + delta));
+      const next = { ...prev, [key]: newW };
       try { localStorage.setItem('kdt-col-widths', JSON.stringify(next)); } catch {}
+      // Belt-and-suspenders: directly mutate the DOM in case React's
+      // re-render path isn't actually changing the rendered column for
+      // some reason (table-layout: fixed quirk, browser caching, etc.).
+      // This guarantees a visible change on every click.
+      try {
+        const colEl = document.querySelector(`col[data-col-key="${key}"]`);
+        if (colEl) colEl.style.width = newW + 'px';
+        const ths = document.querySelectorAll('.lm-table thead th');
+        const idx = COL_ORDER.indexOf(key);
+        if (idx >= 0 && ths[idx]) ths[idx].style.width = newW + 'px';
+      } catch {}
+      // Brief toast so the user gets visible confirmation that the click
+      // registered and what the new width is.
+      window.dispatchEvent(new CustomEvent('kdt-col-width-changed', { detail: { key, width: newW } }));
       return next;
     });
   }, []);
@@ -790,6 +805,20 @@ export default function LoanManagement() {
   const [loanFor, setLoanFor] = useState(null);
   const [newLoanOpen, setNewLoanOpen] = useState(false);
   const [saveToast, setSaveToast] = useState(null);
+
+  // Listen for column-width-changed events so the user gets a brief toast
+  // confirming each click on the column +/- buttons actually fires.
+  useEffect(() => {
+    const onWidthChange = (e) => {
+      const { key, width } = e.detail || {};
+      if (!key) return;
+      setSaveToast(`${key}: ${width}px`);
+      const t = setTimeout(() => setSaveToast(null), 900);
+      return () => clearTimeout(t);
+    };
+    window.addEventListener('kdt-col-width-changed', onWidthChange);
+    return () => window.removeEventListener('kdt-col-width-changed', onWidthChange);
+  }, []);
 
   useEffect(() => subscribeLoans(bump), [bump]);
 
