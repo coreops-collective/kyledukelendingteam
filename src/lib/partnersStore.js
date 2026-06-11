@@ -57,7 +57,13 @@ function rowToPartner(row, seedByName) {
     lead_source: row.lead_source || '',
     src: row.lead_source || '',
     touches: row.touches || [],
-    vip: (row.tier || '').toLowerCase().startsWith('vip') || !!seed.vip,
+    // Tier in Supabase is authoritative when set — that lets the user
+    // manually toggle VIP/Standard from the drawer and have it stick on
+    // reload. Only fall back to the seed file's vip flag when there's
+    // no tier saved (legacy partners not yet edited through the drawer).
+    vip: row.tier
+      ? String(row.tier).toLowerCase().startsWith('vip')
+      : !!seed.vip,
     deals: seed.deals || 0,
     closed: seed.closed || 0,
     volume: seed.volume || 0,
@@ -313,7 +319,11 @@ function applyRowToPartner(p, row) {
   p.lead_source = row.lead_source || '';
   p.src = row.lead_source || '';
   p.touches = row.touches || [];
-  p.vip = (row.tier || '').toLowerCase().startsWith('vip') || !!p.vip;
+  // Trust the saved tier exclusively. Previously we OR'd with the
+  // existing p.vip, which made it impossible to toggle VIP off via
+  // realtime echoes — a Standard save would come back and still
+  // render as VIP because the old in-memory flag was true.
+  p.vip = String(row.tier || '').toLowerCase().startsWith('vip');
 }
 
 // Subscribe to live changes on the `partners` table. Calls onChange() after

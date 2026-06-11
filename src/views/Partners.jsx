@@ -488,6 +488,21 @@ function PartnerDrawer({ partner, onClose }) {
             <div style={{ gridColumn: '1/-1' }}><EditRow label="Mailing Address" field="addr" /></div>
             <EditRow label="Social Handle" field="social" />
             <div>
+              <label style={labelStyle}>Tier</label>
+              <select
+                defaultValue={p.vip ? 'VIP' : 'Standard'}
+                onChange={(e) => {
+                  const isVip = e.target.value === 'VIP';
+                  p.vip = isVip;
+                  set('tier', isVip ? 'VIP' : 'Standard');
+                }}
+                style={inputStyle}
+              >
+                <option value="Standard">Standard</option>
+                <option value="VIP">VIP</option>
+              </select>
+            </div>
+            <div>
               <label style={labelStyle}>Primary LO (override)</label>
               <select
                 defaultValue={p.primary_lo || p.primaryLo || ''}
