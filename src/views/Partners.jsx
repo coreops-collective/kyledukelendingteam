@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
+import { LOS_STAGES } from '../data/stages.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
-import { markPartnerDirty, markPartnerNew, savePartnersNow, subscribePartners } from '../lib/partnersStore.js';
+import { markPartnerDirty, markPartnerNew, savePartnersNow, subscribePartners, deletePartner } from '../lib/partnersStore.js';
 
 // Format helpers — mirror legacy fmt$M / fmt$
 const fmt$ = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -61,7 +62,7 @@ function derivePrimaryLoByName() {
 }
 
 export default function Partners() {
-  const [filters, setFilters] = useState({ search: '', state: 'All', tier: 'All', deals: 'All', lo: 'All' });
+  const [filters, setFilters] = useState({ search: '', state: 'All', tier: 'All', deals: 'All', lo: 'All', sort: 'Most Deals', group: 'No grouping' });
   const [showForm, setShowForm] = useState(false);
   const [toast, setToast] = useState(null);
   // PARTNERS is a mutable module-level array. Bumping this counter forces the
@@ -80,10 +81,15 @@ export default function Partners() {
     const onOk = (e) => {
       const count = e?.detail?.count || 1;
       const action = e?.detail?.action || 'save';
+      const verbMap = { insert: 'added', delete: 'removed', save: 'updated' };
       setToast({
-        title: 'Saved',
-        msg: `${count} partner${count === 1 ? '' : 's'} ${action === 'insert' ? 'added' : 'updated'} in Supabase`,
+        title: action === 'delete' ? 'Removed' : 'Saved',
+        msg: `${count} partner${count === 1 ? '' : 's'} ${verbMap[action] || 'updated'} in Supabase`,
       });
+      // Force the list to recompute so a local delete (or any other
+      // mutation that doesn't go through realtime) immediately drops
+      // the partner from view instead of waiting for the realtime echo.
+      setPartnersVersion((v) => v + 1);
     };
     window.addEventListener('partners:save-error', onErr);
     window.addEventListener('partners:save-success', onOk);
@@ -100,12 +106,17 @@ export default function Partners() {
     return unsubscribe;
   }, []);
 
-  // Compute per-agent live pipeline counts from LOANS (active = not funded/cold).
+  // Compute per-agent live pipeline counts from LOANS. "Live" means
+  // actually in escrow / LOS — signed contract through approved. Earlier
+  // versions counted any non-funded loan, which made pre-contract leads
+  // (New Lead, HOT PA, REFI Watch, Applied) show up as "live deals" on
+  // agents that didn't actually have anything in escrow.
   const livePipelineByAgent = useMemo(() => {
     const map = {};
     LOANS.forEach((l) => {
       if (l.archived || l.status === 'Adversed') return;
-      if (!l.agent || l.stage === 'funded' || l.stage === 'cold') return;
+      if (!l.agent) return;
+      if (!LOS_STAGES.includes(l.stage)) return;
       if (!map[l.agent]) map[l.agent] = { count: 0, volume: 0 };
       map[l.agent].count += 1;
       map[l.agent].volume += l.amount || 0;
@@ -149,8 +160,39 @@ export default function Partners() {
     });
   }, [filters, partnersWithLive]);
 
-  const vipPartners = filtered.filter((p) => p.vip);
-  const standardPartners = [...filtered.filter((p) => !p.vip)].sort((a, b) => (b.deals || 0) - (a.deals || 0));
+  const sortPartners = (list) => {
+    const arr = [...list];
+    switch (filters.sort) {
+      case 'Alphabetical':
+        return arr.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      case 'Most Closings':
+        return arr.sort((a, b) => (b.closed || 0) - (a.closed || 0));
+      case 'Most Volume':
+        return arr.sort((a, b) => (b.lifetime || b.volume || 0) - (a.lifetime || a.volume || 0));
+      case 'Live Pipeline':
+        return arr.sort((a, b) => (b.livePipeline || 0) - (a.livePipeline || 0));
+      case 'Most Deals':
+      default:
+        return arr.sort((a, b) => (b.deals || 0) - (a.deals || 0));
+    }
+  };
+  const vipPartners = sortPartners(filtered.filter((p) => p.vip));
+  const standardPartners = sortPartners(filtered.filter((p) => !p.vip));
+
+  // Group partners by state for the "By State" grouping view. Otherwise
+  // returns a single bucket so the existing list rendering still works.
+  const groupByState = (list) => {
+    if (filters.group !== 'By State') return [{ key: '', label: '', items: list }];
+    const buckets = {};
+    list.forEach((p) => {
+      const k = p.state || '—';
+      buckets[k] = buckets[k] || [];
+      buckets[k].push(p);
+    });
+    return Object.keys(buckets)
+      .sort((a, b) => a.localeCompare(b))
+      .map((k) => ({ key: k, label: STATE_NAMES[k] || k, items: buckets[k] }));
+  };
 
   const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
 
@@ -229,10 +271,12 @@ export default function Partners() {
         <FilterDropdown label="Tier" value={filters.tier} options={TIER_OPTIONS} onChange={(v) => setFilter('tier', v)} />
         <FilterDropdown label="LO" value={filters.lo} options={LO_OPTIONS} onChange={(v) => setFilter('lo', v)} />
         <FilterDropdown label="Deals" value={filters.deals} options={DEAL_BUCKETS} onChange={(v) => setFilter('deals', v)} />
+        <FilterDropdown label="Sort" value={filters.sort} options={['Most Deals', 'Alphabetical', 'Most Closings', 'Most Volume', 'Live Pipeline']} onChange={(v) => setFilter('sort', v)} />
+        <FilterDropdown label="Group" value={filters.group} options={['No grouping', 'By State']} onChange={(v) => setFilter('group', v)} />
         <div
           className="income-filter"
           style={{ background: '#5a0e1a', cursor: 'pointer' }}
-          onClick={() => setFilters({ search: '', state: 'All', tier: 'All', deals: 'All' })}
+          onClick={() => setFilters({ search: '', state: 'All', tier: 'All', deals: 'All', lo: 'All', sort: 'Most Deals', group: 'No grouping' })}
         >
           <span className="income-filter-label" style={{ color: '#fbb' }}>Reset</span>
         </div>
@@ -241,65 +285,69 @@ export default function Partners() {
         </div>
       </div>
 
-      {vipPartners.length > 0 && (
-        <>
-          <h3 style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, margin: '18px 0 10px', color: 'var(--brand-red)' }}>
-            VIP Agents ({vipPartners.length})
-          </h3>
-          <div className="partner-grid">
-            {vipPartners.map((p) => (
-              <div key={p.name} className="partner-card vip" style={{ cursor: 'pointer' }} onClick={() => openPartner(p)}>
-                <div className="partner-name">{p.name}</div>
-                <div className="partner-brokerage">{partnerLoc(p)}</div>
-                <div className="partner-stat"><span>Total Closings</span><strong>{p.totalClosings || p.deals || 0}</strong></div>
-                <div className="partner-stat"><span>Total Volume</span><strong>{fmt$(p.totalVolume || p.lifetime || 0)}</strong></div>
-                <div className="partner-stat"><span>YTD Closings</span><strong>{p.ytdClosings || p.closed || 0}</strong></div>
-                <div className="partner-stat"><span>YTD Volume</span><strong>{fmt$(p.ytdVolume || p.volume || 0)}</strong></div>
-                {p.livePipeline ? (
-                  <div className="partner-stat" style={{ borderTop: '1px dashed #f5b8c1', paddingTop: 6, marginTop: 4 }}>
-                    <span style={{ color: 'var(--brand-red)', fontWeight: 700 }}>Live Pipeline</span>
-                    <strong>{p.livePipeline} · {fmt$(p.livePipelineVolume || 0)}</strong>
+      {groupByState(vipPartners).map((group) => (
+        group.items.length > 0 && (
+          <div key={`vip-${group.key}`}>
+            <h3 style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, margin: '18px 0 10px', color: 'var(--brand-red)' }}>
+              VIP Agents{group.label ? ` · ${group.label}` : ''} ({group.items.length})
+            </h3>
+            <div className="partner-grid">
+              {group.items.map((p) => (
+                <div key={p.name} className="partner-card vip" style={{ cursor: 'pointer' }} onClick={() => openPartner(p)}>
+                  <div className="partner-name">{p.name}</div>
+                  <div className="partner-brokerage">{partnerLoc(p)}</div>
+                  <div className="partner-stat"><span>Total Closings</span><strong>{p.totalClosings || p.deals || 0}</strong></div>
+                  <div className="partner-stat"><span>Total Volume</span><strong>{fmt$(p.totalVolume || p.lifetime || 0)}</strong></div>
+                  <div className="partner-stat"><span>YTD Closings</span><strong>{p.ytdClosings || p.closed || 0}</strong></div>
+                  <div className="partner-stat"><span>YTD Volume</span><strong>{fmt$(p.ytdVolume || p.volume || 0)}</strong></div>
+                  {p.livePipeline ? (
+                    <div className="partner-stat" style={{ borderTop: '1px dashed #f5b8c1', paddingTop: 6, marginTop: 4 }}>
+                      <span style={{ color: 'var(--brand-red)', fontWeight: 700 }}>Live Pipeline</span>
+                      <strong>{p.livePipeline} · {fmt$(p.livePipelineVolume || 0)}</strong>
+                    </div>
+                  ) : null}
+                  <div style={{ textAlign: 'center', fontSize: 10, color: '#999', marginTop: 8, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                    Click for full detail
                   </div>
-                ) : null}
-                <div style={{ textAlign: 'center', fontSize: 10, color: '#999', marginTop: 8, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                  Click for full detail
                 </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {standardPartners.length > 0 && (
-        <>
-          <h3 style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, margin: '24px 0 10px', color: '#666' }}>
-            Standard Agents ({standardPartners.length})
-          </h3>
-          <div className="partner-list">
-            <div className="partner-row-head">
-              <div>Agent</div>
-              <div>Brokerage</div>
-              <div style={{ textAlign: 'right' }}>State</div>
-              <div style={{ textAlign: 'right' }}>Total Closings</div>
-              <div style={{ textAlign: 'right' }}>Total Volume</div>
-              <div style={{ textAlign: 'right' }}>YTD Closings</div>
+              ))}
             </div>
-            {standardPartners.map((p) => (
-              <div key={p.name} className="partner-row" onClick={() => openPartner(p)}>
-                <div className="name">
-                  {p.name}
-                  {p.livePipeline ? <span className="live">● {p.livePipeline} live</span> : null}
-                </div>
-                <div className="brk">{partnerLoc(p)}</div>
-                <div className="num">{p.state || '—'}</div>
-                <div className="num">{p.totalClosings || p.closed || 0}</div>
-                <div className="vol">{fmt$(p.totalVolume || p.lifetime || 0)}</div>
-                <div className="num" style={{ color: '#888' }}>{p.ytdClosings || p.closed || 0}</div>
-              </div>
-            ))}
           </div>
-        </>
-      )}
+        )
+      ))}
+
+      {groupByState(standardPartners).map((group) => (
+        group.items.length > 0 && (
+          <div key={`std-${group.key}`}>
+            <h3 style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, margin: '24px 0 10px', color: '#666' }}>
+              Standard Agents{group.label ? ` · ${group.label}` : ''} ({group.items.length})
+            </h3>
+            <div className="partner-list">
+              <div className="partner-row-head">
+                <div>Agent</div>
+                <div>Brokerage</div>
+                <div style={{ textAlign: 'right' }}>State</div>
+                <div style={{ textAlign: 'right' }}>Total Closings</div>
+                <div style={{ textAlign: 'right' }}>Total Volume</div>
+                <div style={{ textAlign: 'right' }}>YTD Closings</div>
+              </div>
+              {group.items.map((p) => (
+                <div key={p.name} className="partner-row" onClick={() => openPartner(p)}>
+                  <div className="name">
+                    {p.name}
+                    {p.livePipeline ? <span className="live">● {p.livePipeline} live</span> : null}
+                  </div>
+                  <div className="brk">{partnerLoc(p)}</div>
+                  <div className="num">{p.state || '—'}</div>
+                  <div className="num">{p.totalClosings || p.closed || 0}</div>
+                  <div className="vol">{fmt$(p.totalVolume || p.lifetime || 0)}</div>
+                  <div className="num" style={{ color: '#888' }}>{p.ytdClosings || p.closed || 0}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      ))}
 
       {standardPartners.length === 0 && vipPartners.length === 0 && (
         <div className="muted" style={{ textAlign: 'center', padding: 30 }}>No partners match those filters</div>
@@ -573,7 +621,19 @@ function PartnerDrawer({ partner, onClose }) {
             )}
           </div>
         </div>
-        <div className="drawer-actions">
+        <div className="drawer-actions" style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <button
+            className="drawer-btn"
+            style={{ color: '#c62828', borderColor: '#f5b8c1' }}
+            onClick={async () => {
+              const ok = window.confirm(`Delete ${p.name}? This removes them from the partner list permanently. Loans referencing them are not affected.`);
+              if (!ok) return;
+              await deletePartner(p);
+              onClose();
+            }}
+          >
+            Delete partner
+          </button>
           <button className="drawer-btn primary" onClick={handleClose}>Close</button>
         </div>
       </aside>

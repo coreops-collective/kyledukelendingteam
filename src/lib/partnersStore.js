@@ -282,6 +282,36 @@ export function savePartnersNow() {
   return flushPartners();
 }
 
+// Delete a partner from Supabase + the in-memory PARTNERS array. Drops
+// any pending dirty/new tracking for the partner so a half-finished
+// debounced save can't resurrect it after the delete lands.
+export async function deletePartner(partner) {
+  if (!partner) return false;
+  // Strip pending writes for this partner first.
+  if (partner.id) dirtyIds.delete(partner.id);
+  if (partner.name) newPartnerNames.delete(partner.name);
+
+  if (partner.id) {
+    try {
+      const { error } = await supabase.from('partners').delete().eq('id', partner.id);
+      if (error) {
+        console.warn('[partnersStore] delete failed:', error.message);
+        window.dispatchEvent(new CustomEvent('partners:save-error', { detail: { message: error.message } }));
+        return false;
+      }
+    } catch (e) {
+      console.warn('[partnersStore] delete error:', e.message);
+      return false;
+    }
+  }
+
+  // Remove from in-memory array so the UI updates immediately.
+  const idx = PARTNERS.findIndex((p) => (partner.id && p.id === partner.id) || p.name === partner.name);
+  if (idx >= 0) PARTNERS.splice(idx, 1);
+  window.dispatchEvent(new CustomEvent('partners:save-success', { detail: { action: 'delete', count: 1 } }));
+  return true;
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     if (dirtyIds.size === 0 && newPartnerNames.size === 0) return;
