@@ -1,0 +1,57 @@
+import { supabase } from './supabase.js';
+
+// In-memory client_profiles store. Keyed by lowercased client_name so
+// lookups don't care about whitespace/case differences across LOANS,
+// PAST_CLIENTS, and what the team types.
+const PROFILES = new Map();
+
+const key = (name) => (name || '').trim().toLowerCase();
+
+export function getProfile(name) { return PROFILES.get(key(name)) || null; }
+export function getAllProfiles() { return PROFILES; }
+
+export async function loadClientProfiles() {
+  try {
+    const { data, error } = await supabase.from('client_profiles').select('*');
+    if (error) { console.warn('[clientProfiles] load:', error.message); return; }
+    PROFILES.clear();
+    (data || []).forEach((row) => PROFILES.set(key(row.client_name), row));
+    window.dispatchEvent(new Event('kdt-client-profiles-loaded'));
+  } catch (e) {
+    console.warn('[clientProfiles] load error:', e.message);
+  }
+}
+
+// Upsert by client_name. Uses the unique constraint to avoid needing
+// to look up the existing id first.
+export async function upsertClientProfile(name, patch) {
+  const cleanName = (name || '').trim();
+  if (!cleanName) return null;
+  const existing = PROFILES.get(key(cleanName));
+  try {
+    if (existing) {
+      const { data, error } = await supabase
+        .from('client_profiles')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+        .select().single();
+      if (error) { console.warn('[clientProfiles] update:', error.message); return null; }
+      PROFILES.set(key(cleanName), data);
+      window.dispatchEvent(new Event('kdt-client-profiles-changed'));
+      return data;
+    }
+    const { data, error } = await supabase
+      .from('client_profiles')
+      .insert({ client_name: cleanName, ...patch })
+      .select().single();
+    if (error) { console.warn('[clientProfiles] insert:', error.message); return null; }
+    PROFILES.set(key(cleanName), data);
+    window.dispatchEvent(new Event('kdt-client-profiles-changed'));
+    return data;
+  } catch (e) {
+    console.warn('[clientProfiles] upsert error:', e.message);
+    return null;
+  }
+}
+
+export const REVIEW_SOURCES = ['Google', 'Zillow', 'Facebook', 'Yelp', 'Other'];

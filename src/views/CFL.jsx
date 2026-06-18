@@ -12,7 +12,11 @@ import {
   markTaskCompleted, unmarkTaskCompleted,
   generateTasksForClient, buildAnchorsForClient,
   ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING,
+  CONDITION_FIELDS, CONDITION_OPS,
 } from '../lib/workflows.js';
+import {
+  loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
+} from '../lib/clientProfiles.js';
 
 const DAY = 86400000;
 const fmtDate = (d) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
@@ -25,21 +29,20 @@ export default function CFL() {
   const [filterStatus, setFilterStatus] = useState('Open');
   const [datesOpen, setDatesOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [openClient, setOpenClient] = useState(null); // client name string or null
 
   useEffect(() => {
     loadClientDates().then(bump);
     loadWorkflows().then(bump);
+    loadClientProfiles().then(bump);
     const onChange = () => bump();
-    ['kdt-client-dates-changed', 'kdt-client-dates-loaded',
-     'kdt-workflows-changed', 'kdt-workflows-loaded'].forEach((evt) =>
-      window.addEventListener(evt, onChange)
-    );
-    return () => {
-      ['kdt-client-dates-changed', 'kdt-client-dates-loaded',
-       'kdt-workflows-changed', 'kdt-workflows-loaded'].forEach((evt) =>
-        window.removeEventListener(evt, onChange)
-      );
-    };
+    const events = [
+      'kdt-client-dates-changed', 'kdt-client-dates-loaded',
+      'kdt-workflows-changed', 'kdt-workflows-loaded',
+      'kdt-client-profiles-changed', 'kdt-client-profiles-loaded',
+    ];
+    events.forEach((evt) => window.addEventListener(evt, onChange));
+    return () => events.forEach((evt) => window.removeEventListener(evt, onChange));
   }, []);
 
   // Build the live task list. For every active loan and every past
@@ -128,7 +131,7 @@ export default function CFL() {
         </div>
       </div>
 
-      <BirthdaysPanel rows={birthdaysThisMonth} onOpenDates={() => setDatesOpen(true)} />
+      <BirthdaysPanel rows={birthdaysThisMonth} onOpenDates={() => setDatesOpen(true)} onOpenClient={setOpenClient} />
 
       <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <FilterChip label="Role" value={filterRole} options={['All', 'LO', 'LOA', 'Admin', 'Automated']} onChange={setFilterRole} />
@@ -139,12 +142,13 @@ export default function CFL() {
         <EmptyState onDates={() => setDatesOpen(true)} onWorkflows={() => setEditorOpen(true)} />
       ) : (
         buckets.map((b) => b.items.length > 0 && (
-          <Section key={b.label} label={b.label} items={b.items} today={today} />
+          <Section key={b.label} label={b.label} items={b.items} today={today} onOpenClient={setOpenClient} />
         ))
       )}
 
-      {datesOpen && <ManageDatesDrawer onClose={() => setDatesOpen(false)} />}
+      {datesOpen && <ManageDatesDrawer onClose={() => setDatesOpen(false)} onOpenClient={setOpenClient} />}
       {editorOpen && <WorkflowEditorDrawer onClose={() => setEditorOpen(false)} />}
+      {openClient && <ClientCardDrawer clientName={openClient} onClose={() => setOpenClient(null)} />}
     </div>
   );
 }
@@ -161,14 +165,14 @@ function FilterChip({ label, value, options, onChange }) {
   );
 }
 
-function BirthdaysPanel({ rows, onOpenDates }) {
+function BirthdaysPanel({ rows, onOpenDates, onOpenClient }) {
   if (rows.length === 0) return null;
   return (
     <div className="section-card" style={{ marginBottom: 16 }}>
       <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div className="section-title">Birthdays This Month</div>
-          <div className="section-sub">{rows.length} client{rows.length === 1 ? '' : 's'} · click Manage Key Dates to add more</div>
+          <div className="section-sub">{rows.length} client{rows.length === 1 ? '' : 's'} · click a name to open their card</div>
         </div>
         <button className="form-btn" type="button" onClick={onOpenDates}>+ Add</button>
       </div>
@@ -179,7 +183,10 @@ function BirthdaysPanel({ rows, onOpenDates }) {
             padding: '10px 18px', borderTop: '1px solid #f1f1f1', alignItems: 'center',
             background: r.daysAway <= 3 ? '#fff8e1' : '#fff',
           }}>
-            <div style={{ fontWeight: 600 }}>{r.name}</div>
+            <div
+              onClick={() => onOpenClient && onOpenClient(r.name)}
+              style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--brand-red)' }}
+            >{r.name}</div>
             <div style={{ color: '#555' }}>{r.monthDay}</div>
             <div style={{ textAlign: 'right', fontSize: 11, fontWeight: r.daysAway <= 3 ? 700 : 400, color: r.daysAway <= 3 ? '#c62828' : '#888' }}>
               {r.daysAway === 0 ? 'TODAY' : `${r.daysAway}d away`}
@@ -191,7 +198,7 @@ function BirthdaysPanel({ rows, onOpenDates }) {
   );
 }
 
-function Section({ label, items, today }) {
+function Section({ label, items, today, onOpenClient }) {
   const headerColor = label === 'Overdue' ? '#c62828' : label === 'Today' ? '#e65100' : '#555';
   return (
     <div style={{ marginBottom: 14 }}>
@@ -200,14 +207,14 @@ function Section({ label, items, today }) {
       </div>
       <div className="section-card">
         {items.map((it, i) => (
-          <TaskRow key={it.id} item={it} today={today} first={i === 0} />
+          <TaskRow key={it.id} item={it} today={today} first={i === 0} onOpenClient={onOpenClient} />
         ))}
       </div>
     </div>
   );
 }
 
-function TaskRow({ item, today, first }) {
+function TaskRow({ item, today, first, onOpenClient }) {
   const role = item.task.role || 'lo';
   const roleColors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
   const days = Math.round((item.due_date - today) / DAY);
@@ -231,7 +238,13 @@ function TaskRow({ item, today, first }) {
           {item.task.title}
         </div>
         <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-          {item.client_name} · {item.workflow.name}
+          <span
+            onClick={(e) => { e.stopPropagation(); onOpenClient && onOpenClient(item.client_name); }}
+            style={{ color: 'var(--brand-red)', cursor: 'pointer', fontWeight: 600, textDecoration: 'underline', textDecorationColor: 'rgba(198,40,40,.3)' }}
+          >
+            {item.client_name}
+          </span>
+          {' · '}{item.workflow.name}
           {item.task.notes ? ` · ${item.task.notes}` : ''}
         </div>
       </div>
@@ -266,91 +279,327 @@ function EmptyState({ onDates, onWorkflows }) {
 }
 
 // ─── Manage Key Dates drawer ────────────────────────────────────
-function ManageDatesDrawer({ onClose }) {
+// Rebuilt as a per-client view: pick or type a client, see all of
+// their dates, edit / add / delete inline. No more single flat list.
+function ManageDatesDrawer({ onClose, onOpenClient }) {
   const [, force] = useState(0);
   const bump = () => force((n) => n + 1);
-  const [draft, setDraft] = useState({ client: '', label: 'Birthday', value: '', recurring: true });
+  const [filter, setFilter] = useState('');
   const clientNames = useMemo(() => collectClientNames(LOANS, PAST_CLIENTS), []);
-  const labels = allKnownDateLabels();
 
-  const submit = async () => {
-    if (!draft.client || !draft.label || !draft.value) return;
-    await upsertClientDate(draft.client, draft.label, draft.value, { recurring: draft.recurring });
-    setDraft({ client: '', label: draft.label, value: '', recurring: draft.recurring });
-    bump();
-  };
-
-  const allDates = [...getAllDates().values()].sort(
-    (a, b) => (a.client_name || '').localeCompare(b.client_name || '') ||
-              (a.date_label || '').localeCompare(b.date_label || '')
-  );
+  // Build the list of clients with any data on file (loan, past
+  // client, or a saved date). Filter by the search input.
+  const namesWithDates = useMemo(() => {
+    const set = new Set(clientNames);
+    getAllDates().forEach((row) => { if (row.client_name) set.add(row.client_name); });
+    const arr = [...set].sort((a, b) => a.localeCompare(b));
+    const q = filter.trim().toLowerCase();
+    if (!q) return arr;
+    return arr.filter((n) => n.toLowerCase().includes(q));
+  }, [filter, clientNames]);
 
   const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
-  const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4, display: 'block' };
+  const totalDates = getAllDates().size;
 
   return (
     <>
       <div className="drawer-overlay open" onClick={onClose} />
-      <aside className="drawer open" style={{ width: 640, maxWidth: '95vw' }}>
+      <aside className="drawer open" style={{ width: 720, maxWidth: '95vw' }}>
         <div className="drawer-head">
           <button className="drawer-close" onClick={onClose}>×</button>
           <div className="drawer-stage">Client for Life</div>
           <div className="drawer-borrower">Key Dates</div>
-          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>Birthdays + anything else worth tracking · workflows trigger off these</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
+            {totalDates} date{totalDates === 1 ? '' : 's'} on file across all clients · click any client to expand
+          </div>
         </div>
         <div className="drawer-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-            <div>
-              <label style={labelStyle}>Client</label>
-              <input list="cfl-clients" value={draft.client} onChange={(e) => setDraft((d) => ({ ...d, client: e.target.value }))}
-                placeholder="Type or pick" style={inputStyle} />
-              <datalist id="cfl-clients">
-                {clientNames.map((n) => <option key={n} value={n} />)}
-              </datalist>
-            </div>
-            <div>
-              <label style={labelStyle}>Label</label>
-              <input list="cfl-date-labels" value={draft.label} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
-                placeholder="Birthday, Lease End, etc." style={inputStyle} />
-              <datalist id="cfl-date-labels">
-                {labels.map((l) => <option key={l} value={l} />)}
-              </datalist>
-            </div>
-            <div>
-              <label style={labelStyle}>Date</label>
-              <input type="date" value={draft.value} onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Recurring?</label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#555', padding: '8px 0' }}>
-                <input type="checkbox" checked={draft.recurring} onChange={(e) => setDraft((d) => ({ ...d, recurring: e.target.checked }))} />
-                Yearly (birthdays, anniversaries)
-              </label>
-            </div>
-            <div style={{ gridColumn: '1/-1' }}>
-              <button className="form-btn primary" type="button" onClick={submit} disabled={!draft.client || !draft.label || !draft.value}>
-                + Save Date
-              </button>
-            </div>
-          </div>
+          <input value={filter} onChange={(e) => setFilter(e.target.value)}
+            placeholder="Search clients…" style={{ ...inputStyle, marginBottom: 12 }} />
 
-          <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 8 }}>
-            Saved Dates ({allDates.length})
-          </div>
-          {allDates.length === 0 ? (
-            <div style={{ color: '#888', fontSize: 12, fontStyle: 'italic' }}>None yet — add one above.</div>
+          {namesWithDates.length === 0 ? (
+            <div style={{ color: '#888', fontSize: 12, fontStyle: 'italic', padding: 12 }}>
+              No matching clients. Try a different search.
+            </div>
           ) : (
-            allDates.map((row) => (
-              <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 90px 30px', gap: 8, padding: '8px 0', borderBottom: '1px solid #eee', alignItems: 'center', fontSize: 12 }}>
-                <div style={{ fontWeight: 600 }}>{row.client_name}</div>
-                <div style={{ color: '#555' }}>{row.date_label}</div>
-                <div style={{ color: '#222' }}>{fmtMonthDay(parseLocalDate(row.date_value))}</div>
-                <button onClick={async () => { await deleteClientDate(row.client_name, row.date_label); bump(); }}
-                  title="Delete this date"
-                  style={{ background: 'transparent', border: 'none', color: '#c62828', cursor: 'pointer', fontSize: 14 }}>×</button>
-              </div>
+            namesWithDates.map((name) => (
+              <ClientDatesGroup key={name} name={name} onChange={bump} onOpenClient={onOpenClient} />
             ))
           )}
+        </div>
+        <div className="drawer-actions">
+          <button className="drawer-btn primary" type="button" onClick={onClose}>Done</button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// One client's date stack inside ManageDatesDrawer. Collapsed by
+// default unless the client has data, in which case it expands.
+function ClientDatesGroup({ name, onChange, onOpenClient }) {
+  const datesForClient = useMemo(
+    () => [...getAllDates().values()].filter(
+      (r) => r.client_name && r.client_name.trim().toLowerCase() === name.trim().toLowerCase()
+    ).sort((a, b) => (a.date_label || '').localeCompare(b.date_label || '')),
+    [name]
+  );
+  const [open, setOpen] = useState(datesForClient.length > 0);
+  const [adding, setAdding] = useState(false);
+
+  return (
+    <div style={{ border: '1px solid #eee', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
+      <div
+        style={{
+          padding: '10px 14px', cursor: 'pointer', display: 'flex',
+          justifyContent: 'space-between', alignItems: 'center',
+          background: open ? '#fafafa' : '#fff',
+        }}
+        onClick={() => setOpen(!open)}
+      >
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{name}</div>
+          <div style={{ fontSize: 11, color: '#888' }}>
+            {datesForClient.length === 0 ? 'No dates yet' : `${datesForClient.length} date${datesForClient.length === 1 ? '' : 's'}`}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {onOpenClient && (
+            <button className="form-btn" style={{ fontSize: 11, padding: '4px 10px' }}
+              onClick={(e) => { e.stopPropagation(); onOpenClient(name); }}>Open card</button>
+          )}
+          <span style={{ color: '#888' }}>{open ? '▾' : '▸'}</span>
+        </div>
+      </div>
+      {open && (
+        <div style={{ padding: 12, borderTop: '1px solid #eee' }}>
+          {datesForClient.length === 0 && !adding && (
+            <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic', marginBottom: 8 }}>
+              No dates saved yet for {name}.
+            </div>
+          )}
+          {datesForClient.map((row) => (
+            <DateEditableRow key={row.id} row={row} onChange={onChange} />
+          ))}
+          {adding ? (
+            <DateEditableRow
+              row={{ client_name: name, date_label: 'Birthday', date_value: '', recurring: true, _new: true }}
+              onChange={() => { setAdding(false); onChange && onChange(); }}
+              onCancelNew={() => setAdding(false)}
+            />
+          ) : (
+            <button className="form-btn" style={{ width: '100%', marginTop: 6 }}
+              onClick={() => setAdding(true)}>+ Add a date</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One editable row in the dates list. Auto-saves on blur. For new rows
+// (row._new === true) we hold the values in local state until save
+// because there's no row id to update against until the insert lands.
+function DateEditableRow({ row, onChange, onCancelNew }) {
+  const isNew = !!row._new;
+  const [label, setLabel] = useState(row.date_label || 'Birthday');
+  const [value, setValue] = useState(row.date_value || '');
+  const [recurring, setRecurring] = useState(!!row.recurring);
+  const labels = allKnownDateLabels();
+
+  const persist = async (next) => {
+    const finalLabel = (next.label ?? label).trim();
+    const finalValue = (next.value ?? value).trim();
+    const finalRecurring = next.recurring ?? recurring;
+    if (!finalLabel || !finalValue) return;
+    // If the user changed the label on an existing row, drop the old
+    // (label) entry and create the new one — date_label is part of the
+    // natural key, so a label rename is effectively an insert+delete.
+    if (!isNew && finalLabel.toLowerCase() !== (row.date_label || '').toLowerCase()) {
+      await deleteClientDate(row.client_name, row.date_label);
+    }
+    await upsertClientDate(row.client_name, finalLabel, finalValue, { recurring: finalRecurring });
+    onChange && onChange();
+  };
+
+  const inputStyle = { padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 30px', gap: 8, padding: '8px 0', borderBottom: '1px solid #f5f5f5', alignItems: 'center' }}>
+      <input
+        list={`cfl-labels-${row.client_name}`}
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        onBlur={() => persist({ label })}
+        placeholder="Label"
+        style={{ ...inputStyle, width: '100%' }}
+      />
+      <datalist id={`cfl-labels-${row.client_name}`}>
+        {labels.map((l) => <option key={l} value={l} />)}
+      </datalist>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => persist({ value })}
+        style={{ ...inputStyle, width: '100%' }}
+      />
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#555' }}>
+        <input type="checkbox" checked={recurring}
+          onChange={(e) => { setRecurring(e.target.checked); persist({ recurring: e.target.checked }); }} />
+        Yearly
+      </label>
+      {isNew ? (
+        <button onClick={onCancelNew} title="Cancel"
+          style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: 14 }}>×</button>
+      ) : (
+        <button
+          onClick={async () => {
+            if (!window.confirm(`Delete this date?`)) return;
+            await deleteClientDate(row.client_name, row.date_label);
+            onChange && onChange();
+          }}
+          title="Delete"
+          style={{ background: 'transparent', border: 'none', color: '#c62828', cursor: 'pointer', fontSize: 14 }}
+        >×</button>
+      )}
+    </div>
+  );
+}
+
+// ─── Client Card drawer ─────────────────────────────────────────
+// One-stop client view: shows their loan/past-client info, every key
+// date inline-editable, and the review tracking checkbox/source/date.
+// Reachable from any client-name link in the task list AND from the
+// "Open card" button next to each client in ManageDatesDrawer.
+function ClientCardDrawer({ clientName, onClose }) {
+  const [, force] = useState(0);
+  const bump = () => force((n) => n + 1);
+  const profile = getProfile(clientName) || {};
+
+  const [reviewLeft, setReviewLeft] = useState(!!profile.review_left);
+  const [reviewSource, setReviewSource] = useState(profile.review_source || '');
+  const [reviewDate, setReviewDate] = useState(profile.review_date || '');
+  const [notes, setNotes] = useState(profile.notes || '');
+
+  const persistProfile = async (patch) => {
+    await upsertClientProfile(clientName, patch);
+    bump();
+  };
+
+  // Look up best-known loan + past-client records for the header.
+  const activeLoan = LOANS.find((l) => l.borrower && l.borrower.trim().toLowerCase() === clientName.trim().toLowerCase());
+  const pastClient = PAST_CLIENTS.find((c) => c.name && c.name.trim().toLowerCase() === clientName.trim().toLowerCase());
+  const closeDate = activeLoan?.closeDate || pastClient?.closeDate;
+  const property = activeLoan?.property || pastClient?.property;
+  const lo = activeLoan?.lo || pastClient?.lo;
+  const agent = activeLoan?.agent || pastClient?.agent;
+
+  const datesForClient = useMemo(
+    () => [...getAllDates().values()].filter(
+      (r) => r.client_name && r.client_name.trim().toLowerCase() === clientName.trim().toLowerCase()
+    ).sort((a, b) => (a.date_label || '').localeCompare(b.date_label || '')),
+    [clientName]
+  );
+
+  const [addingDate, setAddingDate] = useState(false);
+
+  const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
+  const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6, display: 'block' };
+
+  return (
+    <>
+      <div className="drawer-overlay open" style={{ zIndex: 200 }} onClick={onClose} />
+      <aside className="drawer open" style={{ width: 620, maxWidth: '95vw', zIndex: 201 }}>
+        <div className="drawer-head">
+          <button className="drawer-close" onClick={onClose}>×</button>
+          <div className="drawer-stage">Client Card</div>
+          <div className="drawer-borrower">{clientName}</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
+            {closeDate ? `Closed ${closeDate}` : 'No closing on file'}
+            {lo ? ` · LO: ${lo}` : ''}
+            {agent ? ` · Agent: ${agent}` : ''}
+          </div>
+        </div>
+        <div className="drawer-body">
+          {property && (
+            <div style={{ marginBottom: 18, padding: 10, background: '#fafafa', border: '1px solid #eee', borderRadius: 6, fontSize: 12, color: '#444' }}>
+              <span style={{ fontWeight: 600 }}>Property:</span> {property}
+            </div>
+          )}
+
+          {/* ─── Review tracking ─── */}
+          <div style={{ marginBottom: 22, padding: 14, background: reviewLeft ? '#e8f5e9' : '#fff', border: `1px solid ${reviewLeft ? '#a5d6a7' : '#e5e5e5'}`, borderRadius: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#222' }}>
+              <input type="checkbox" checked={reviewLeft}
+                onChange={(e) => {
+                  setReviewLeft(e.target.checked);
+                  persistProfile({
+                    review_left: e.target.checked,
+                    review_date: e.target.checked && !reviewDate ? new Date().toISOString().slice(0, 10) : (reviewDate || null),
+                  });
+                  if (e.target.checked && !reviewDate) setReviewDate(new Date().toISOString().slice(0, 10));
+                }}
+                style={{ width: 20, height: 20, accentColor: '#2e7d32' }} />
+              {reviewLeft ? '⭐ Review left' : 'Has this client left a review?'}
+            </label>
+            {reviewLeft && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+                <div>
+                  <label style={labelStyle}>When</label>
+                  <input type="date" value={reviewDate}
+                    onChange={(e) => setReviewDate(e.target.value)}
+                    onBlur={() => persistProfile({ review_date: reviewDate || null })}
+                    style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Where</label>
+                  <select value={reviewSource}
+                    onChange={(e) => { setReviewSource(e.target.value); persistProfile({ review_source: e.target.value }); }}
+                    style={inputStyle}>
+                    <option value="">— Pick —</option>
+                    {REVIEW_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ─── Key dates ─── */}
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555' }}>
+                Key Dates ({datesForClient.length})
+              </div>
+              {!addingDate && (
+                <button className="form-btn" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => setAddingDate(true)}>+ Add date</button>
+              )}
+            </div>
+            {datesForClient.length === 0 && !addingDate && (
+              <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic' }}>No dates saved yet — click + Add date.</div>
+            )}
+            {datesForClient.map((row) => (
+              <DateEditableRow key={row.id} row={row} onChange={bump} />
+            ))}
+            {addingDate && (
+              <DateEditableRow
+                row={{ client_name: clientName, date_label: 'Birthday', date_value: '', recurring: true, _new: true }}
+                onChange={() => { setAddingDate(false); bump(); }}
+                onCancelNew={() => setAddingDate(false)}
+              />
+            )}
+          </div>
+
+          {/* ─── Notes ─── */}
+          <div>
+            <label style={labelStyle}>Notes</label>
+            <textarea value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={() => persistProfile({ notes: notes.trim() || null })}
+              rows={4}
+              placeholder="Anything memorable — kids' names, gift ideas, what to mention next call."
+              style={{ ...inputStyle, resize: 'vertical' }} />
+          </div>
         </div>
         <div className="drawer-actions">
           <button className="drawer-btn primary" type="button" onClick={onClose}>Done</button>
@@ -653,7 +902,14 @@ function triggerSummary(t) {
     : days < 0
       ? `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} before ${label}`
       : `${days} day${days === 1 ? '' : 's'} after ${label}`;
-  return t.trigger_recurring ? `${when} · every year` : when;
+  let base = t.trigger_recurring ? `${when} · every year` : when;
+  if (t.condition_field && t.condition_op && t.condition_field !== 'none') {
+    const f = CONDITION_FIELDS.find((x) => x.value === t.condition_field);
+    const ops = (CONDITION_OPS[f?.type] || []);
+    const op = ops.find((x) => x.value === t.condition_op);
+    if (f && op) base += ` · only if ${f.label.toLowerCase()} ${op.label.toLowerCase()}`;
+  }
+  return base;
 }
 
 // ─── Single-task edit drawer (opens over the workflow editor) ──
@@ -668,6 +924,8 @@ function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
   const [magnitude, setMagnitude] = useState(Math.abs(initialDays));
   const [recurring, setRecurring] = useState(!!task.trigger_recurring);
   const [notes, setNotes] = useState(task.notes || '');
+  const [conditionField, setConditionField] = useState(task.condition_field || 'none');
+  const [conditionOp, setConditionOp] = useState(task.condition_op || '');
 
   const effectiveDays = mode === 'on' ? 0 : mode === 'before' ? -Math.abs(magnitude) : Math.abs(magnitude);
 
@@ -678,6 +936,8 @@ function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
       trigger_label: triggerLabel,
       trigger_days: effectiveDays,
       trigger_recurring: recurring,
+      condition_field: conditionField === 'none' ? null : conditionField,
+      condition_op: conditionField === 'none' ? null : conditionOp,
       notes: notes.trim() || null,
     });
     onClose();
@@ -774,6 +1034,44 @@ function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
               <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
               Repeat every year (birthdays, anniversaries)
             </label>
+          </div>
+
+          <div style={sectionStyle}>
+            <label style={labelStyle}>Only generate this task if… (optional)</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <select
+                value={conditionField}
+                onChange={(e) => {
+                  setConditionField(e.target.value);
+                  if (e.target.value === 'none') setConditionOp('');
+                  else if (!conditionOp) {
+                    const f = CONDITION_FIELDS.find((x) => x.value === e.target.value);
+                    const firstOp = (CONDITION_OPS[f?.type] || [])[0];
+                    if (firstOp) setConditionOp(firstOp.value);
+                  }
+                }}
+                style={inputStyle}
+              >
+                <option value="none">Always — no condition</option>
+                {CONDITION_FIELDS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+              <select
+                value={conditionOp}
+                disabled={conditionField === 'none'}
+                onChange={(e) => setConditionOp(e.target.value)}
+                style={{ ...inputStyle, opacity: conditionField === 'none' ? 0.4 : 1 }}
+              >
+                {(() => {
+                  const f = CONDITION_FIELDS.find((x) => x.value === conditionField);
+                  return (CONDITION_OPS[f?.type] || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>);
+                })()}
+              </select>
+            </div>
+            {conditionField !== 'none' && (
+              <div style={{ marginTop: 8, fontSize: 11, color: '#666', fontStyle: 'italic' }}>
+                Task will only generate for clients whose {(CONDITION_FIELDS.find((f) => f.value === conditionField)?.label || conditionField).toLowerCase()} {(CONDITION_OPS.bool.find((o) => o.value === conditionOp)?.label || '').toLowerCase()}.
+              </div>
+            )}
           </div>
 
           <div style={sectionStyle}>

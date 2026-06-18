@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { getDate, parseLocalDate } from './clientDates.js';
+import { getProfile } from './clientProfiles.js';
 
 // In-memory state for the Client for Life rebuild.
 //
@@ -83,6 +84,8 @@ export async function createTask(workflowId, task) {
     trigger_label: task.trigger_label || TRIGGER_BUILTIN_CLOSING,
     trigger_days: Number.isFinite(+task.trigger_days) ? +task.trigger_days : 0,
     trigger_recurring: !!task.trigger_recurring,
+    condition_field: task.condition_field || null,
+    condition_op: task.condition_op || null,
     notes: task.notes || null,
     position: list.length,
   };
@@ -138,6 +141,33 @@ export async function unmarkTaskCompleted(taskId, clientName, dueDate) {
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
 
+// Available client-profile fields a task can gate on. Keep this list
+// in sync with the conditional UI in the task editor.
+export const CONDITION_FIELDS = [
+  { value: 'review_left', label: 'Review left', type: 'bool' },
+];
+
+export const CONDITION_OPS = {
+  bool: [
+    { value: 'is_true', label: 'is YES' },
+    { value: 'is_false', label: 'is NO' },
+  ],
+};
+
+// True when a task's condition (if any) matches the client's profile.
+// Tasks with no condition_field always match.
+function matchesCondition(task, profile) {
+  const field = task.condition_field;
+  const op = task.condition_op;
+  if (!field || field === 'none' || !op) return true;
+  const raw = profile ? profile[field] : null;
+  switch (op) {
+    case 'is_true': return raw === true;
+    case 'is_false': return !raw;
+    default: return true;
+  }
+}
+
 function toIsoDate(d) {
   if (d instanceof Date) {
     const y = d.getFullYear();
@@ -163,10 +193,12 @@ function toIsoDate(d) {
 export function generateTasksForClient(clientName, anchorDates) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const out = [];
+  const profile = getProfile(clientName) || {};
   for (const wf of WORKFLOWS) {
     if (wf.active === false) continue;
     const tasks = TASKS_BY_WORKFLOW.get(wf.id) || [];
     for (const t of tasks) {
+      if (!matchesCondition(t, profile)) continue;
       const anchor = anchorDates.get((t.trigger_label || '').toLowerCase());
       if (!anchor) continue;
       let due;
