@@ -17,6 +17,10 @@ import {
 import {
   loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
 } from '../lib/clientProfiles.js';
+import {
+  loadKeyDateTypes, getKeyDateTypes, getKeyDateTypeLabels,
+  createKeyDateType, updateKeyDateType, deleteKeyDateType,
+} from '../lib/keyDateTypes.js';
 
 const DAY = 86400000;
 const fmtDate = (d) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
@@ -35,11 +39,13 @@ export default function CFL() {
     loadClientDates().then(bump);
     loadWorkflows().then(bump);
     loadClientProfiles().then(bump);
+    loadKeyDateTypes().then(bump);
     const onChange = () => bump();
     const events = [
       'kdt-client-dates-changed', 'kdt-client-dates-loaded',
       'kdt-workflows-changed', 'kdt-workflows-loaded',
       'kdt-client-profiles-changed', 'kdt-client-profiles-loaded',
+      'kdt-key-date-types-changed', 'kdt-key-date-types-loaded',
     ];
     events.forEach((evt) => window.addEventListener(evt, onChange));
     return () => events.forEach((evt) => window.removeEventListener(evt, onChange));
@@ -126,7 +132,7 @@ export default function CFL() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="form-btn" type="button" onClick={() => setDatesOpen(true)}>Manage Key Dates</button>
+          <button className="form-btn" type="button" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
           <button className="form-btn primary" type="button" onClick={() => setEditorOpen(true)}>Edit Workflows</button>
         </div>
       </div>
@@ -146,7 +152,7 @@ export default function CFL() {
         ))
       )}
 
-      {datesOpen && <ManageDatesDrawer onClose={() => setDatesOpen(false)} onOpenClient={setOpenClient} />}
+      {datesOpen && <ManageKeyDateTypesDrawer onClose={() => setDatesOpen(false)} />}
       {editorOpen && <WorkflowEditorDrawer onClose={() => setEditorOpen(false)} />}
       {openClient && <ClientCardDrawer clientName={openClient} onClose={() => setOpenClient(null)} />}
     </div>
@@ -278,54 +284,83 @@ function EmptyState({ onDates, onWorkflows }) {
   );
 }
 
-// ─── Manage Key Dates drawer ────────────────────────────────────
-// Rebuilt as a per-client view: pick or type a client, see all of
-// their dates, edit / add / delete inline. No more single flat list.
-function ManageDatesDrawer({ onClose, onOpenClient }) {
+// ─── Manage Key Date Types drawer ───────────────────────────────
+// Global catalog: define WHAT kinds of dates the team tracks (Birthday,
+// Wedding Anniversary, Lease End, etc.). Per-client VALUES are set on
+// each client's card, not here.
+function ManageKeyDateTypesDrawer({ onClose }) {
   const [, force] = useState(0);
   const bump = () => force((n) => n + 1);
-  const [filter, setFilter] = useState('');
-  const clientNames = useMemo(() => collectClientNames(LOANS, PAST_CLIENTS), []);
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newRecurring, setNewRecurring] = useState(true);
 
-  // Build the list of clients with any data on file (loan, past
-  // client, or a saved date). Filter by the search input.
-  const namesWithDates = useMemo(() => {
-    const set = new Set(clientNames);
-    getAllDates().forEach((row) => { if (row.client_name) set.add(row.client_name); });
-    const arr = [...set].sort((a, b) => a.localeCompare(b));
-    const q = filter.trim().toLowerCase();
-    if (!q) return arr;
-    return arr.filter((n) => n.toLowerCase().includes(q));
-  }, [filter, clientNames]);
+  const types = getKeyDateTypes();
 
-  const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
-  const totalDates = getAllDates().size;
+  const submitNew = async () => {
+    const label = newLabel.trim();
+    if (!label) return;
+    await createKeyDateType(label, newRecurring);
+    setNewLabel('');
+    setAdding(false);
+    bump();
+  };
+
+  const inputStyle = { padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
 
   return (
     <>
       <div className="drawer-overlay open" onClick={onClose} />
-      <aside className="drawer open" style={{ width: 720, maxWidth: '95vw' }}>
+      <aside className="drawer open" style={{ width: 600, maxWidth: '95vw' }}>
         <div className="drawer-head">
           <button className="drawer-close" onClick={onClose}>×</button>
           <div className="drawer-stage">Client for Life</div>
-          <div className="drawer-borrower">Key Dates</div>
+          <div className="drawer-borrower">Key Date Types</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
-            {totalDates} date{totalDates === 1 ? '' : 's'} on file across all clients · click any client to expand
+            What kinds of dates the team tracks. Per-client dates are set on each client's card.
           </div>
         </div>
         <div className="drawer-body">
-          <input value={filter} onChange={(e) => setFilter(e.target.value)}
-            placeholder="Search clients…" style={{ ...inputStyle, marginBottom: 12 }} />
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 8 }}>
+            Catalog ({types.length})
+          </div>
 
-          {namesWithDates.length === 0 ? (
-            <div style={{ color: '#888', fontSize: 12, fontStyle: 'italic', padding: 12 }}>
-              No matching clients. Try a different search.
+          {types.length === 0 ? (
+            <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic', padding: 12 }}>
+              No date types defined yet. Add one below — Birthday is a good starting point.
             </div>
           ) : (
-            namesWithDates.map((name) => (
-              <ClientDatesGroup key={name} name={name} onChange={bump} onOpenClient={onOpenClient} />
+            types.map((t) => (
+              <KeyDateTypeRow key={t.id} type={t} onChange={bump} />
             ))
           )}
+
+          {adding ? (
+            <div style={{ marginTop: 12, padding: 12, border: '1px dashed #d0d0d0', borderRadius: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+                  placeholder="e.g. Lease End, Kid's Birthday"
+                  style={{ ...inputStyle, width: '100%' }} autoFocus />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#555' }}>
+                  <input type="checkbox" checked={newRecurring} onChange={(e) => setNewRecurring(e.target.checked)} />
+                  Yearly by default
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <button className="form-btn" onClick={() => { setAdding(false); setNewLabel(''); }}>Cancel</button>
+                <button className="form-btn primary" onClick={submitNew} disabled={!newLabel.trim()}>Add</button>
+              </div>
+            </div>
+          ) : (
+            <button className="form-btn primary" style={{ width: '100%', marginTop: 12 }} onClick={() => setAdding(true)}>
+              + New date type
+            </button>
+          )}
+
+          <div style={{ marginTop: 16, padding: 10, background: '#f5f5f5', borderRadius: 6, fontSize: 11, color: '#555' }}>
+            <strong>Tip:</strong> deleting a type doesn't remove dates already entered on client cards —
+            those values just stop showing up unless you re-add the type with the same name.
+          </div>
         </div>
         <div className="drawer-actions">
           <button className="drawer-btn primary" type="button" onClick={onClose}>Done</button>
@@ -335,137 +370,70 @@ function ManageDatesDrawer({ onClose, onOpenClient }) {
   );
 }
 
-// One client's date stack inside ManageDatesDrawer. Collapsed by
-// default unless the client has data, in which case it expands.
-function ClientDatesGroup({ name, onChange, onOpenClient }) {
-  const datesForClient = useMemo(
-    () => [...getAllDates().values()].filter(
-      (r) => r.client_name && r.client_name.trim().toLowerCase() === name.trim().toLowerCase()
-    ).sort((a, b) => (a.date_label || '').localeCompare(b.date_label || '')),
-    [name]
-  );
-  const [open, setOpen] = useState(datesForClient.length > 0);
-  const [adding, setAdding] = useState(false);
-
+function KeyDateTypeRow({ type, onChange }) {
+  const inputStyle = { padding: '6px 8px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
   return (
-    <div style={{ border: '1px solid #eee', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
-      <div
-        style={{
-          padding: '10px 14px', cursor: 'pointer', display: 'flex',
-          justifyContent: 'space-between', alignItems: 'center',
-          background: open ? '#fafafa' : '#fff',
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 30px', gap: 8, padding: '8px 0', borderBottom: '1px solid #f5f5f5', alignItems: 'center' }}>
+      <input
+        defaultValue={type.label}
+        onBlur={(e) => {
+          const next = e.target.value.trim();
+          if (next && next !== type.label) updateKeyDateType(type.id, { label: next }).then(onChange);
         }}
-        onClick={() => setOpen(!open)}
-      >
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{name}</div>
-          <div style={{ fontSize: 11, color: '#888' }}>
-            {datesForClient.length === 0 ? 'No dates yet' : `${datesForClient.length} date${datesForClient.length === 1 ? '' : 's'}`}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {onOpenClient && (
-            <button className="form-btn" style={{ fontSize: 11, padding: '4px 10px' }}
-              onClick={(e) => { e.stopPropagation(); onOpenClient(name); }}>Open card</button>
-          )}
-          <span style={{ color: '#888' }}>{open ? '▾' : '▸'}</span>
-        </div>
-      </div>
-      {open && (
-        <div style={{ padding: 12, borderTop: '1px solid #eee' }}>
-          {datesForClient.length === 0 && !adding && (
-            <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic', marginBottom: 8 }}>
-              No dates saved yet for {name}.
-            </div>
-          )}
-          {datesForClient.map((row) => (
-            <DateEditableRow key={row.id} row={row} onChange={onChange} />
-          ))}
-          {adding ? (
-            <DateEditableRow
-              row={{ client_name: name, date_label: 'Birthday', date_value: '', recurring: true, _new: true }}
-              onChange={() => { setAdding(false); onChange && onChange(); }}
-              onCancelNew={() => setAdding(false)}
-            />
-          ) : (
-            <button className="form-btn" style={{ width: '100%', marginTop: 6 }}
-              onClick={() => setAdding(true)}>+ Add a date</button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// One editable row in the dates list. Auto-saves on blur. For new rows
-// (row._new === true) we hold the values in local state until save
-// because there's no row id to update against until the insert lands.
-function DateEditableRow({ row, onChange, onCancelNew }) {
-  const isNew = !!row._new;
-  const [label, setLabel] = useState(row.date_label || 'Birthday');
-  const [value, setValue] = useState(row.date_value || '');
-  const [recurring, setRecurring] = useState(!!row.recurring);
-  const labels = allKnownDateLabels();
-
-  const persist = async (next) => {
-    const finalLabel = (next.label ?? label).trim();
-    const finalValue = (next.value ?? value).trim();
-    const finalRecurring = next.recurring ?? recurring;
-    if (!finalLabel || !finalValue) return;
-    // If the user changed the label on an existing row, drop the old
-    // (label) entry and create the new one — date_label is part of the
-    // natural key, so a label rename is effectively an insert+delete.
-    if (!isNew && finalLabel.toLowerCase() !== (row.date_label || '').toLowerCase()) {
-      await deleteClientDate(row.client_name, row.date_label);
-    }
-    await upsertClientDate(row.client_name, finalLabel, finalValue, { recurring: finalRecurring });
-    onChange && onChange();
-  };
-
-  const inputStyle = { padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 30px', gap: 8, padding: '8px 0', borderBottom: '1px solid #f5f5f5', alignItems: 'center' }}>
-      <input
-        list={`cfl-labels-${row.client_name}`}
-        value={label}
-        onChange={(e) => setLabel(e.target.value)}
-        onBlur={() => persist({ label })}
-        placeholder="Label"
         style={{ ...inputStyle, width: '100%' }}
       />
-      <datalist id={`cfl-labels-${row.client_name}`}>
-        {labels.map((l) => <option key={l} value={l} />)}
-      </datalist>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => persist({ value })}
-        style={{ ...inputStyle, width: '100%' }}
-      />
-      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#555' }}>
-        <input type="checkbox" checked={recurring}
-          onChange={(e) => { setRecurring(e.target.checked); persist({ recurring: e.target.checked }); }} />
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#555' }}>
+        <input type="checkbox" defaultChecked={!!type.recurring_default}
+          onChange={(e) => updateKeyDateType(type.id, { recurring_default: e.target.checked }).then(onChange)} />
         Yearly
       </label>
-      {isNew ? (
-        <button onClick={onCancelNew} title="Cancel"
-          style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: 14 }}>×</button>
-      ) : (
-        <button
-          onClick={async () => {
-            if (!window.confirm(`Delete this date?`)) return;
-            await deleteClientDate(row.client_name, row.date_label);
-            onChange && onChange();
-          }}
-          title="Delete"
-          style={{ background: 'transparent', border: 'none', color: '#c62828', cursor: 'pointer', fontSize: 14 }}
-        >×</button>
-      )}
+      <button
+        onClick={async () => {
+          if (!window.confirm(`Delete date type "${type.label}"? Per-client values you've already entered will stay in the database but won't show up on client cards.`)) return;
+          await deleteKeyDateType(type.id);
+          onChange && onChange();
+        }}
+        title="Delete type"
+        style={{ background: 'transparent', border: 'none', color: '#c62828', cursor: 'pointer', fontSize: 14 }}
+      >×</button>
     </div>
   );
 }
+
+// One row per global key-date TYPE on the client card. Pre-fills with
+// the matching client_dates row if it exists; otherwise the input is
+// blank. Setting the date persists; clearing it deletes the row.
+function ClientDateInput({ clientName, type, existing, onChange }) {
+  const [value, setValue] = useState(existing?.date_value || '');
+  const persist = async (next) => {
+    const v = (next ?? value).trim();
+    if (!v) {
+      if (existing) {
+        await deleteClientDate(clientName, type.label);
+        onChange && onChange();
+      }
+      return;
+    }
+    await upsertClientDate(clientName, type.label, v, {
+      recurring: existing ? existing.recurring : !!type.recurring_default,
+    });
+    onChange && onChange();
+  };
+  const monthDay = value ? fmtMonthDay(parseLocalDate(value)) : '';
+
+  const inputStyle = { padding: '6px 8px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 8, padding: '6px 0', alignItems: 'center' }}>
+      <div style={{ fontSize: 13, color: '#222', fontWeight: value ? 600 : 400 }}>{type.label}</div>
+      <input type="date" value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => persist()}
+        style={{ ...inputStyle, width: '100%' }} />
+      <div style={{ fontSize: 11, color: '#888', textAlign: 'right' }}>{monthDay}</div>
+    </div>
+  );
+}
+
 
 // ─── Client Card drawer ─────────────────────────────────────────
 // One-stop client view: shows their loan/past-client info, every key
@@ -495,14 +463,26 @@ function ClientCardDrawer({ clientName, onClose }) {
   const lo = activeLoan?.lo || pastClient?.lo;
   const agent = activeLoan?.agent || pastClient?.agent;
 
-  const datesForClient = useMemo(
+  // For this client, render one row per GLOBAL key-date type (from
+  // key_date_types). Pre-fills with the matching client_dates row if
+  // one exists. Plus any orphan dates the client has whose label
+  // isn't in the global catalog anymore — keeps the data discoverable
+  // until the type is added back or the value is cleared.
+  const types = getKeyDateTypes();
+  const allClientDates = useMemo(
     () => [...getAllDates().values()].filter(
       (r) => r.client_name && r.client_name.trim().toLowerCase() === clientName.trim().toLowerCase()
-    ).sort((a, b) => (a.date_label || '').localeCompare(b.date_label || '')),
+    ),
     [clientName]
   );
-
-  const [addingDate, setAddingDate] = useState(false);
+  const datesByLabel = useMemo(() => {
+    const m = new Map();
+    allClientDates.forEach((r) => m.set(r.date_label.toLowerCase(), r));
+    return m;
+  }, [allClientDates]);
+  const orphanDates = allClientDates.filter(
+    (r) => !types.some((t) => t.label.toLowerCase() === r.date_label.toLowerCase())
+  );
 
   const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
   const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6, display: 'block' };
@@ -565,28 +545,41 @@ function ClientCardDrawer({ clientName, onClose }) {
             )}
           </div>
 
-          {/* ─── Key dates ─── */}
+          {/* ─── Key dates: one input per global type ─── */}
           <div style={{ marginBottom: 22 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555' }}>
-                Key Dates ({datesForClient.length})
-              </div>
-              {!addingDate && (
-                <button className="form-btn" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => setAddingDate(true)}>+ Add date</button>
-              )}
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 8 }}>
+              Key Dates
             </div>
-            {datesForClient.length === 0 && !addingDate && (
-              <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic' }}>No dates saved yet — click + Add date.</div>
+            {types.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic' }}>
+                No date types defined. Open "Manage Key Date Types" from the main view to add some (Birthday, Anniversary, etc.).
+              </div>
+            ) : (
+              types.map((t) => (
+                <ClientDateInput
+                  key={t.id}
+                  clientName={clientName}
+                  type={t}
+                  existing={datesByLabel.get(t.label.toLowerCase())}
+                  onChange={bump}
+                />
+              ))
             )}
-            {datesForClient.map((row) => (
-              <DateEditableRow key={row.id} row={row} onChange={bump} />
-            ))}
-            {addingDate && (
-              <DateEditableRow
-                row={{ client_name: clientName, date_label: 'Birthday', date_value: '', recurring: true, _new: true }}
-                onChange={() => { setAddingDate(false); bump(); }}
-                onCancelNew={() => setAddingDate(false)}
-              />
+            {orphanDates.length > 0 && (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed #e0e0e0' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>
+                  Other dates on file (type no longer in catalog)
+                </div>
+                {orphanDates.map((row) => (
+                  <ClientDateInput
+                    key={row.id}
+                    clientName={clientName}
+                    type={{ label: row.date_label, recurring_default: row.recurring }}
+                    existing={row}
+                    onChange={bump}
+                  />
+                ))}
+              </div>
             )}
           </div>
 
@@ -678,7 +671,14 @@ function WorkflowEditorDrawer({ onClose }) {
 
   const active = getWorkflows().find((w) => w.id === activeId);
   const tasks = active ? getTasksFor(active.id) : [];
-  const triggerLabels = [TRIGGER_BUILTIN_CLOSING, ...allKnownDateLabels()];
+  // Workflow triggers source from the global key_date_types catalog
+  // (managed in Manage Key Date Types) plus the built-in Closing
+  // anchor. Falls back to the historical allKnownDateLabels() when the
+  // catalog is empty so the editor isn't broken pre-seed.
+  const catalogLabels = getKeyDateTypeLabels();
+  const triggerLabels = catalogLabels.length > 0
+    ? [TRIGGER_BUILTIN_CLOSING, ...catalogLabels]
+    : [TRIGGER_BUILTIN_CLOSING, ...allKnownDateLabels()];
 
   return (
     <>
