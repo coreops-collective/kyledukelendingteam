@@ -282,6 +282,72 @@ export function savePartnersNow() {
   return flushPartners();
 }
 
+// Merge `source` into `target`: any blank field on target gets filled
+// from source, numeric stats sum (or take the higher), then `source` is
+// deleted from Supabase + memory. Loans referencing source.name as
+// their agent get rewritten to target.name and marked dirty so they
+// re-save.
+//
+// Returns { mergedFields: [...], loansUpdated: N } on success or null
+// on failure. Caller is responsible for closing any open drawer
+// pointed at source.
+export async function mergePartners(source, target, loans) {
+  if (!source || !target || source === target) return null;
+  if (source.id && source.id === target.id) return null;
+  // Backfill any blank target field from source — strings, dates, etc.
+  const stringFields = [
+    'brokerage', 'phone', 'email', 'city', 'state', 'zip', 'birthday',
+    'anniversary', 'spouse', 'kids', 'coffee_shop', 'coffee',
+    'favorite_restaurant', 'restaurant', 'mailing_address', 'addr',
+    'social_handle', 'social', 'lead_source', 'src', 'notes',
+    'primary_lo', 'primaryLo',
+  ];
+  const mergedFields = [];
+  stringFields.forEach((f) => {
+    const sv = (source[f] ?? '').toString().trim();
+    const tv = (target[f] ?? '').toString().trim();
+    if (sv && !tv) { target[f] = source[f]; mergedFields.push(f); }
+  });
+  // Numeric stats: take the bigger of the two so we don't lose data.
+  ['deals', 'closed', 'volume', 'lifetime', 'totalClosings', 'totalVolume', 'ytdClosings', 'ytdVolume'].forEach((f) => {
+    const sv = Number(source[f] || 0);
+    const tv = Number(target[f] || 0);
+    if (sv > tv) target[f] = sv;
+  });
+  // VIP / tier wins toward whichever is "higher" — if either is VIP,
+  // result is VIP. Otherwise keep target's tier.
+  if (source.vip && !target.vip) { target.vip = true; target.tier = 'VIP'; }
+
+  // Concatenate notes if both had content.
+  const sn = (source.notes || '').trim();
+  const tn = (target.notes || '').trim();
+  if (sn && tn && sn !== tn) target.notes = `${tn}\n\n— merged from duplicate —\n${sn}`;
+
+  // Reassign loans whose agent field referenced the source by name to
+  // the target's name, so the live-pipeline lookup keeps working.
+  let loansUpdated = 0;
+  if (Array.isArray(loans) && source.name && target.name && source.name !== target.name) {
+    const { markLoansDirty } = await import('./loansStore.js');
+    loans.forEach((l) => {
+      if (l.agent === source.name) {
+        l.agent = target.name;
+        markLoansDirty(l);
+        loansUpdated += 1;
+      }
+    });
+  }
+
+  // Persist target's new state.
+  markPartnerDirty(target);
+  await savePartnersNow();
+
+  // Delete source last so realtime echoes don't try to recreate it.
+  await deletePartner(source);
+
+  window.dispatchEvent(new CustomEvent('partners:save-success', { detail: { action: 'merge', count: 1 } }));
+  return { mergedFields, loansUpdated };
+}
+
 // Delete a partner from Supabase + the in-memory PARTNERS array. Drops
 // any pending dirty/new tracking for the partner so a half-finished
 // debounced save can't resurrect it after the delete lands.

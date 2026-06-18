@@ -4,7 +4,7 @@ import { LOANS } from '../data/loans.js';
 import { LOS_STAGES } from '../data/stages.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
-import { markPartnerDirty, markPartnerNew, savePartnersNow, subscribePartners, deletePartner } from '../lib/partnersStore.js';
+import { markPartnerDirty, markPartnerNew, savePartnersNow, subscribePartners, deletePartner, mergePartners } from '../lib/partnersStore.js';
 
 // Format helpers — mirror legacy fmt$M / fmt$
 const fmt$ = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -36,6 +36,36 @@ const AGENT_TOUCHPOINTS = {
 
 const DEAL_BUCKETS = ['All', '1+ deals', '5+ deals', '10+ deals', '25+ deals'];
 const DEAL_MIN = { All: 0, '1+ deals': 1, '5+ deals': 5, '10+ deals': 10, '25+ deals': 25 };
+// Built-in partner categories. Anything the team types into the "+ New
+// category…" input in the drawer becomes a custom category that's
+// persisted to localStorage so it shows up in dropdowns even before
+// the first partner is assigned to it. Partners without a tier value
+// fall back to "Standard".
+const PREDEFINED_TIERS = ['VIP', 'Standard', 'Should Nurture', 'Not in Real Estate Anymore', 'Other'];
+
+function loadCustomTiers() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('kdt-partner-tiers') || '[]');
+    return Array.isArray(raw) ? raw.filter((t) => typeof t === 'string' && t.trim()) : [];
+  } catch { return []; }
+}
+
+function saveCustomTiers(list) {
+  try { localStorage.setItem('kdt-partner-tiers', JSON.stringify(list)); } catch {}
+}
+
+// Union of predefined + locally-saved custom + every tier actually in
+// use on a partner. De-duped, predefined ordering preserved at the top,
+// custom/used ones appended alphabetically at the bottom.
+function allKnownTiers() {
+  const custom = loadCustomTiers();
+  const used = new Set();
+  PARTNERS.forEach((p) => { if (p.tier && p.tier !== 'Standard') used.add(p.tier); });
+  const known = new Set([...PREDEFINED_TIERS, ...custom, ...used]);
+  const extras = [...known].filter((t) => !PREDEFINED_TIERS.includes(t)).sort((a, b) => a.localeCompare(b));
+  return [...PREDEFINED_TIERS, ...extras];
+}
+
 const TIER_OPTIONS = ['All', 'VIP', 'Standard'];
 const LO_OPTIONS = ['All', 'Kyle', 'Missy'];
 
@@ -81,9 +111,10 @@ export default function Partners() {
     const onOk = (e) => {
       const count = e?.detail?.count || 1;
       const action = e?.detail?.action || 'save';
-      const verbMap = { insert: 'added', delete: 'removed', save: 'updated' };
+      const verbMap = { insert: 'added', delete: 'removed', save: 'updated', merge: 'merged' };
+      const titleMap = { delete: 'Removed', merge: 'Merged' };
       setToast({
-        title: action === 'delete' ? 'Removed' : 'Saved',
+        title: titleMap[action] || 'Saved',
         msg: `${count} partner${count === 1 ? '' : 's'} ${verbMap[action] || 'updated'} in Supabase`,
       });
       // Force the list to recompute so a local delete (or any other
@@ -152,8 +183,12 @@ export default function Partners() {
     return partnersWithLive.filter((p) => {
       if (filters.search && !`${p.name} ${partnerLoc(p)}`.toLowerCase().includes(filters.search.toLowerCase())) return false;
       if (filters.state !== 'All' && p.state !== filters.state) return false;
-      if (filters.tier === 'VIP' && !p.vip) return false;
-      if (filters.tier === 'Standard' && p.vip) return false;
+      if (filters.tier !== 'All') {
+        const pt = p.tier || 'Standard';
+        if (filters.tier === 'VIP') { if (!p.vip) return false; }
+        else if (filters.tier === 'Standard') { if (p.vip || (pt !== 'Standard' && pt !== '')) return false; }
+        else if (pt !== filters.tier) return false;
+      }
       if (filters.lo !== 'All' && (p.derivedLo || '') !== filters.lo) return false;
       if ((p.deals || 0) < dealMin) return false;
       return true;
@@ -176,8 +211,29 @@ export default function Partners() {
         return arr.sort((a, b) => (b.deals || 0) - (a.deals || 0));
     }
   };
-  const vipPartners = sortPartners(filtered.filter((p) => p.vip));
-  const standardPartners = sortPartners(filtered.filter((p) => !p.vip));
+  // Group filtered partners by category for the "one section per
+  // category" rendering. VIP is intentionally first and rendered with
+  // its existing card-grid layout. Every other category (Standard,
+  // Should Nurture, custom ones, etc.) renders as a row list section.
+  const partnersByCategory = useMemo(() => {
+    const sorted = sortPartners(filtered);
+    const buckets = new Map();
+    sorted.forEach((p) => {
+      const cat = p.vip ? 'VIP' : (p.tier || 'Standard');
+      if (!buckets.has(cat)) buckets.set(cat, []);
+      buckets.get(cat).push(p);
+    });
+    // Order categories: VIP first, then the predefined order, then any
+    // custom categories alphabetically. Skip empty buckets.
+    const ordered = [];
+    ['VIP', ...PREDEFINED_TIERS.filter((t) => t !== 'VIP')].forEach((t) => {
+      if (buckets.has(t)) { ordered.push([t, buckets.get(t)]); buckets.delete(t); }
+    });
+    [...buckets.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach((entry) => ordered.push(entry));
+    return ordered;
+  }, [filtered, filters.sort]);
 
   // Group partners by state for the "By State" grouping view. Otherwise
   // returns a single bucket so the existing list rendering still works.
@@ -268,7 +324,7 @@ export default function Partners() {
           style={{ background: '#fff', border: '1px solid var(--border)', padding: '8px 14px', borderRadius: 20, fontSize: 12, minWidth: 240, color: '#222' }}
         />
         <FilterDropdown label="State" value={filters.state} options={stateOptions} onChange={(v) => setFilter('state', v)} />
-        <FilterDropdown label="Tier" value={filters.tier} options={TIER_OPTIONS} onChange={(v) => setFilter('tier', v)} />
+        <FilterDropdown label="Tier" value={filters.tier} options={['All', ...allKnownTiers()]} onChange={(v) => setFilter('tier', v)} />
         <FilterDropdown label="LO" value={filters.lo} options={LO_OPTIONS} onChange={(v) => setFilter('lo', v)} />
         <FilterDropdown label="Deals" value={filters.deals} options={DEAL_BUCKETS} onChange={(v) => setFilter('deals', v)} />
         <FilterDropdown label="Sort" value={filters.sort} options={['Most Deals', 'Alphabetical', 'Most Closings', 'Most Volume', 'Live Pipeline']} onChange={(v) => setFilter('sort', v)} />
@@ -285,71 +341,68 @@ export default function Partners() {
         </div>
       </div>
 
-      {groupByState(vipPartners).map((group) => (
-        group.items.length > 0 && (
-          <div key={`vip-${group.key}`}>
-            <h3 style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, margin: '18px 0 10px', color: 'var(--brand-red)' }}>
-              VIP Agents{group.label ? ` · ${group.label}` : ''} ({group.items.length})
-            </h3>
-            <div className="partner-grid">
-              {group.items.map((p) => (
-                <div key={p.name} className="partner-card vip" style={{ cursor: 'pointer' }} onClick={() => openPartner(p)}>
-                  <div className="partner-name">{p.name}</div>
-                  <div className="partner-brokerage">{partnerLoc(p)}</div>
-                  <div className="partner-stat"><span>Total Closings</span><strong>{p.totalClosings || p.deals || 0}</strong></div>
-                  <div className="partner-stat"><span>Total Volume</span><strong>{fmt$(p.totalVolume || p.lifetime || 0)}</strong></div>
-                  <div className="partner-stat"><span>YTD Closings</span><strong>{p.ytdClosings || p.closed || 0}</strong></div>
-                  <div className="partner-stat"><span>YTD Volume</span><strong>{fmt$(p.ytdVolume || p.volume || 0)}</strong></div>
-                  {p.livePipeline ? (
-                    <div className="partner-stat" style={{ borderTop: '1px dashed #f5b8c1', paddingTop: 6, marginTop: 4 }}>
-                      <span style={{ color: 'var(--brand-red)', fontWeight: 700 }}>Live Pipeline</span>
-                      <strong>{p.livePipeline} · {fmt$(p.livePipelineVolume || 0)}</strong>
+      {partnersByCategory.map(([category, partners]) => {
+        const isVip = category === 'VIP';
+        const headerColor = isVip ? 'var(--brand-red)' : '#666';
+        return groupByState(partners).map((group) => (
+          group.items.length > 0 && (
+            <div key={`${category}-${group.key}`}>
+              <h3 style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, margin: '18px 0 10px', color: headerColor }}>
+                {category}{group.label ? ` · ${group.label}` : ''} ({group.items.length})
+              </h3>
+              {isVip ? (
+                <div className="partner-grid">
+                  {group.items.map((p) => (
+                    <div key={p.name} className="partner-card vip" style={{ cursor: 'pointer' }} onClick={() => openPartner(p)}>
+                      <div className="partner-name">{p.name}</div>
+                      <div className="partner-brokerage">{partnerLoc(p)}</div>
+                      <div className="partner-stat"><span>Total Closings</span><strong>{p.totalClosings || p.deals || 0}</strong></div>
+                      <div className="partner-stat"><span>Total Volume</span><strong>{fmt$(p.totalVolume || p.lifetime || 0)}</strong></div>
+                      <div className="partner-stat"><span>YTD Closings</span><strong>{p.ytdClosings || p.closed || 0}</strong></div>
+                      <div className="partner-stat"><span>YTD Volume</span><strong>{fmt$(p.ytdVolume || p.volume || 0)}</strong></div>
+                      {p.livePipeline ? (
+                        <div className="partner-stat" style={{ borderTop: '1px dashed #f5b8c1', paddingTop: 6, marginTop: 4 }}>
+                          <span style={{ color: 'var(--brand-red)', fontWeight: 700 }}>Live Pipeline</span>
+                          <strong>{p.livePipeline} · {fmt$(p.livePipelineVolume || 0)}</strong>
+                        </div>
+                      ) : null}
+                      <div style={{ textAlign: 'center', fontSize: 10, color: '#999', marginTop: 8, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                        Click for full detail
+                      </div>
                     </div>
-                  ) : null}
-                  <div style={{ textAlign: 'center', fontSize: 10, color: '#999', marginTop: 8, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                    Click for full detail
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        )
-      ))}
-
-      {groupByState(standardPartners).map((group) => (
-        group.items.length > 0 && (
-          <div key={`std-${group.key}`}>
-            <h3 style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, margin: '24px 0 10px', color: '#666' }}>
-              Standard Agents{group.label ? ` · ${group.label}` : ''} ({group.items.length})
-            </h3>
-            <div className="partner-list">
-              <div className="partner-row-head">
-                <div>Agent</div>
-                <div>Brokerage</div>
-                <div style={{ textAlign: 'right' }}>State</div>
-                <div style={{ textAlign: 'right' }}>Total Closings</div>
-                <div style={{ textAlign: 'right' }}>Total Volume</div>
-                <div style={{ textAlign: 'right' }}>YTD Closings</div>
-              </div>
-              {group.items.map((p) => (
-                <div key={p.name} className="partner-row" onClick={() => openPartner(p)}>
-                  <div className="name">
-                    {p.name}
-                    {p.livePipeline ? <span className="live">● {p.livePipeline} live</span> : null}
+              ) : (
+                <div className="partner-list">
+                  <div className="partner-row-head">
+                    <div>Agent</div>
+                    <div>Brokerage</div>
+                    <div style={{ textAlign: 'right' }}>State</div>
+                    <div style={{ textAlign: 'right' }}>Total Closings</div>
+                    <div style={{ textAlign: 'right' }}>Total Volume</div>
+                    <div style={{ textAlign: 'right' }}>YTD Closings</div>
                   </div>
-                  <div className="brk">{partnerLoc(p)}</div>
-                  <div className="num">{p.state || '—'}</div>
-                  <div className="num">{p.totalClosings || p.closed || 0}</div>
-                  <div className="vol">{fmt$(p.totalVolume || p.lifetime || 0)}</div>
-                  <div className="num" style={{ color: '#888' }}>{p.ytdClosings || p.closed || 0}</div>
+                  {group.items.map((p) => (
+                    <div key={p.name} className="partner-row" onClick={() => openPartner(p)}>
+                      <div className="name">
+                        {p.name}
+                        {p.livePipeline ? <span className="live">● {p.livePipeline} live</span> : null}
+                      </div>
+                      <div className="brk">{partnerLoc(p)}</div>
+                      <div className="num">{p.state || '—'}</div>
+                      <div className="num">{p.totalClosings || p.closed || 0}</div>
+                      <div className="vol">{fmt$(p.totalVolume || p.lifetime || 0)}</div>
+                      <div className="num" style={{ color: '#888' }}>{p.ytdClosings || p.closed || 0}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-        )
-      ))}
+          )
+        ));
+      })}
 
-      {standardPartners.length === 0 && vipPartners.length === 0 && (
+      {partnersByCategory.length === 0 && (
         <div className="muted" style={{ textAlign: 'center', padding: 30 }}>No partners match those filters</div>
       )}
 
@@ -536,18 +589,33 @@ function PartnerDrawer({ partner, onClose }) {
             <div style={{ gridColumn: '1/-1' }}><EditRow label="Mailing Address" field="addr" /></div>
             <EditRow label="Social Handle" field="social" />
             <div>
-              <label style={labelStyle}>Tier</label>
+              <label style={labelStyle}>Category</label>
               <select
-                defaultValue={p.vip ? 'VIP' : 'Standard'}
+                value={p.tier || 'Standard'}
                 onChange={(e) => {
-                  const isVip = e.target.value === 'VIP';
-                  p.vip = isVip;
-                  set('tier', isVip ? 'VIP' : 'Standard');
+                  let next = e.target.value;
+                  if (next === '__new__') {
+                    const raw = window.prompt('Name the new category (e.g. "Builder", "Title Co", "Past Client")');
+                    const cleaned = (raw || '').trim();
+                    if (!cleaned) return;
+                    // Persist the custom category so it appears in the
+                    // dropdown for every partner going forward, even
+                    // before anyone else is assigned to it.
+                    const custom = loadCustomTiers();
+                    if (!custom.includes(cleaned) && !PREDEFINED_TIERS.includes(cleaned)) {
+                      saveCustomTiers([...custom, cleaned]);
+                    }
+                    next = cleaned;
+                  }
+                  p.vip = next === 'VIP' || next.startsWith('VIP');
+                  set('tier', next);
                 }}
                 style={inputStyle}
               >
-                <option value="Standard">Standard</option>
-                <option value="VIP">VIP</option>
+                {allKnownTiers().map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+                <option value="__new__">+ New category…</option>
               </select>
             </div>
             <div>
@@ -621,7 +689,7 @@ function PartnerDrawer({ partner, onClose }) {
             )}
           </div>
         </div>
-        <div className="drawer-actions" style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div className="drawer-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <button
             className="drawer-btn"
             style={{ color: '#c62828', borderColor: '#f5b8c1' }}
@@ -634,9 +702,57 @@ function PartnerDrawer({ partner, onClose }) {
           >
             Delete partner
           </button>
+          <MergeControl partner={p} onMerged={onClose} />
           <button className="drawer-btn primary" onClick={handleClose}>Close</button>
         </div>
       </aside>
     </>
+  );
+}
+
+// Merge-this-partner-into-another control. Renders a select of every
+// OTHER partner (alphabetical) and a Merge button. Confirms before
+// actually merging — merge is destructive (deletes the source).
+function MergeControl({ partner, onMerged }) {
+  const [targetName, setTargetName] = useState('');
+  const others = useMemo(
+    () => PARTNERS
+      .filter((x) => x !== partner && x.name !== partner.name)
+      .map((x) => x.name)
+      .sort((a, b) => a.localeCompare(b)),
+    [partner]
+  );
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: '1 1 auto', justifyContent: 'center' }}>
+      <select
+        value={targetName}
+        onChange={(e) => setTargetName(e.target.value)}
+        style={{ padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 6, maxWidth: 220 }}
+      >
+        <option value="">Merge into…</option>
+        {others.map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <button
+        className="drawer-btn"
+        disabled={!targetName}
+        title={targetName ? `Merge ${partner.name} → ${targetName}` : 'Pick a target first'}
+        style={{ opacity: targetName ? 1 : 0.4 }}
+        onClick={async () => {
+          const target = PARTNERS.find((x) => x.name === targetName);
+          if (!target) return;
+          const ok = window.confirm(
+            `Merge "${partner.name}" INTO "${targetName}"?\n\n` +
+            `"${targetName}" will keep its name and get any missing fields filled in from "${partner.name}". ` +
+            `Loans referencing "${partner.name}" will be re-pointed to "${targetName}". ` +
+            `"${partner.name}" will then be deleted.`
+          );
+          if (!ok) return;
+          await mergePartners(partner, target, LOANS);
+          onMerged();
+        }}
+      >
+        Merge
+      </button>
+    </div>
   );
 }
