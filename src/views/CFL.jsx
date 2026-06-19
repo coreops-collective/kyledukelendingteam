@@ -400,6 +400,25 @@ function KeyDateTypeRow({ type, onChange }) {
   );
 }
 
+// Read-only row for a date that's derived from the loan record (i.e.
+// the user shouldn't have to type it). Used for "Closing" and
+// "Closing Anniversary" which both share the same source value.
+function DerivedDateRow({ label, value, fromLoan, badge }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 8, padding: '6px 0', alignItems: 'center', background: '#fafafa', borderRadius: 6, marginBottom: 4 }}>
+      <div style={{ fontSize: 13, color: '#222', fontWeight: 600, paddingLeft: 8 }}>
+        {label}
+        {fromLoan && <span style={{ fontSize: 10, color: '#888', fontWeight: 400, marginLeft: 6 }}>· from loan</span>}
+        {badge && <span style={{ fontSize: 10, background: '#e3f2fd', color: '#0d47a1', fontWeight: 600, marginLeft: 6, padding: '1px 6px', borderRadius: 8 }}>{badge}</span>}
+      </div>
+      <div style={{ fontSize: 12, color: value ? '#222' : '#bbb', padding: '6px 8px' }}>{value || 'Not on file'}</div>
+      <div style={{ fontSize: 11, color: '#888', textAlign: 'right', paddingRight: 8 }}>
+        {value ? fmtMonthDay(parseLocalDate(value)) : ''}
+      </div>
+    </div>
+  );
+}
+
 // One row per global key-date TYPE on the client card. Pre-fills with
 // the matching client_dates row if it exists; otherwise the input is
 // blank. Setting the date persists; clearing it deletes the row.
@@ -550,34 +569,36 @@ function ClientCardDrawer({ clientName, onClose }) {
             <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 8 }}>
               Key Dates
             </div>
-            {/* Closing date is always present — derived from the
-                loan/past-client record so the team never has to enter
-                it by hand. Workflows already trigger off "Closing"
-                via the built-in anchor; this row just makes the
-                value visible alongside the user-managed types. */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 8, padding: '6px 0', alignItems: 'center', background: '#fafafa', borderRadius: 6 }}>
-              <div style={{ fontSize: 13, color: '#222', fontWeight: 600, paddingLeft: 8 }}>
-                Closing <span style={{ fontSize: 10, color: '#888', fontWeight: 400, marginLeft: 6 }}>· from loan</span>
-              </div>
-              <div style={{ fontSize: 12, color: closeDate ? '#222' : '#bbb', padding: '6px 8px' }}>{closeDate || 'No closing on file'}</div>
-              <div style={{ fontSize: 11, color: '#888', textAlign: 'right', paddingRight: 8 }}>
-                {closeDate ? fmtMonthDay(parseLocalDate(closeDate)) : ''}
-              </div>
-            </div>
+            {/* Derived rows — pulled from the loan automatically so
+                nobody has to enter them by hand. Workflows trigger
+                off these labels via the same path. */}
+            <DerivedDateRow label="Closing" value={closeDate} fromLoan />
+            {closeDate && (
+              <DerivedDateRow
+                label="Closing Anniversary"
+                value={closeDate}
+                fromLoan
+                badge="yearly"
+              />
+            )}
             {types.length === 0 ? (
               <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic', marginTop: 8 }}>
                 No date types defined. Open "Manage Key Date Types" from the main view to add some (Birthday, Anniversary, etc.).
               </div>
             ) : (
-              types.map((t) => (
-                <ClientDateInput
-                  key={t.id}
-                  clientName={clientName}
-                  type={t}
-                  existing={datesByLabel.get(t.label.toLowerCase())}
-                  onChange={bump}
-                />
-              ))
+              types
+                // Don't render an input for derived labels — those
+                // come from the loan, not from a manual entry.
+                .filter((t) => !['closing', 'closing anniversary'].includes(t.label.toLowerCase()))
+                .map((t) => (
+                  <ClientDateInput
+                    key={t.id}
+                    clientName={clientName}
+                    type={t}
+                    existing={datesByLabel.get(t.label.toLowerCase())}
+                    onChange={bump}
+                  />
+                ))
             )}
             {orphanDates.length > 0 && (
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed #e0e0e0' }}>

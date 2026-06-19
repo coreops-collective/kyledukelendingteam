@@ -226,13 +226,18 @@ export function generateTasksForClient(clientName, anchorDates) {
 }
 
 // Build the anchor-date map for one client from the available sources:
-// loan.closeDate (for "Closing"), past-client closeDate (for "Closing"
-// anniversary etc), and every client_dates row matching this client.
+// loan.closeDate (for "Closing"), past-client closeDate, and every
+// client_dates row matching this client. Also auto-aliases derived
+// labels: "Closing Anniversary" uses the loan's closeDate as its anchor
+// since the anniversary is just the same month/day repeating each
+// year — no one should have to manually re-enter it per client.
 export function buildAnchorsForClient(clientName, sources) {
   const anchors = new Map();
   const closing = sources?.closeDate ? parseLocalDate(sources.closeDate) : null;
-  if (closing) anchors.set('closing', closing);
-  // Pull every client_dates row that matches this client.
+  if (closing) {
+    anchors.set('closing', closing);
+    anchors.set('closing anniversary', closing);
+  }
   const datesMap = sources?.clientDates;
   if (datesMap) {
     datesMap.forEach((row) => {
