@@ -550,8 +550,22 @@ function ClientCardDrawer({ clientName, onClose }) {
             <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 8 }}>
               Key Dates
             </div>
+            {/* Closing date is always present — derived from the
+                loan/past-client record so the team never has to enter
+                it by hand. Workflows already trigger off "Closing"
+                via the built-in anchor; this row just makes the
+                value visible alongside the user-managed types. */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 8, padding: '6px 0', alignItems: 'center', background: '#fafafa', borderRadius: 6 }}>
+              <div style={{ fontSize: 13, color: '#222', fontWeight: 600, paddingLeft: 8 }}>
+                Closing <span style={{ fontSize: 10, color: '#888', fontWeight: 400, marginLeft: 6 }}>· from loan</span>
+              </div>
+              <div style={{ fontSize: 12, color: closeDate ? '#222' : '#bbb', padding: '6px 8px' }}>{closeDate || 'No closing on file'}</div>
+              <div style={{ fontSize: 11, color: '#888', textAlign: 'right', paddingRight: 8 }}>
+                {closeDate ? fmtMonthDay(parseLocalDate(closeDate)) : ''}
+              </div>
+            </div>
             {types.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic' }}>
+              <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic', marginTop: 8 }}>
                 No date types defined. Open "Manage Key Date Types" from the main view to add some (Birthday, Anniversary, etc.).
               </div>
             ) : (

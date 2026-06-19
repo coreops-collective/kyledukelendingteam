@@ -3,6 +3,9 @@ import FilterDropdown from '../components/FilterDropdown.jsx';
 import { getCurrentUser } from '../lib/auth.js';
 import { getAllFunded } from '../lib/fundedLoans.js';
 import { subscribeLoans } from '../lib/loansStore.js';
+import {
+  loadClientDates, getDate, upsertClientDate, deleteClientDate,
+} from '../lib/clientDates.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -19,6 +22,18 @@ export default function AllLoans() {
   const bump = useCallback(() => force((n) => n + 1), []);
   // Re-fetch the merged funded list whenever a teammate marks a loan funded.
   useEffect(() => subscribeLoans(bump), [bump]);
+  // Load the client_dates store (used for client birthdays inside the
+  // past-client drawer) and re-render when it changes.
+  useEffect(() => {
+    loadClientDates().then(bump);
+    const onChange = () => bump();
+    window.addEventListener('kdt-client-dates-changed', onChange);
+    window.addEventListener('kdt-client-dates-loaded', onChange);
+    return () => {
+      window.removeEventListener('kdt-client-dates-changed', onChange);
+      window.removeEventListener('kdt-client-dates-loaded', onChange);
+    };
+  }, [bump]);
   const refiMode = todaysRate !== '' && !isNaN(parseFloat(todaysRate));
 
   // Merge historical PAST_CLIENTS with anything in LOANS that has been
@@ -257,6 +272,47 @@ export default function AllLoans() {
   );
 }
 
+// Birthday input that lives inside the past-client drawer. Reads/
+// writes through client_dates so the same value is visible on the
+// client card in Client for Life and drives birthday-triggered
+// workflows. Auto-saves on blur. Clearing the field deletes the row.
+function BirthdayField({ clientName }) {
+  const existing = getDate(clientName, 'Birthday');
+  const [value, setValue] = useState(existing?.date_value || '');
+  // Re-read from the store on subsequent renders so realtime updates
+  // from another tab don't get stomped by stale local state.
+  useEffect(() => {
+    setValue(getDate(clientName, 'Birthday')?.date_value || '');
+  }, [clientName]);
+
+  const persist = async () => {
+    const v = value.trim();
+    if (!v) {
+      if (existing) await deleteClientDate(clientName, 'Birthday');
+      return;
+    }
+    await upsertClientDate(clientName, 'Birthday', v, { recurring: true });
+  };
+
+  return (
+    <div style={{ marginTop: 14, padding: 12, background: '#fff8e1', border: '1px solid #f5e7a3', borderRadius: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#5a4a1a', textTransform: 'uppercase', letterSpacing: '.6px' }}>
+          🎂 Birthday
+        </div>
+        <div style={{ fontSize: 10, color: '#888' }}>Syncs to Client for Life</div>
+      </div>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={persist}
+        style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', background: '#fff' }}
+      />
+    </div>
+  );
+}
+
 function PastClientDrawer({ client, refiRate, onClose }) {
   const c = client;
   const [, force] = useState(0);
@@ -316,6 +372,8 @@ function PastClientDrawer({ client, refiRate, onClose }) {
             <Row label="Phone" value={c.phone} />
             <Row label="Email" value={c.email} />
           </div>
+
+          <BirthdayField clientName={c.name} />
 
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eee' }}>
             <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 10 }}>
