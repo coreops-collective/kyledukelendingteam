@@ -204,9 +204,15 @@ export function generateTasksForClient(clientName, anchorDates) {
       let due;
       if (t.trigger_recurring) {
         // Yearly anchor — find the next occurrence of (month, day)
-        // relative to today, then apply the offset.
-        const next = new Date(today.getFullYear(), anchor.getMonth(), anchor.getDate());
-        if (next < today) next.setFullYear(today.getFullYear() + 1);
+        // STRICTLY AFTER the anchor itself. Critical for things like
+        // "Closing Anniversary": a loan that just closed should NOT
+        // immediately generate a "1 year anniversary" task this same
+        // year — the first anniversary is next year. Old birthdays /
+        // old anniversaries (anchor years in the past) still resolve
+        // to the next upcoming occurrence as before.
+        const minYear = Math.max(today.getFullYear(), anchor.getFullYear() + 1);
+        const next = new Date(minYear, anchor.getMonth(), anchor.getDate());
+        while (next < today) next.setFullYear(next.getFullYear() + 1);
         due = new Date(next.getFullYear(), next.getMonth(), next.getDate() + (t.trigger_days || 0));
       } else {
         due = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + (t.trigger_days || 0));

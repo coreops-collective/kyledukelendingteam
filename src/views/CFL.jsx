@@ -34,37 +34,68 @@ export default function CFL() {
   const [datesOpen, setDatesOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [openClient, setOpenClient] = useState(null); // client name string or null
+  // Bump every time underlying data changes so memos that read from
+  // module-level stores (getAllDates / getWorkflows / getProfile /
+  // getKeyDateTypes) re-run. Previously the task list cached its
+  // result and only refreshed when the user toggled a filter.
+  const [dataVersion, setDataVersion] = useState(0);
+  // Search / focus filters layered ON TOP of role + status so the team
+  // can drill from 800 tasks down to "just this client" or "just my
+  // birthday workflow" without scrolling.
+  const [search, setSearch] = useState('');
+  const [filterWorkflow, setFilterWorkflow] = useState('All');
+  // Collapsed-by-default for non-urgent buckets — the user complained
+  // about 800 tasks showing as "due soon." This Month + Later both
+  // stay collapsed unless explicitly expanded.
+  const [collapsed, setCollapsed] = useState({ 'This Month': true, 'Later': true });
 
   useEffect(() => {
-    loadClientDates().then(bump);
-    loadWorkflows().then(bump);
-    loadClientProfiles().then(bump);
-    loadKeyDateTypes().then(bump);
-    const onChange = () => bump();
+    const bumpAll = () => {
+      bump();
+      setDataVersion((v) => v + 1);
+    };
+    loadClientDates().then(bumpAll);
+    loadWorkflows().then(bumpAll);
+    loadClientProfiles().then(bumpAll);
+    loadKeyDateTypes().then(bumpAll);
     const events = [
       'kdt-client-dates-changed', 'kdt-client-dates-loaded',
       'kdt-workflows-changed', 'kdt-workflows-loaded',
       'kdt-client-profiles-changed', 'kdt-client-profiles-loaded',
       'kdt-key-date-types-changed', 'kdt-key-date-types-loaded',
     ];
-    events.forEach((evt) => window.addEventListener(evt, onChange));
-    return () => events.forEach((evt) => window.removeEventListener(evt, onChange));
+    events.forEach((evt) => window.addEventListener(evt, bumpAll));
+    return () => events.forEach((evt) => window.removeEventListener(evt, bumpAll));
   }, []);
 
   // Build the live task list. For every active loan and every past
   // client we generate every workflow_task that resolves against the
   // anchor dates we have on file for them. Sorted by due date.
+  //
+  // Depends on dataVersion so the list refreshes the instant any
+  // underlying store fires its change event (client_dates updated,
+  // task completed, workflow added, etc.). Previously the memo deps
+  // were only [filterRole, filterStatus], so the task list went stale
+  // until the user touched a filter.
   const generated = useMemo(() => {
     const clientDates = getAllDates();
     const seen = new Map();
-    const collect = (name, closeDate) => {
+    const collect = (name, rawCloseDate) => {
       if (!name) return;
       const k = name.trim().toLowerCase();
+      // LOANS stores closeDate as "M/D/YYYY"; PAST_CLIENTS stores
+      // "YYYY-MM-DD". A lexicographic compare across the two formats
+      // returned garbage and we'd silently pick the wrong record (and
+      // wrong year for the anchor). Parse both into real Dates first.
+      const parsed = rawCloseDate ? parseLocalDate(rawCloseDate) : null;
       const prev = seen.get(k);
-      // Prefer the more recent closeDate when a client appears in both
-      // LOANS and PAST_CLIENTS (rare but possible).
-      if (prev && prev.closeDate && (!closeDate || closeDate < prev.closeDate)) return;
-      seen.set(k, { name: name.trim(), closeDate });
+      if (prev) {
+        const prevParsed = prev.parsed;
+        // Keep whichever record has the more recent close date. Records
+        // missing a closeDate lose to anything with one.
+        if (prevParsed && (!parsed || parsed <= prevParsed)) return;
+      }
+      seen.set(k, { name: name.trim(), closeDate: rawCloseDate, parsed });
     };
     LOANS.forEach((l) => collect(l.borrower, l.closeDate));
     PAST_CLIENTS.forEach((c) => collect(c.name, c.closeDate));
@@ -76,12 +107,18 @@ export default function CFL() {
     });
     items.sort((a, b) => a.due_date - b.due_date);
     return items;
-  }, [filterRole, filterStatus]); // re-run when filters change too, to read fresh COMPLETIONS
+  }, [dataVersion]);
 
   const filtered = generated.filter((it) => {
     if (filterRole !== 'All' && (it.task.role || 'lo') !== filterRole.toLowerCase()) return false;
     if (filterStatus === 'Open' && it.completed) return false;
     if (filterStatus === 'Done' && !it.completed) return false;
+    if (filterWorkflow !== 'All' && it.workflow.name !== filterWorkflow) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      const hay = `${it.client_name} ${it.task.title} ${it.workflow.name}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
 
@@ -103,7 +140,10 @@ export default function CFL() {
   });
 
   // Birthdays this month — separate from the task list since the user
-  // specifically asked for an at-a-glance panel.
+  // specifically asked for an at-a-glance panel. Past-month birthdays
+  // for the current calendar month are filtered out (no "Jan 3" panel
+  // entry on Jan 20). Days-away is always >= 0 because we project to
+  // this year first and skip anything already passed.
   const birthdaysThisMonth = useMemo(() => {
     const month = today.getMonth();
     const out = [];
@@ -115,10 +155,11 @@ export default function CFL() {
       if (d.getMonth() !== month) return;
       const next = new Date(today.getFullYear(), d.getMonth(), d.getDate());
       const daysAway = Math.round((next - today) / DAY);
+      if (daysAway < 0) return; // already happened this month
       out.push({ name: row.client_name, label: row.date_label, raw: row.date_value, monthDay: fmtMonthDay(d), daysAway });
     });
     return out.sort((a, b) => a.daysAway - b.daysAway);
-  }, [generated]);
+  }, [dataVersion]);
 
   return (
     <div>
@@ -139,16 +180,44 @@ export default function CFL() {
 
       <BirthdaysPanel rows={birthdaysThisMonth} onOpenDates={() => setDatesOpen(true)} onOpenClient={setOpenClient} />
 
-      <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search client, task, or workflow…"
+          style={{ flex: '1 1 240px', minWidth: 240, padding: '8px 12px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 999, boxSizing: 'border-box' }}
+        />
         <FilterChip label="Role" value={filterRole} options={['All', 'LO', 'LOA', 'Admin', 'Automated']} onChange={setFilterRole} />
+        <FilterChip
+          label="Workflow"
+          value={filterWorkflow}
+          options={['All', ...getWorkflows().map((w) => w.name)]}
+          onChange={setFilterWorkflow}
+        />
         <FilterChip label="Status" value={filterStatus} options={['Open', 'Done', 'All']} onChange={setFilterStatus} />
+        {(search || filterRole !== 'All' || filterWorkflow !== 'All' || filterStatus !== 'Open') && (
+          <button
+            className="form-btn"
+            style={{ fontSize: 11, padding: '4px 10px' }}
+            onClick={() => { setSearch(''); setFilterRole('All'); setFilterWorkflow('All'); setFilterStatus('Open'); }}
+          >Reset</button>
+        )}
       </div>
 
       {generated.length === 0 ? (
         <EmptyState onDates={() => setDatesOpen(true)} onWorkflows={() => setEditorOpen(true)} />
       ) : (
         buckets.map((b) => b.items.length > 0 && (
-          <Section key={b.label} label={b.label} items={b.items} today={today} onOpenClient={setOpenClient} />
+          <Section
+            key={b.label}
+            label={b.label}
+            items={b.items}
+            today={today}
+            onOpenClient={setOpenClient}
+            collapsed={!!collapsed[b.label]}
+            onToggle={() => setCollapsed((c) => ({ ...c, [b.label]: !c[b.label] }))}
+          />
         ))
       )}
 
@@ -204,18 +273,45 @@ function BirthdaysPanel({ rows, onOpenDates, onOpenClient }) {
   );
 }
 
-function Section({ label, items, today, onOpenClient }) {
+function Section({ label, items, today, onOpenClient, collapsed, onToggle }) {
   const headerColor = label === 'Overdue' ? '#c62828' : label === 'Today' ? '#e65100' : '#555';
+  // Cap rendered rows per section so a Later bucket with 500 items
+  // doesn't blow up the DOM. The team can "Show all" if they really
+  // need to scroll the long tail.
+  const [showAll, setShowAll] = useState(false);
+  const CAP = 50;
+  const visible = !collapsed && (showAll || items.length <= CAP) ? items : items.slice(0, collapsed ? 0 : CAP);
+  const hidden = items.length - visible.length;
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, color: headerColor, margin: '6px 0 8px' }}>
+      <div
+        onClick={onToggle}
+        style={{
+          fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase',
+          letterSpacing: 1, color: headerColor, margin: '6px 0 8px',
+          cursor: onToggle ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'center', gap: 6,
+          userSelect: 'none',
+        }}
+      >
+        <span style={{ display: 'inline-block', width: 12, color: '#888' }}>{collapsed ? '▸' : '▾'}</span>
         {label} ({items.length})
       </div>
-      <div className="section-card">
-        {items.map((it, i) => (
-          <TaskRow key={it.id} item={it} today={today} first={i === 0} onOpenClient={onOpenClient} />
-        ))}
-      </div>
+      {!collapsed && (
+        <div className="section-card">
+          {visible.map((it, i) => (
+            <TaskRow key={it.id} item={it} today={today} first={i === 0} onOpenClient={onOpenClient} />
+          ))}
+          {hidden > 0 && (
+            <div
+              onClick={() => setShowAll(true)}
+              style={{ padding: '10px 14px', textAlign: 'center', fontSize: 12, color: '#888', borderTop: '1px solid #f1f1f1', cursor: 'pointer', background: '#fafafa' }}
+            >
+              Show {hidden} more…
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
