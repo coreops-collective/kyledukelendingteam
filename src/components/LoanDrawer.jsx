@@ -19,7 +19,23 @@ const fmt$ = (n) => (n ? '$' + Math.round(n).toLocaleString() : '—');
  * and calls onSaved() so parent can re-render.
  */
 export default function LoanDrawer({ loan, onSaved, onClose }) {
+  // ── All hooks first, BEFORE any conditional early-return. If we
+  // returned `null` for missing `loan` before later useState/useRef/
+  // useEffect calls (as a previous version did), React would throw
+  // "Rendered more hooks than during the previous render" the moment
+  // a loan was selected after the drawer mounted empty.
   const [, force] = useState(0);
+
+  // Drawer width is drag-resizable from the left edge; width persists per
+  // user via localStorage. Same UX as the dedicated Notes drawer so users
+  // get consistent behavior wherever they're editing notes.
+  const [drawerWidth, setDrawerWidth] = useState(() => {
+    const stored = parseInt(localStorage.getItem('kdt-loan-drawer-width') || '', 10);
+    return Number.isFinite(stored) && stored >= 420 ? stored : 720;
+  });
+  const drawerWidthRef = useRef(drawerWidth);
+  useEffect(() => { drawerWidthRef.current = drawerWidth; }, [drawerWidth]);
+
   if (!loan) return null;
 
   const handleArchive = () => {
@@ -86,15 +102,9 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     </label>
   );
 
-  // Drawer width is drag-resizable from the left edge; width persists per
-  // user via localStorage. Same UX as the dedicated Notes drawer so users
-  // get consistent behavior wherever they're editing notes.
-  const [drawerWidth, setDrawerWidth] = useState(() => {
-    const stored = parseInt(localStorage.getItem('kdt-loan-drawer-width') || '', 10);
-    return Number.isFinite(stored) && stored >= 420 ? stored : 720;
-  });
-  const drawerWidthRef = useRef(drawerWidth);
-  useEffect(() => { drawerWidthRef.current = drawerWidth; }, [drawerWidth]);
+  // Drag-resize handler. Closes over drawerWidthRef so localStorage
+  // persists the latest committed width even though we update React
+  // state on every move event.
   const startDrawerResize = (e) => {
     e.preventDefault();
     const startX = e.clientX;
