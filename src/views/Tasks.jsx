@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   PROJECTS as PROJECTS_SEED,
   TASKS_SEED,
@@ -8,11 +8,37 @@ import {
 } from '../data/tasks.js';
 import { USERS } from '../data/users.js';
 
-// Port of renderTasks() from legacy/index.html. Supabase read/write is stubbed
-// with console.log + toast; the drawer + Siri panel copy is verbatim from legacy.
+const TASKS_KEY = 'kdt-tasks-v1';
+const PROJECTS_KEY = 'kdt-projects-v1';
+
+function loadStored(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+// Port of renderTasks() from legacy/index.html. Tasks + projects persist
+// to localStorage so deletes/edits actually stick across refreshes —
+// the previous version was state-only (useState(TASKS_SEED)) and any
+// deletion silently reset on reload. Cross-user sync would require a
+// real Supabase table; for now this at least makes the page behave.
 export default function Tasks() {
-  const [tasks, setTasks] = useState(TASKS_SEED);
-  const [projects, setProjects] = useState(PROJECTS_SEED);
+  const [tasks, setTasks] = useState(() => loadStored(TASKS_KEY, TASKS_SEED));
+  const [projects, setProjects] = useState(() => loadStored(PROJECTS_KEY, PROJECTS_SEED));
+
+  // Persist on every change. JSON-stringifying ~200 small task objects
+  // is cheap; not worth debouncing.
+  useEffect(() => {
+    try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); } catch {}
+  }, [tasks]);
+  useEffect(() => {
+    try { localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects)); } catch {}
+  }, [projects]);
   const [activeProjectId, setActiveProjectId] = useState('all');
   const [showSmsPanel, setShowSmsPanel] = useState(false);
   const [quickTitle, setQuickTitle] = useState('');
