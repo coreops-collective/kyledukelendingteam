@@ -202,6 +202,13 @@ export function generateTasksForClient(clientName, anchorDates) {
       const anchor = anchorDates.get((t.trigger_label || '').toLowerCase());
       if (!anchor) continue;
       let due;
+      // `anchor_occurrence` is the actual instance of the anchor date
+      // this generated task is anchored to (e.g. "Closing Anniversary
+      // on May 21, 2027" — the real trigger date the team probably
+      // cares about seeing on the row). For one-time triggers it's
+      // just the original anchor; for yearly recurrence it's the
+      // computed next occurrence.
+      let anchorOccurrence;
       if (t.trigger_recurring) {
         // Yearly anchor — find the next occurrence of (month, day)
         // STRICTLY AFTER the anchor itself. Critical for things like
@@ -213,8 +220,10 @@ export function generateTasksForClient(clientName, anchorDates) {
         const minYear = Math.max(today.getFullYear(), anchor.getFullYear() + 1);
         const next = new Date(minYear, anchor.getMonth(), anchor.getDate());
         while (next < today) next.setFullYear(next.getFullYear() + 1);
+        anchorOccurrence = new Date(next.getFullYear(), next.getMonth(), next.getDate());
         due = new Date(next.getFullYear(), next.getMonth(), next.getDate() + (t.trigger_days || 0));
       } else {
+        anchorOccurrence = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
         due = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + (t.trigger_days || 0));
       }
       const completed = isCompleted(t.id, clientName, toIsoDate(due));
@@ -224,6 +233,8 @@ export function generateTasksForClient(clientName, anchorDates) {
         workflow: wf,
         client_name: clientName,
         due_date: due,
+        anchor_date: anchorOccurrence,
+        anchor_label: t.trigger_label || TRIGGER_BUILTIN_CLOSING,
         completed,
       });
     }

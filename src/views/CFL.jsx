@@ -327,9 +327,15 @@ function TaskRow({ item, today, first, onOpenClient }) {
     if (item.completed) unmarkTaskCompleted(item.task.id, item.client_name, iso);
     else markTaskCompleted(item.task.id, item.client_name, iso);
   };
+  // Two dates per row now: the due date (when the task should be
+  // done) and the underlying trigger date (the closing anniversary /
+  // birthday / lease end / etc. that the task is anchored to).
+  // Showing both makes "Send card 7 days before Birthday" legible
+  // at a glance — you see "Due Jul 15 · Birthday Jul 22".
+  const showAnchor = item.anchor_date && +item.anchor_date !== +item.due_date;
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: '30px 1fr 180px 90px 80px', gap: 10,
+      display: 'grid', gridTemplateColumns: '30px 1fr 220px 90px 80px', gap: 10,
       padding: '12px 14px', borderTop: first ? 'none' : '1px solid #f1f1f1',
       alignItems: 'center', background: item.completed ? '#fafafa' : '#fff',
     }}>
@@ -350,7 +356,14 @@ function TaskRow({ item, today, first, onOpenClient }) {
           {item.task.notes ? ` · ${item.task.notes}` : ''}
         </div>
       </div>
-      <div style={{ fontSize: 11, color: '#666' }}>{fmtDate(item.due_date)}</div>
+      <div style={{ fontSize: 11, color: '#666' }}>
+        <div><strong style={{ color: '#222', fontWeight: 700 }}>Due</strong> {fmtDate(item.due_date)}</div>
+        {showAnchor && (
+          <div style={{ marginTop: 2, color: '#888' }}>
+            {item.anchor_label} {fmtDate(item.anchor_date)}
+          </div>
+        )}
+      </div>
       <div>
         <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: roleColors[role] || '#555', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>
           {ROLE_LABELS[role] || role}
