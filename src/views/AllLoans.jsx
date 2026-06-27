@@ -6,6 +6,9 @@ import { subscribeLoans } from '../lib/loansStore.js';
 import {
   loadClientDates, getDate, upsertClientDate, deleteClientDate,
 } from '../lib/clientDates.js';
+import {
+  loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
+} from '../lib/clientProfiles.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -23,16 +26,18 @@ export default function AllLoans() {
   // Re-fetch the merged funded list whenever a teammate marks a loan funded.
   useEffect(() => subscribeLoans(bump), [bump]);
   // Load the client_dates store (used for client birthdays inside the
-  // past-client drawer) and re-render when it changes.
+  // past-client drawer) and the client_profiles store (review tracking)
+  // and re-render when either changes.
   useEffect(() => {
     loadClientDates().then(bump);
+    loadClientProfiles().then(bump);
     const onChange = () => bump();
-    window.addEventListener('kdt-client-dates-changed', onChange);
-    window.addEventListener('kdt-client-dates-loaded', onChange);
-    return () => {
-      window.removeEventListener('kdt-client-dates-changed', onChange);
-      window.removeEventListener('kdt-client-dates-loaded', onChange);
-    };
+    const events = [
+      'kdt-client-dates-changed', 'kdt-client-dates-loaded',
+      'kdt-client-profiles-changed', 'kdt-client-profiles-loaded',
+    ];
+    events.forEach((e) => window.addEventListener(e, onChange));
+    return () => events.forEach((e) => window.removeEventListener(e, onChange));
   }, [bump]);
   const refiMode = todaysRate !== '' && !isNaN(parseFloat(todaysRate));
 
@@ -313,6 +318,86 @@ function BirthdayField({ clientName }) {
   );
 }
 
+// Review-tracking block — same data store as the Client for Life
+// client card, so checking the box here also flips the card to
+// "review left" green over there. Reads/writes client_profiles.
+function ReviewField({ clientName }) {
+  const profile = getProfile(clientName) || {};
+  const [reviewLeft, setReviewLeft] = useState(!!profile.review_left);
+  const [reviewDate, setReviewDate] = useState(profile.review_date || '');
+  const [reviewSource, setReviewSource] = useState(profile.review_source || '');
+
+  // If the same client is updated from CFL in another tab, refresh
+  // the local state on the next render.
+  useEffect(() => {
+    const p = getProfile(clientName) || {};
+    setReviewLeft(!!p.review_left);
+    setReviewDate(p.review_date || '');
+    setReviewSource(p.review_source || '');
+  }, [clientName]);
+
+  const persist = async (patch) => {
+    await upsertClientProfile(clientName, patch);
+  };
+
+  const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', background: '#fff' };
+
+  return (
+    <div style={{
+      marginTop: 14,
+      padding: 12,
+      background: reviewLeft ? '#e8f5e9' : '#fff',
+      border: `1px solid ${reviewLeft ? '#a5d6a7' : '#e0e0e0'}`,
+      borderRadius: 8,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, color: '#222', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={reviewLeft}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setReviewLeft(next);
+              const todayIso = new Date().toISOString().slice(0, 10);
+              const nextDate = next && !reviewDate ? todayIso : (reviewDate || null);
+              if (next && !reviewDate) setReviewDate(todayIso);
+              persist({ review_left: next, review_date: nextDate });
+            }}
+            style={{ width: 18, height: 18, accentColor: '#2e7d32' }}
+          />
+          {reviewLeft ? '⭐ Review left' : 'Has this client left a review?'}
+        </label>
+        <div style={{ fontSize: 10, color: '#888' }}>Syncs to Client for Life</div>
+      </div>
+      {reviewLeft && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>When</div>
+            <input
+              type="date"
+              value={reviewDate}
+              onChange={(e) => setReviewDate(e.target.value)}
+              onBlur={() => persist({ review_date: reviewDate || null })}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>Where</div>
+            <select
+              value={reviewSource}
+              onChange={(e) => { setReviewSource(e.target.value); persist({ review_source: e.target.value }); }}
+              style={inputStyle}
+            >
+              <option value="">— Pick —</option>
+              {REVIEW_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PastClientDrawer({ client, refiRate, onClose }) {
   const c = client;
   const [, force] = useState(0);
@@ -374,6 +459,7 @@ function PastClientDrawer({ client, refiRate, onClose }) {
           </div>
 
           <BirthdayField clientName={c.name} />
+          <ReviewField clientName={c.name} />
 
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eee' }}>
             <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 10 }}>
