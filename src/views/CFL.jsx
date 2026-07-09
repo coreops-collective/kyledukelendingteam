@@ -31,8 +31,6 @@ export default function CFL() {
   const bump = () => force((n) => n + 1);
   const [filterRole, setFilterRole] = useState('All');
   const [filterStatus, setFilterStatus] = useState('Open');
-  const [datesOpen, setDatesOpen] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(false);
   const [openClient, setOpenClient] = useState(null); // client name string or null
   // Bump every time underlying data changes so memos that read from
   // module-level stores (getAllDates / getWorkflows / getProfile /
@@ -204,13 +202,12 @@ export default function CFL() {
             Auto-generated from your workflows + each client's key dates · {filtered.length} of {generated.length} tasks
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="form-btn" type="button" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
-          <button className="form-btn primary" type="button" onClick={() => setEditorOpen(true)}>Edit Workflows</button>
+        <div style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>
+          Workflows &amp; key date types are managed on the Workflows &amp; SOPs tab.
         </div>
       </div>
 
-      <BirthdaysPanel rows={birthdaysThisMonth} onOpenDates={() => setDatesOpen(true)} onOpenClient={setOpenClient} />
+      <BirthdaysPanel rows={birthdaysThisMonth} onOpenDates={null} onOpenClient={setOpenClient} />
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <input
@@ -253,7 +250,7 @@ export default function CFL() {
       </div>
 
       {generated.length === 0 ? (
-        <EmptyState onDates={() => setDatesOpen(true)} onWorkflows={() => setEditorOpen(true)} />
+        <EmptyState />
       ) : (
         buckets.map((b) => b.items.length > 0 && (
           <Section
@@ -268,8 +265,6 @@ export default function CFL() {
         ))
       )}
 
-      {datesOpen && <ManageKeyDateTypesDrawer onClose={() => setDatesOpen(false)} />}
-      {editorOpen && <WorkflowEditorDrawer onClose={() => setEditorOpen(false)} />}
       {openClient && <ClientCardDrawer clientName={openClient} onClose={() => setOpenClient(null)} />}
     </div>
   );
@@ -296,7 +291,9 @@ function BirthdaysPanel({ rows, onOpenDates, onOpenClient }) {
           <div className="section-title">Birthdays This Month</div>
           <div className="section-sub">{rows.length} client{rows.length === 1 ? '' : 's'} · click a name to open their card</div>
         </div>
-        <button className="form-btn" type="button" onClick={onOpenDates}>+ Add</button>
+        {onOpenDates && (
+          <button className="form-btn" type="button" onClick={onOpenDates}>+ Add</button>
+        )}
       </div>
       <div className="section-body" style={{ padding: 0 }}>
         {rows.map((r) => (
@@ -438,17 +435,13 @@ function TaskRow({ item, today, first, onOpenClient }) {
   );
 }
 
-function EmptyState({ onDates, onWorkflows }) {
+function EmptyState() {
   return (
     <div className="section-card">
       <div className="section-body" style={{ padding: 30, textAlign: 'center' }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>No tasks yet</div>
-        <div style={{ fontSize: 12, color: '#666', marginBottom: 18 }}>
-          Add at least one workflow with one task, then add a key date for at least one client.
-        </div>
-        <div style={{ display: 'inline-flex', gap: 10 }}>
-          <button className="form-btn" onClick={onDates}>Add Key Dates</button>
-          <button className="form-btn primary" onClick={onWorkflows}>Build Workflows</button>
+        <div style={{ fontSize: 12, color: '#666' }}>
+          Head to <strong>Workflows &amp; SOPs</strong> to build a workflow, and to <strong>Manage Key Date Types</strong> to define the dates workflows trigger off (Birthday, Wedding Anniversary, etc.). Then add per-client dates on each client's card.
         </div>
       </div>
     </div>
@@ -459,7 +452,7 @@ function EmptyState({ onDates, onWorkflows }) {
 // Global catalog: define WHAT kinds of dates the team tracks (Birthday,
 // Wedding Anniversary, Lease End, etc.). Per-client VALUES are set on
 // each client's card, not here.
-function ManageKeyDateTypesDrawer({ onClose }) {
+export function ManageKeyDateTypesDrawer({ onClose }) {
   const [, force] = useState(0);
   const bump = () => force((n) => n + 1);
   const [adding, setAdding] = useState(false);

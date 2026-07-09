@@ -4,7 +4,7 @@ import {
   ROLES, ROLE_LABELS,
 } from '../lib/workflows.js';
 import { loadKeyDateTypes } from '../lib/keyDateTypes.js';
-import { WorkflowEditorDrawer, triggerSummary } from './CFL.jsx';
+import { WorkflowEditorDrawer, ManageKeyDateTypesDrawer, triggerSummary } from './CFL.jsx';
 
 // SOPs / Workflows tab. Reads from the SAME workflow_templates +
 // workflow_tasks tables that power Client for Life — so the SOPs the
@@ -21,6 +21,7 @@ export default function Workflows() {
   const [activeId, setActiveId] = useState(null);
   const [layout, setLayout] = useState('checklist');
   const [editorOpen, setEditorOpen] = useState(false);
+  const [datesOpen, setDatesOpen] = useState(false);
 
   useEffect(() => {
     loadWorkflows().then(bump);
@@ -47,7 +48,10 @@ export default function Workflows() {
             <h2>Workflows &amp; SOPs</h2>
             <div className="desc">Shared with Client for Life. Build once — used everywhere.</div>
           </div>
-          <button className="form-btn primary" onClick={() => setEditorOpen(true)}>+ Build first workflow</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="form-btn" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
+            <button className="form-btn primary" onClick={() => setEditorOpen(true)}>+ Build first workflow</button>
+          </div>
         </div>
         <div style={{ padding: 40, textAlign: 'center', border: '2px dashed #e0e0e0', borderRadius: 8, color: '#888' }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: '#555', marginBottom: 6 }}>No workflows yet</div>
@@ -56,6 +60,7 @@ export default function Workflows() {
           </div>
         </div>
         {editorOpen && <WorkflowEditorDrawer onClose={() => { setEditorOpen(false); bump(); }} />}
+        {datesOpen && <ManageKeyDateTypesDrawer onClose={() => { setDatesOpen(false); bump(); }} />}
       </div>
     );
   }
@@ -94,11 +99,13 @@ export default function Workflows() {
               style={layoutBtnStyle(layout === 'swim')}
             >Swim Lanes</button>
           </div>
+          <button className="form-btn" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
           <button className="form-btn primary" onClick={() => setEditorOpen(true)}>Edit Workflows</button>
         </div>
       </div>
       {layout === 'checklist' ? <StepList tasks={tasks} /> : <SwimLanes tasks={tasks} />}
       {editorOpen && <WorkflowEditorDrawer onClose={() => { setEditorOpen(false); bump(); }} />}
+      {datesOpen && <ManageKeyDateTypesDrawer onClose={() => { setDatesOpen(false); bump(); }} />}
     </>
   );
 }
