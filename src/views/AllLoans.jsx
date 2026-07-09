@@ -400,27 +400,35 @@ function ReviewField({ clientName }) {
 }
 
 // Identity editor — lets Kimberly fix typos in name / phone / email
-// directly from the past-client drawer. For records that came out of
-// the live LOANS pipeline (_source === 'loans') we mutate the loan
-// row in place and markLoansDirty so the change persists to Supabase.
-// Legacy PAST_CLIENTS seed records show a note explaining they're
-// read-only — they were entered before the hub existed.
+// directly from the past-client drawer. Two persistence paths:
+//   - Live-pipeline records (_source === 'loans'): mutate the loan
+//     row in place + markLoansDirty (canonical source).
+//   - Legacy PAST_CLIENTS seed records: write to client_profiles
+//     override columns keyed by the original name, so display
+//     corrections stick without needing to rewrite the seed file.
 function IdentityEditor({ client, onChange }) {
   const c = client;
   const [open, setOpen] = useState(false);
-  const isEditable = c._source === 'loans';
-  const loan = isEditable ? LOANS.find((l) => l.id === c.id) : null;
+  const isLive = c._source === 'loans';
+  const loan = isLive ? LOANS.find((l) => l.id === c.id) : null;
+  const profile = getProfile(c.name) || {};
 
-  const save = (field, value) => {
-    if (!loan) return;
-    // Map the past-client shape field back to the loan field.
-    const mapping = { name: 'borrower', phone: 'phone', email: 'email' };
-    const loanField = mapping[field] || field;
-    loan[loanField] = value;
-    // Also update the derived past-client shape so the drawer reflects
-    // the change without a full re-fetch.
-    c[field] = value;
-    markLoansDirty(loan);
+  // For legacy records, show the correction if one exists; otherwise
+  // show the current (potentially wrong) value.
+  const displayName = isLive ? c.name : (profile.corrected_name || c.name || '');
+  const displayPhone = isLive ? c.phone : (profile.corrected_phone || c.phone || '');
+  const displayEmail = isLive ? c.email : (profile.corrected_email || c.email || '');
+
+  const save = async (field, value) => {
+    if (isLive) {
+      const mapping = { name: 'borrower', phone: 'phone', email: 'email' };
+      loan[mapping[field] || field] = value;
+      c[field] = value;
+      markLoansDirty(loan);
+    } else {
+      const profileField = { name: 'corrected_name', phone: 'corrected_phone', email: 'corrected_email' }[field];
+      if (profileField) await upsertClientProfile(c.name, { [profileField]: value || null });
+    }
     onChange && onChange();
   };
 
@@ -435,7 +443,7 @@ function IdentityEditor({ client, onChange }) {
           Fix name / phone / email {open ? '▾' : '▸'}
         </div>
         <div style={{ fontSize: 10, color: '#888' }}>
-          {isEditable ? 'Persists to Supabase' : 'Legacy record · read only'}
+          {isLive ? 'Persists to loans table' : 'Legacy record · saves to client profile'}
         </div>
       </div>
       {open && (
@@ -443,35 +451,27 @@ function IdentityEditor({ client, onChange }) {
           <div style={{ gridColumn: '1/-1' }}>
             <div style={labelStyle}>Client Name</div>
             <input
-              defaultValue={c.name || ''}
-              disabled={!isEditable}
-              onBlur={(e) => isEditable && save('name', e.target.value)}
+              defaultValue={displayName}
+              onBlur={(e) => save('name', e.target.value)}
               style={inputStyle}
             />
           </div>
           <div>
             <div style={labelStyle}>Phone</div>
             <input
-              defaultValue={c.phone || ''}
-              disabled={!isEditable}
-              onBlur={(e) => isEditable && save('phone', e.target.value)}
+              defaultValue={displayPhone}
+              onBlur={(e) => save('phone', e.target.value)}
               style={inputStyle}
             />
           </div>
           <div>
             <div style={labelStyle}>Email</div>
             <input
-              defaultValue={c.email || ''}
-              disabled={!isEditable}
-              onBlur={(e) => isEditable && save('email', e.target.value)}
+              defaultValue={displayEmail}
+              onBlur={(e) => save('email', e.target.value)}
               style={inputStyle}
             />
           </div>
-          {!isEditable && (
-            <div style={{ gridColumn: '1/-1', fontSize: 11, color: '#888', fontStyle: 'italic', padding: 6 }}>
-              This is a legacy record from the historical PAST_CLIENTS list — before the hub existed. To make it editable, Lauren can migrate it into the live loans table.
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -479,30 +479,54 @@ function IdentityEditor({ client, onChange }) {
 }
 
 // Co-borrower editor — captures first name, last name, phone, email,
-// and birthday. For loans-sourced records the first four persist onto
-// the loan row (coFirst / coLast / coPhone / coEmail). Birthday goes
-// through client_dates keyed by the co-borrower's own name, so they
-// get their own CFL client card. The BirthdayField on the main
-// borrower stays untouched.
+// and birthday for a client's co-borrower. Two persistence paths:
+//   - Live-pipeline records (_source === 'loans'): text fields
+//     persist onto the loan row (coFirst / coLast / coPhone / coEmail).
+//   - Legacy PAST_CLIENTS seed records: text fields persist to
+//     client_profiles override columns keyed by the main borrower's
+//     name. Same visible behavior for Kimberly — no read-only wall.
+// Birthday ALWAYS routes through client_dates keyed by the
+// co-borrower's own name, so the co-borrower gets their own CFL
+// client card and birthday tasks regardless of source.
 function CoBorrowerEditor({ client, onChange }) {
   const c = client;
-  const isEditable = c._source === 'loans';
-  const loan = isEditable ? LOANS.find((l) => l.id === c.id) : null;
+  const isLive = c._source === 'loans';
+  const loan = isLive ? LOANS.find((l) => l.id === c.id) : null;
+  const profile = getProfile(c.name) || {};
   const [open, setOpen] = useState(false);
 
-  // Local state so typing feels responsive; blur commits to the store.
-  const [coFirst, setCoFirst] = useState(loan?.coFirst || c.coFirst || '');
-  const [coLast, setCoLast] = useState(loan?.coLast || c.coLast || '');
-  const [coPhone, setCoPhone] = useState(loan?.coPhone || c.coPhone || '');
-  const [coEmail, setCoEmail] = useState(loan?.coEmail || c.coEmail || '');
+  // Seed local state from the appropriate persistence layer.
+  const [coFirst, setCoFirst] = useState(
+    isLive ? (loan?.coFirst || c.coFirst || '') : (profile.co_borrower_first || '')
+  );
+  const [coLast, setCoLast] = useState(
+    isLive ? (loan?.coLast || c.coLast || '') : (profile.co_borrower_last || '')
+  );
+  const [coPhone, setCoPhone] = useState(
+    isLive ? (loan?.coPhone || c.coPhone || '') : (profile.co_borrower_phone || '')
+  );
+  const [coEmail, setCoEmail] = useState(
+    isLive ? (loan?.coEmail || c.coEmail || '') : (profile.co_borrower_email || '')
+  );
   const coName = `${(coFirst || '').trim()} ${(coLast || '').trim()}`.trim();
   const existingBday = coName ? getDate(coName, 'Birthday') : null;
   const [coBday, setCoBday] = useState(existingBday?.date_value || '');
 
-  const commitLoanField = (field, value) => {
-    if (!loan) return;
-    loan[field] = value;
-    markLoansDirty(loan);
+  const commit = async (field, value) => {
+    if (isLive) {
+      loan[field] = value;
+      markLoansDirty(loan);
+    } else {
+      // Map camelCase local field → snake_case profile column.
+      const map = {
+        coFirst: 'co_borrower_first',
+        coLast: 'co_borrower_last',
+        coPhone: 'co_borrower_phone',
+        coEmail: 'co_borrower_email',
+      };
+      const col = map[field];
+      if (col) await upsertClientProfile(c.name, { [col]: value || null });
+    }
     onChange && onChange();
   };
 
@@ -526,37 +550,37 @@ function CoBorrowerEditor({ client, onChange }) {
           Co-borrower {open ? '▾' : '▸'}
         </div>
         <div style={{ fontSize: 10, color: '#556' }}>
-          {coName ? coName : 'None on file'} {isEditable ? '' : ' · read only'}
+          {coName || 'None on file'} · {isLive ? 'saves to loan' : 'saves to profile'}
         </div>
       </div>
       {open && (
         <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <div>
             <div style={labelStyle}>First name</div>
-            <input value={coFirst} disabled={!isEditable}
+            <input value={coFirst}
               onChange={(e) => setCoFirst(e.target.value)}
-              onBlur={() => commitLoanField('coFirst', coFirst)}
+              onBlur={() => commit('coFirst', coFirst)}
               style={inputStyle} />
           </div>
           <div>
             <div style={labelStyle}>Last name</div>
-            <input value={coLast} disabled={!isEditable}
+            <input value={coLast}
               onChange={(e) => setCoLast(e.target.value)}
-              onBlur={() => commitLoanField('coLast', coLast)}
+              onBlur={() => commit('coLast', coLast)}
               style={inputStyle} />
           </div>
           <div>
             <div style={labelStyle}>Phone</div>
-            <input value={coPhone} disabled={!isEditable}
+            <input value={coPhone}
               onChange={(e) => setCoPhone(e.target.value)}
-              onBlur={() => commitLoanField('coPhone', coPhone)}
+              onBlur={() => commit('coPhone', coPhone)}
               style={inputStyle} />
           </div>
           <div>
             <div style={labelStyle}>Email</div>
-            <input value={coEmail} disabled={!isEditable}
+            <input value={coEmail}
               onChange={(e) => setCoEmail(e.target.value)}
-              onBlur={() => commitLoanField('coEmail', coEmail)}
+              onBlur={() => commit('coEmail', coEmail)}
               style={inputStyle} />
           </div>
           <div style={{ gridColumn: '1/-1' }}>
@@ -575,11 +599,6 @@ function CoBorrowerEditor({ client, onChange }) {
               </div>
             )}
           </div>
-          {!isEditable && (
-            <div style={{ gridColumn: '1/-1', fontSize: 11, color: '#556', fontStyle: 'italic', padding: 6 }}>
-              This is a legacy record — text edits won't persist. The birthday IS savable because it goes to the separate client_dates table.
-            </div>
-          )}
         </div>
       )}
     </div>

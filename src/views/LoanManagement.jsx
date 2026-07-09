@@ -887,7 +887,15 @@ export default function LoanManagement() {
     if ((r.status || '') === 'Adversed' && filters.status !== 'Adversed') return false;
     if (filters.year !== 'All' && ry !== filters.year) return false;
     if (filters.month !== 'All' && rm !== filters.month) return false;
-    if (filters.status !== 'All' && filters.status !== 'Archived' && (r.status || '') !== filters.status) return false;
+    if (filters.status !== 'All' && filters.status !== 'Archived') {
+      // Funded matches on stage OR status because historical loans
+      // (marked funded via stage) sometimes never had a status field
+      // set. Without this, picking the Funded filter turns up an empty
+      // list even though loans exist.
+      if (filters.status === 'Funded') {
+        if (r.stage !== 'funded' && (r.status || '') !== 'Funded') return false;
+      } else if ((r.status || '') !== filters.status) return false;
+    }
     if (filters.lo !== 'All' && r.lo !== filters.lo) return false;
     if (filters.type !== 'All' && r.type !== filters.type) return false;
     if (filters.saleType !== 'All' && r.saleType !== filters.saleType) return false;

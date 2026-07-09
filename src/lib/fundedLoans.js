@@ -1,5 +1,6 @@
 import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
+import { getProfile } from './clientProfiles.js';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -46,7 +47,20 @@ export function getAllFunded() {
   const seen = new Set(fromLoans.map((r) => `${(r.name || '').toLowerCase()}|${r.closeDate}`));
   const fromPast = PAST_CLIENTS
     .filter((pc) => !seen.has(`${(pc.name || '').toLowerCase()}|${pc.closeDate}`))
-    .map((pc) => ({ ...pc, _source: 'past' }));
+    .map((pc) => {
+      // Legacy PAST_CLIENTS records can't be edited directly. If the
+      // team has applied name/phone/email corrections via
+      // IdentityEditor they live in client_profiles — surface them
+      // here so the drawer + list show the corrected values without
+      // the seed file ever changing.
+      const profile = getProfile(pc.name);
+      const overrides = profile ? {
+        name: profile.corrected_name || pc.name,
+        phone: profile.corrected_phone || pc.phone || '',
+        email: profile.corrected_email || pc.email || '',
+      } : {};
+      return { ...pc, ...overrides, _source: 'past' };
+    });
 
   return [...fromLoans, ...fromPast];
 }
