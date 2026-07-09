@@ -809,7 +809,7 @@ function ClientCardDrawer({ clientName, onClose }) {
 }
 
 // ─── Workflow Editor drawer ─────────────────────────────────────
-function WorkflowEditorDrawer({ onClose }) {
+export function WorkflowEditorDrawer({ onClose }) {
   const [, force] = useState(0);
   const bump = () => force((n) => n + 1);
   const [activeId, setActiveId] = useState(getWorkflows()[0]?.id || null);
@@ -1100,7 +1100,7 @@ function TaskCard({ task, isDragging, onDragStart, onDragOver, onDrop, onEdit, o
   );
 }
 
-function triggerSummary(t) {
+export function triggerSummary(t) {
   let base;
   if (t.trigger_kind === 'status') {
     const label = t.trigger_label || 'loan status';
