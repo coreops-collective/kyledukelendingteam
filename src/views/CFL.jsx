@@ -1196,6 +1196,12 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
   );
   const [dependsOnTaskId, setDependsOnTaskId] = useState(task.depends_on_task_id || '');
   const [dependsOnOutcome, setDependsOnOutcome] = useState(task.depends_on_outcome || '');
+  // Task type is inferred: a task with decision_options is a decision
+  // point, everything else is a regular task. Toggling in the UI
+  // decides whether we save/clear decision_options on save.
+  const [taskType, setTaskType] = useState(
+    Array.isArray(task.decision_options) && task.decision_options.length > 0 ? 'decision' : 'task'
+  );
 
   // Available loan statuses for status-triggered tasks. Sourced from
   // src/data/stages.js; keeps the picker in lockstep with the actual
@@ -1220,9 +1226,11 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
       email_recipient: emailRecipient === 'none' ? null : emailRecipient,
       email_subject: emailSubject.trim() || null,
       email_body: emailBody.trim() || null,
-      depends_on_task_id: dependsOnTaskId || null,
-      depends_on_outcome: dependsOnTaskId && dependsOnOutcome.trim() ? dependsOnOutcome.trim() : null,
-      decision_options: decisionText.split(',').map((s) => s.trim()).filter(Boolean),
+      depends_on_task_id: taskType === 'task' && dependsOnTaskId ? dependsOnTaskId : null,
+      depends_on_outcome: taskType === 'task' && dependsOnTaskId && dependsOnOutcome.trim() ? dependsOnOutcome.trim() : null,
+      decision_options: taskType === 'decision'
+        ? decisionText.split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
       notes: notes.trim() || null,
     });
     onClose();
@@ -1253,8 +1261,43 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
         </div>
         <div className="drawer-body">
           <div style={sectionStyle}>
-            <label style={labelStyle}>Task</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to happen?" style={{ ...inputStyle, fontSize: 16, fontWeight: 600 }} autoFocus />
+            <label style={labelStyle}>Type</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => setTaskType('task')}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 8,
+                  border: `1px solid ${taskType === 'task' ? '#0A0A0A' : '#d0d0d0'}`,
+                  background: taskType === 'task' ? '#0A0A0A' : '#fff',
+                  color: taskType === 'task' ? '#fff' : '#333',
+                  fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                }}
+              >✅ Task</button>
+              <button
+                type="button"
+                onClick={() => setTaskType('decision')}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 8,
+                  border: `1px solid ${taskType === 'decision' ? '#0d47a1' : '#d0d0d0'}`,
+                  background: taskType === 'decision' ? '#0d47a1' : '#fff',
+                  color: taskType === 'decision' ? '#fff' : '#333',
+                  fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                }}
+              >❓ Decision Point</button>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 11, color: '#666', fontStyle: 'italic' }}>
+              {taskType === 'decision'
+                ? 'A question the LO/LOA/Admin answers. Their answer picks which downstream tasks generate.'
+                : 'A regular action item. Can optionally be gated on an earlier decision point.'}
+            </div>
+          </div>
+
+          <div style={sectionStyle}>
+            <label style={labelStyle}>{taskType === 'decision' ? 'Question' : 'Task'}</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)}
+              placeholder={taskType === 'decision' ? 'What are you asking? e.g. "Approved, denied, or credit repair?"' : 'What needs to happen?'}
+              style={{ ...inputStyle, fontSize: 16, fontWeight: 600 }} autoFocus />
           </div>
 
           <div style={sectionStyle}>
@@ -1440,45 +1483,49 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
                 Task will only generate for clients whose {(CONDITION_FIELDS.find((f) => f.value === conditionField)?.label || conditionField).toLowerCase()} {(CONDITION_OPS.bool.find((o) => o.value === conditionOp)?.label || '').toLowerCase()}.
               </div>
             )}
-          </div>
-
-          <div style={sectionStyle}>
-            <label style={labelStyle}>Decision branches (optional)</label>
-            <input
-              value={decisionText}
-              onChange={(e) => setDecisionText(e.target.value)}
-              placeholder="Approved, Denied, Credit Repair, Scenarios Desk"
-              style={inputStyle}
-            />
-            <div style={{ marginTop: 6, fontSize: 11, color: '#666', fontStyle: 'italic' }}>
-              Comma-separated outcomes. When this task is marked complete, the team picks one — downstream tasks with a matching "Only fire if outcome equals" branch will then generate.
-            </div>
-          </div>
-
-          {(() => {
-            // Only show the "depends on" picker if there are other
-            // tasks in the same workflow that offer decision options.
-            const siblings = (getTasksFor(task.workflow_id) || []).filter(
-              (s) => s.id !== task.id && Array.isArray(s.decision_options) && s.decision_options.length > 0
-            );
-            if (siblings.length === 0 && !dependsOnTaskId) return null;
-            const activeParent = siblings.find((s) => s.id === dependsOnTaskId);
-            return (
-              <div style={sectionStyle}>
-                <label style={labelStyle}>Only generate after (branch dependency, optional)</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <select value={dependsOnTaskId} onChange={(e) => setDependsOnTaskId(e.target.value)} style={inputStyle}>
-                    <option value="">— Not dependent —</option>
-                    {siblings.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
-                  </select>
-                  <select value={dependsOnOutcome} onChange={(e) => setDependsOnOutcome(e.target.value)} disabled={!dependsOnTaskId} style={{ ...inputStyle, opacity: dependsOnTaskId ? 1 : 0.4 }}>
-                    <option value="">— Any outcome —</option>
-                    {(activeParent?.decision_options || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
+            {taskType === 'task' && (() => {
+              // Decision-point picker: pull every decision-type task in
+              // the same workflow (task with a non-empty decision_options
+              // array) so this task can be gated on one of their answers.
+              const decisions = (getTasksFor(task.workflow_id) || []).filter(
+                (s) => s.id !== task.id && Array.isArray(s.decision_options) && s.decision_options.length > 0
+              );
+              if (decisions.length === 0 && !dependsOnTaskId) return null;
+              const active = decisions.find((d) => d.id === dependsOnTaskId);
+              return (
+                <div style={{ marginTop: 10, padding: 10, background: '#f5f9ff', border: '1px solid #cfe4f5', borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0d47a1', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8 }}>
+                    …and only after a decision point answered
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <select value={dependsOnTaskId} onChange={(e) => setDependsOnTaskId(e.target.value)} style={inputStyle}>
+                      <option value="">— No decision dependency —</option>
+                      {decisions.map((d) => <option key={d.id} value={d.id}>{d.title || '(unnamed decision)'}</option>)}
+                    </select>
+                    <select value={dependsOnOutcome} onChange={(e) => setDependsOnOutcome(e.target.value)} disabled={!dependsOnTaskId} style={{ ...inputStyle, opacity: dependsOnTaskId ? 1 : 0.4 }}>
+                      <option value="">— Any answer —</option>
+                      {(active?.decision_options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
                 </div>
+              );
+            })()}
+          </div>
+
+          {taskType === 'decision' && (
+            <div style={sectionStyle}>
+              <label style={labelStyle}>Answers</label>
+              <input
+                value={decisionText}
+                onChange={(e) => setDecisionText(e.target.value)}
+                placeholder="Approved, Denied, Credit Repair, Scenarios Desk"
+                style={inputStyle}
+              />
+              <div style={{ marginTop: 6, fontSize: 11, color: '#666', fontStyle: 'italic' }}>
+                Comma-separated. When this question is marked answered on the task list, the team picks one — only the tasks configured to depend on that answer will generate.
               </div>
-            );
-          })()}
+            </div>
+          )}
 
           <div style={sectionStyle}>
             <label style={labelStyle}>Notes / script (optional)</label>
