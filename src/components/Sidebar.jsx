@@ -15,7 +15,7 @@ const NAV_GROUPS = [
   { label: 'Process', className: '', items: [
     { view: 'workflows', path: '/workflows', text: 'Workflows & SOPs' },
     { view: 'clientforlife', path: '/clientforlife', text: 'Client for Life' },
-    { view: 'tasks', path: '/tasks', text: 'Tasks & Projects' },
+    { view: 'tasks', path: '/tasks', text: 'Pipeline Tasks' },
   ]},
   { label: 'Partners', className: '', items: [
     { view: 'partners', path: '/partners', text: 'Realtor Partners' },

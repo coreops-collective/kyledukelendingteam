@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
+import { LOS_STAGES, PRE_CONTRACT_STAGES } from '../data/stages.js';
 import {
   loadClientDates, getAllDates, upsertClientDate, deleteClientDate,
   parseLocalDate, allKnownDateLabels, collectClientNames,
@@ -144,8 +145,29 @@ export default function CFL() {
     // Status-triggered tasks iterate LOANS by current status (not by
     // client-with-anchor) so they're generated in a separate pass.
     items.push(...generateStatusTasks(LOANS));
-    items.sort((a, b) => a.due_date - b.due_date);
-    return items;
+
+    // Client for Life is the RELATIONSHIP surface — post-funded
+    // outreach (Closing Anniversary cards, birthdays, review asks).
+    // Pre-funded transactional tasks belong on the Pipeline Tasks
+    // tab (new leads, follow-ups, active-shopper prep). Filter out
+    // anything whose underlying loan is still working its way through
+    // the pipeline; keep funded loans + past clients + anyone with
+    // only a client_dates entry (no loan on file).
+    const funded = items.filter((it) => {
+      const key = (it.client_name || '').trim().toLowerCase();
+      const record = seenSource.get(key);
+      if (!record) return true; // dates-only entry — always CFL
+      const stage = record.stage;
+      const status = record.status || '';
+      const isPreFunded =
+        PRE_CONTRACT_STAGES.includes(stage) ||
+        LOS_STAGES.includes(stage) ||
+        (stage && stage !== 'funded' && status !== 'Funded');
+      return !isPreFunded;
+    });
+
+    funded.sort((a, b) => a.due_date - b.due_date);
+    return funded;
   }, [dataVersion]);
 
   const filtered = generated.filter((it) => {

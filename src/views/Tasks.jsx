@@ -7,9 +7,20 @@ import {
   newTrackerTaskId,
 } from '../data/tasks.js';
 import { USERS } from '../data/users.js';
+import { LOANS } from '../data/loans.js';
+import { PRE_CONTRACT_STAGES } from '../data/stages.js';
+import {
+  loadWorkflows, generateStatusTasks, markTaskCompleted, unmarkTaskCompleted, ROLE_LABELS,
+} from '../lib/workflows.js';
+import { loadClientProfiles } from '../lib/clientProfiles.js';
 
 const TASKS_KEY = 'kdt-tasks-v1';
 const PROJECTS_KEY = 'kdt-projects-v1';
+
+const fmtIsoToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 function loadStored(key, fallback) {
   try {
@@ -30,6 +41,44 @@ function loadStored(key, fallback) {
 export default function Tasks() {
   const [tasks, setTasks] = useState(() => loadStored(TASKS_KEY, TASKS_SEED));
   const [projects, setProjects] = useState(() => loadStored(PROJECTS_KEY, PROJECTS_SEED));
+  const [, forceWorkflow] = useState(0);
+  const bumpWorkflow = () => forceWorkflow((n) => n + 1);
+
+  // Load workflow templates + tasks + completions + client profiles
+  // once on mount. All the reads below (generateStatusTasks etc.)
+  // consult the in-memory caches these load functions populate.
+  useEffect(() => {
+    loadWorkflows().then(bumpWorkflow);
+    loadClientProfiles().then(bumpWorkflow);
+    const on = () => bumpWorkflow();
+    ['kdt-workflows-changed', 'kdt-workflows-loaded',
+     'kdt-client-profiles-changed', 'kdt-client-profiles-loaded'].forEach((e) => window.addEventListener(e, on));
+    return () => {
+      ['kdt-workflows-changed', 'kdt-workflows-loaded',
+       'kdt-client-profiles-changed', 'kdt-client-profiles-loaded'].forEach((e) => window.removeEventListener(e, on));
+    };
+  }, []);
+
+  // Workflow-generated tasks for loans in pre-contract stages
+  // (New Lead / Applied / HOT PA / REFI Watch). Under Contract →
+  // Approved is deferred to a future Loan Management task area, so
+  // it's intentionally excluded here.
+  const pipelineTasks = useMemo(() => {
+    const preContractLoans = LOANS.filter((l) =>
+      !l.archived && PRE_CONTRACT_STAGES.includes(l.stage)
+    );
+    const generated = generateStatusTasks(preContractLoans);
+    // Sort by due date so overdue floats to the top.
+    generated.sort((a, b) => a.due_date - b.due_date);
+    return generated;
+  }, [tasks.length, forceWorkflow]); // regenerate on manual-task changes too
+
+  const toggleWorkflowTask = (item) => {
+    const iso = fmtIsoToday();
+    if (item.completed) unmarkTaskCompleted(item.task.id, item.client_name, iso);
+    else markTaskCompleted(item.task.id, item.client_name, iso);
+    bumpWorkflow();
+  };
 
   // Persist on every change. JSON-stringifying ~200 small task objects
   // is cheap; not worth debouncing.
@@ -107,6 +156,8 @@ export default function Tasks() {
 
   return (
     <>
+      <PipelineTasksPanel items={pipelineTasks} onToggle={toggleWorkflowTask} />
+
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
         <div>
           <div style={{fontFamily:"'Oswald',sans-serif",fontSize:13,fontWeight:700,textTransform:'uppercase',letterSpacing:'.8px'}}>
@@ -293,6 +344,61 @@ function TaskDrawer({ task, projects, onClose, onSave, onDelete }) {
         </div>
       </aside>
     </>
+  );
+}
+
+// Pipeline Tasks panel — workflow-generated tasks whose underlying
+// loan sits in a pre-contract stage (New Lead / Applied / HOT PA /
+// REFI Watch). Renders above the manual projects/tasks tracker so
+// the LO / LOA sees "what the system wants me to do today" first,
+// then their own todos.
+function PipelineTasksPanel({ items, onToggle }) {
+  const roleColors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
+  return (
+    <div className="section-card" style={{ marginBottom: 20 }}>
+      <div className="section-header" style={{ background: '#0d47a1', color: '#fff' }}>
+        <div className="section-title" style={{ color: '#fff' }}>Pipeline Tasks · from your workflows</div>
+        <div className="section-sub" style={{ color: '#cfe4f5' }}>
+          Auto-generated for every loan in New Lead / Applied / HOT PA / REFI Watch. Under Contract onwards will move to Loan Management once that view lands.
+        </div>
+      </div>
+      <div className="section-body" style={{ padding: 0 }}>
+        {items.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 12 }}>
+            No pipeline tasks today. Add a workflow with a status trigger (New Lead, Applied, HOT PA, or REFI Watch) on Workflows &amp; SOPs.
+          </div>
+        ) : (
+          items.map((it, i) => {
+            const role = it.task.role || 'lo';
+            return (
+              <div key={it.id} style={{
+                display: 'grid', gridTemplateColumns: '30px 1fr 90px', gap: 10,
+                padding: '10px 18px', borderTop: i === 0 ? 'none' : '1px solid #f1f1f1',
+                alignItems: 'center', background: it.completed ? '#fafafa' : '#fff',
+              }}>
+                <input type="checkbox" checked={it.completed} onChange={() => onToggle(it)}
+                  style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: it.completed ? '#aaa' : '#222', textDecoration: it.completed ? 'line-through' : 'none' }}>
+                    {it.task.title}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                    <strong style={{ color: '#0d47a1' }}>{it.client_name}</strong>
+                    {' · '}{it.workflow.name}
+                    {it.task.notes ? ` · ${it.task.notes}` : ''}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: roleColors[role] || '#555', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                    {ROLE_LABELS[role] || role}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
   );
 }
 

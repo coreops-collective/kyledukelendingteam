@@ -37,7 +37,7 @@ const PAGE_META = {
   '/ratelocks':     { title: 'Rate Locks' },
   '/workflows':     { title: 'Workflows & SOPs' },
   '/clientforlife': { title: 'Client for Life' },
-  '/tasks':         { title: 'Tasks & Projects' },
+  '/tasks':         { title: 'Pipeline Tasks' },
   '/partners':      { title: 'Realtor Partners' },
   '/team':          { title: 'Team Members' },
   '/performance':   { title: 'Performance & Goals' },
