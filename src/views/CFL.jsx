@@ -369,9 +369,27 @@ function TaskRow({ item, today, first, onOpenClient }) {
   const onToggle = () => {
     const due = item.due_date;
     const iso = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
-    if (item.completed) unmarkTaskCompleted(item.task.id, item.client_name, iso);
-    else markTaskCompleted(item.task.id, item.client_name, iso);
+    if (item.completed) {
+      unmarkTaskCompleted(item.task.id, item.client_name, iso);
+      return;
+    }
+    // Decision-branch tasks prompt for which outcome to record so the
+    // dependent branches downstream fire on the right path.
+    const options = Array.isArray(item.task.decision_options) ? item.task.decision_options : null;
+    let outcome = null;
+    if (options && options.length > 0) {
+      const list = options.map((o, i) => `${i + 1}. ${o}`).join('\n');
+      const raw = window.prompt(`Which outcome for "${item.task.title}"?\n\n${list}`);
+      if (!raw) return; // cancel
+      const idx = parseInt(raw.trim(), 10);
+      outcome = Number.isFinite(idx) && idx >= 1 && idx <= options.length
+        ? options[idx - 1]
+        : raw.trim();
+    }
+    markTaskCompleted(item.task.id, item.client_name, iso, null, outcome);
   };
+  const loan = LOANS.find((l) => (l.borrower || '').trim().toLowerCase() === (item.client_name || '').trim().toLowerCase());
+  const mailto = item.task.email_subject ? composeMailto(item.task, item.client_name, loan) : null;
   // Two dates per row now: the due date (when the task should be
   // done) and the underlying trigger date (the closing anniversary /
   // birthday / lease end / etc. that the task is anchored to).
@@ -409,24 +427,22 @@ function TaskRow({ item, today, first, onOpenClient }) {
           </div>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: roleColors[role] || '#555', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>
           {ROLE_LABELS[role] || role}
         </span>
-        {item.task.email_subject && (
+        {mailto && (
           <a
-            href={(() => {
-              const loan = LOANS.find((l) => (l.borrower || '').trim().toLowerCase() === (item.client_name || '').trim().toLowerCase());
-              return composeMailto(item.task, item.client_name, loan) || '#';
-            })()}
+            href={mailto}
             onClick={(e) => e.stopPropagation()}
-            title="Compose email from template"
+            title="Open in your Outlook/mail client with the template + recipient + merge tags applied"
             style={{
-              fontSize: 10, fontWeight: 700, color: '#fff', background: '#0d47a1',
-              padding: '3px 8px', borderRadius: 4, textDecoration: 'none',
-              textTransform: 'uppercase', letterSpacing: '.5px',
+              fontSize: 11, fontWeight: 700, color: '#fff', background: '#0d47a1',
+              padding: '6px 12px', borderRadius: 6, textDecoration: 'none',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              boxShadow: '0 1px 3px rgba(13,71,161,.3)',
             }}
-          >📧 Email</a>
+          >📧 Send Email Now</a>
         )}
       </div>
       <div style={{ textAlign: 'right', fontSize: 11, fontWeight: days < 0 ? 700 : 400, color: days < 0 ? '#c62828' : days === 0 ? '#e65100' : '#888' }}>
@@ -1173,6 +1189,13 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
   const [emailRecipient, setEmailRecipient] = useState(task.email_recipient || 'none');
   const [emailSubject, setEmailSubject] = useState(task.email_subject || '');
   const [emailBody, setEmailBody] = useState(task.email_body || '');
+  const [triggerUnit, setTriggerUnit] = useState(task.trigger_unit || 'days');
+  const [calendarDate, setCalendarDate] = useState(task.trigger_calendar_date || '');
+  const [decisionText, setDecisionText] = useState(
+    Array.isArray(task.decision_options) ? task.decision_options.join(', ') : ''
+  );
+  const [dependsOnTaskId, setDependsOnTaskId] = useState(task.depends_on_task_id || '');
+  const [dependsOnOutcome, setDependsOnOutcome] = useState(task.depends_on_outcome || '');
 
   // Available loan statuses for status-triggered tasks. Sourced from
   // src/data/stages.js; keeps the picker in lockstep with the actual
@@ -1188,6 +1211,8 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
       trigger_kind: triggerKind,
       trigger_label: triggerLabel,
       trigger_days: triggerKind === 'status' ? 0 : effectiveDays,
+      trigger_unit: triggerKind === 'status' ? 'days' : triggerUnit,
+      trigger_calendar_date: triggerKind === 'date' && calendarDate.trim() ? calendarDate.trim() : null,
       trigger_recurring: triggerKind === 'date' ? recurring : false,
       repeat_interval: triggerKind === 'status' && repeatInterval !== 'none' ? repeatInterval : null,
       condition_field: conditionField === 'none' ? null : conditionField,
@@ -1195,6 +1220,9 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
       email_recipient: emailRecipient === 'none' ? null : emailRecipient,
       email_subject: emailSubject.trim() || null,
       email_body: emailBody.trim() || null,
+      depends_on_task_id: dependsOnTaskId || null,
+      depends_on_outcome: dependsOnTaskId && dependsOnOutcome.trim() ? dependsOnOutcome.trim() : null,
+      decision_options: decisionText.split(',').map((s) => s.trim()).filter(Boolean),
       notes: notes.trim() || null,
     });
     onClose();
@@ -1310,7 +1338,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
           ) : (
           <div style={sectionStyle}>
             <label style={labelStyle}>When</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '110px 90px 1fr', gap: 8, alignItems: 'stretch' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '110px 80px 90px 1fr', gap: 8, alignItems: 'stretch' }}>
               <select value={mode} onChange={(e) => setMode(e.target.value)} style={inputStyle}>
                 <option value="on">On the day</option>
                 <option value="before">Before</option>
@@ -1322,9 +1350,32 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
                 onChange={(e) => setMagnitude(Math.max(0, parseInt(e.target.value, 10) || 0))}
                 style={{ ...inputStyle, textAlign: 'center', opacity: mode === 'on' ? 0.4 : 1 }}
               />
+              <select value={triggerUnit} disabled={mode === 'on'} onChange={(e) => setTriggerUnit(e.target.value)} style={{ ...inputStyle, opacity: mode === 'on' ? 0.4 : 1 }}>
+                <option value="days">days</option>
+                <option value="weeks">weeks</option>
+                <option value="months">months</option>
+                <option value="quarters">quarters</option>
+                <option value="years">years</option>
+              </select>
               <select value={triggerLabel} onChange={(e) => setTriggerLabel(e.target.value)} style={inputStyle}>
                 {triggerLabels.map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+              <div>
+                <label style={{ ...labelStyle, marginBottom: 2 }}>Or fire on a specific calendar day (optional)</label>
+                <input
+                  type="text"
+                  value={calendarDate}
+                  onChange={(e) => setCalendarDate(e.target.value)}
+                  placeholder="12-25 for Christmas · 07-04 for July 4th"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ fontSize: 11, color: '#888', paddingTop: 20, fontStyle: 'italic' }}>
+                Overrides the client-anchor above. Every client with this workflow active gets a task on that same date each year.
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
               {[
@@ -1390,6 +1441,44 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
               </div>
             )}
           </div>
+
+          <div style={sectionStyle}>
+            <label style={labelStyle}>Decision branches (optional)</label>
+            <input
+              value={decisionText}
+              onChange={(e) => setDecisionText(e.target.value)}
+              placeholder="Approved, Denied, Credit Repair, Scenarios Desk"
+              style={inputStyle}
+            />
+            <div style={{ marginTop: 6, fontSize: 11, color: '#666', fontStyle: 'italic' }}>
+              Comma-separated outcomes. When this task is marked complete, the team picks one — downstream tasks with a matching "Only fire if outcome equals" branch will then generate.
+            </div>
+          </div>
+
+          {(() => {
+            // Only show the "depends on" picker if there are other
+            // tasks in the same workflow that offer decision options.
+            const siblings = (getTasksFor(task.workflow_id) || []).filter(
+              (s) => s.id !== task.id && Array.isArray(s.decision_options) && s.decision_options.length > 0
+            );
+            if (siblings.length === 0 && !dependsOnTaskId) return null;
+            const activeParent = siblings.find((s) => s.id === dependsOnTaskId);
+            return (
+              <div style={sectionStyle}>
+                <label style={labelStyle}>Only generate after (branch dependency, optional)</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <select value={dependsOnTaskId} onChange={(e) => setDependsOnTaskId(e.target.value)} style={inputStyle}>
+                    <option value="">— Not dependent —</option>
+                    {siblings.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+                  </select>
+                  <select value={dependsOnOutcome} onChange={(e) => setDependsOnOutcome(e.target.value)} disabled={!dependsOnTaskId} style={{ ...inputStyle, opacity: dependsOnTaskId ? 1 : 0.4 }}>
+                    <option value="">— Any outcome —</option>
+                    {(activeParent?.decision_options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              </div>
+            );
+          })()}
 
           <div style={sectionStyle}>
             <label style={labelStyle}>Notes / script (optional)</label>

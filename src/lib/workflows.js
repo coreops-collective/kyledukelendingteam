@@ -126,13 +126,20 @@ export async function createTask(workflowId, task) {
     trigger_kind: task.trigger_kind === 'status' ? 'status' : 'date',
     trigger_label: task.trigger_label || TRIGGER_BUILTIN_CLOSING,
     trigger_days: Number.isFinite(+task.trigger_days) ? +task.trigger_days : 0,
+    trigger_unit: TRIGGER_UNITS.includes(task.trigger_unit) ? task.trigger_unit : 'days',
+    trigger_calendar_date: task.trigger_calendar_date || null,
     trigger_recurring: !!task.trigger_recurring,
+    recur_every_n: Number.isFinite(+task.recur_every_n) && +task.recur_every_n > 0 ? +task.recur_every_n : null,
+    recur_every_unit: TRIGGER_UNITS.includes(task.recur_every_unit) ? task.recur_every_unit : null,
     repeat_interval: ['daily', 'weekly', 'monthly'].includes(task.repeat_interval) ? task.repeat_interval : null,
     condition_field: task.condition_field || null,
     condition_op: task.condition_op || null,
     email_recipient: ['client', 'co_borrower', 'agent'].includes(task.email_recipient) ? task.email_recipient : null,
     email_subject: task.email_subject || null,
     email_body: task.email_body || null,
+    depends_on_task_id: task.depends_on_task_id || null,
+    depends_on_outcome: task.depends_on_outcome || null,
+    decision_options: Array.isArray(task.decision_options) && task.decision_options.length > 0 ? task.decision_options : null,
     notes: task.notes || null,
     position: list.length,
   };
@@ -164,7 +171,7 @@ export async function deleteTask(id) {
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
 
-export async function markTaskCompleted(taskId, clientName, dueDate, completedBy) {
+export async function markTaskCompleted(taskId, clientName, dueDate, completedBy, outcome) {
   const k = cKey(taskId, clientName, dueDate);
   const dueIso = dueDate ? toIsoDate(dueDate) : null;
   const { data, error } = await supabase.from('task_completions').insert({
@@ -172,6 +179,7 @@ export async function markTaskCompleted(taskId, clientName, dueDate, completedBy
     client_name: clientName,
     due_date: dueIso,
     completed_by: completedBy || null,
+    outcome: outcome || null,
   }).select().single();
   if (error) { console.warn('[workflows] markCompleted:', error.message); return; }
   COMPLETIONS.set(k, data);
@@ -213,6 +221,24 @@ function matchesCondition(task, profile) {
     case 'is_false': return !raw;
     default: return true;
   }
+}
+
+// Decision-branch dependency check. A task with depends_on_task_id
+// only generates once the upstream task has been completed for the
+// same client. If depends_on_outcome is set too, the completion
+// must have that specific outcome (e.g. "Approved" vs "Denied") for
+// the branch to activate.
+function satisfiesDependency(task, clientName) {
+  const parentId = task.depends_on_task_id;
+  if (!parentId) return true;
+  const wanted = (task.depends_on_outcome || '').trim();
+  const nameKey = (clientName || '').trim().toLowerCase();
+  for (const [k, c] of COMPLETIONS.entries()) {
+    if (!k.startsWith(`${parentId}||${nameKey}||`)) continue;
+    if (!wanted) return true; // any completion of the parent unlocks
+    if ((c.outcome || '').trim().toLowerCase() === wanted.toLowerCase()) return true;
+  }
+  return false;
 }
 
 // Resolve a workflow task's email template into a real mailto: URL for
@@ -266,6 +292,40 @@ function toIsoDate(d) {
   return String(d);
 }
 
+export const TRIGGER_UNITS = ['days', 'weeks', 'months', 'quarters', 'years'];
+
+// Add N units to a Date. Returns a fresh Date. Handles month/quarter/
+// year rollovers via native Date arithmetic.
+function addUnits(date, n, unit) {
+  const d = new Date(date);
+  const amount = n || 0;
+  switch (unit) {
+    case 'weeks':    d.setDate(d.getDate() + amount * 7); break;
+    case 'months':   d.setMonth(d.getMonth() + amount); break;
+    case 'quarters': d.setMonth(d.getMonth() + amount * 3); break;
+    case 'years':    d.setFullYear(d.getFullYear() + amount); break;
+    case 'days':
+    default:         d.setDate(d.getDate() + amount);
+  }
+  return d;
+}
+
+// Parse a workflow_task's calendar-day trigger. Accepts 'MM-DD' or
+// 'YYYY-MM-DD'. Returns a Date for the NEXT occurrence relative to
+// today. Null if malformed.
+function nextCalendarOccurrence(str) {
+  if (!str) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const md = String(str).trim().match(/^(\d{4}-)?(\d{1,2})-(\d{1,2})$/);
+  if (!md) return null;
+  const month = Number(md[2]) - 1;
+  const day = Number(md[3]);
+  const y = today.getFullYear();
+  const candidate = new Date(y, month, day);
+  if (candidate < today) return new Date(y + 1, month, day);
+  return candidate;
+}
+
 // Core scheduler: given a client (name + a Map of label -> anchor Date)
 // produce a list of concrete tasks (one per workflow_task that resolves
 // against the available anchor dates).
@@ -288,35 +348,39 @@ export function generateTasksForClient(clientName, anchorDates) {
     for (const t of tasks) {
       if (!matchesCondition(t, profile)) continue;
       // Status-triggered tasks are handled by a separate generator
-      // pass (generateStatusTasks) — it iterates loans by status
-      // instead of clients by date. Skip here so we don't double-fire.
+      // pass (generateStatusTasks). Skip here so we don't double-fire.
       if (t.trigger_kind === 'status') continue;
-      const anchor = anchorDates.get((t.trigger_label || '').toLowerCase());
+      // Decision-branch dependencies: skip tasks whose upstream
+      // decision hasn't been made yet, or whose recorded outcome
+      // doesn't match this task's branch.
+      if (!satisfiesDependency(t, clientName)) continue;
+
+      // Resolve the anchor. Calendar-day triggers take a fixed
+      // month/day irrespective of the client. Otherwise pull from
+      // the client's anchor map (Birthday, Closing, etc.).
+      let anchor;
+      if (t.trigger_calendar_date) {
+        anchor = nextCalendarOccurrence(t.trigger_calendar_date);
+      } else {
+        anchor = anchorDates.get((t.trigger_label || '').toLowerCase());
+      }
       if (!anchor) continue;
+
+      const unit = TRIGGER_UNITS.includes(t.trigger_unit) ? t.trigger_unit : 'days';
       let due;
-      // `anchor_occurrence` is the actual instance of the anchor date
-      // this generated task is anchored to (e.g. "Closing Anniversary
-      // on May 21, 2027" — the real trigger date the team probably
-      // cares about seeing on the row). For one-time triggers it's
-      // just the original anchor; for yearly recurrence it's the
-      // computed next occurrence.
       let anchorOccurrence;
       if (t.trigger_recurring) {
-        // Yearly anchor — find the next occurrence of (month, day)
-        // STRICTLY AFTER the anchor itself. Critical for things like
-        // "Closing Anniversary": a loan that just closed should NOT
-        // immediately generate a "1 year anniversary" task this same
-        // year — the first anniversary is next year. Old birthdays /
-        // old anniversaries (anchor years in the past) still resolve
-        // to the next upcoming occurrence as before.
+        // Yearly recurrence — find next month/day occurrence AFTER
+        // the original anchor year. Preserves "first anniversary is
+        // next year, not this year" behavior.
         const minYear = Math.max(today.getFullYear(), anchor.getFullYear() + 1);
         const next = new Date(minYear, anchor.getMonth(), anchor.getDate());
         while (next < today) next.setFullYear(next.getFullYear() + 1);
         anchorOccurrence = new Date(next.getFullYear(), next.getMonth(), next.getDate());
-        due = new Date(next.getFullYear(), next.getMonth(), next.getDate() + (t.trigger_days || 0));
+        due = addUnits(anchorOccurrence, t.trigger_days || 0, unit);
       } else {
         anchorOccurrence = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
-        due = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + (t.trigger_days || 0));
+        due = addUnits(anchorOccurrence, t.trigger_days || 0, unit);
       }
       const completed = isCompleted(t.id, clientName, toIsoDate(due));
       out.push({
