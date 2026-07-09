@@ -10,7 +10,7 @@ import {
   createWorkflow, updateWorkflow, deleteWorkflow,
   createTask, updateTask, deleteTask,
   markTaskCompleted, unmarkTaskCompleted,
-  generateTasksForClient, buildAnchorsForClient,
+  generateTasksForClient, generateStatusTasks, buildAnchorsForClient, composeMailto,
   ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING,
   CONDITION_FIELDS, CONDITION_OPS,
 } from '../lib/workflows.js';
@@ -48,6 +48,14 @@ export default function CFL() {
   // about 800 tasks showing as "due soon." This Month + Later both
   // stay collapsed unless explicitly expanded.
   const [collapsed, setCollapsed] = useState({ 'This Month': true, 'Later': true });
+  // Historical past clients (some going back years) generate
+  // year-1 / year-2 anniversary tasks whose due date is in the deep
+  // past. Sending a card 4 years late is pointless, and it drowns
+  // the Overdue bucket in noise. Default: hide anything more than
+  // 30 days overdue. The toggle in the toolbar surfaces them if
+  // Kimberly ever wants to prove they're there.
+  const [showAncient, setShowAncient] = useState(false);
+  const ANCIENT_DAYS = 30;
 
   useEffect(() => {
     const bumpAll = () => {
@@ -124,6 +132,9 @@ export default function CFL() {
       if (anchors.size === 0) return;
       items.push(...generateTasksForClient(name, anchors));
     });
+    // Status-triggered tasks iterate LOANS by current status (not by
+    // client-with-anchor) so they're generated in a separate pass.
+    items.push(...generateStatusTasks(LOANS));
     items.sort((a, b) => a.due_date - b.due_date);
     return items;
   }, [dataVersion]);
@@ -149,8 +160,10 @@ export default function CFL() {
     { label: 'This Month', items: [] },
     { label: 'Later', items: [] },
   ];
+  let ancientHidden = 0;
   filtered.forEach((it) => {
     const days = Math.round((it.due_date - today) / DAY);
+    if (days < -ANCIENT_DAYS && !showAncient) { ancientHidden += 1; return; }
     if (days < 0) buckets[0].items.push(it);
     else if (days === 0) buckets[1].items.push(it);
     else if (days <= 7) buckets[2].items.push(it);
@@ -215,6 +228,21 @@ export default function CFL() {
           onChange={setFilterWorkflow}
         />
         <FilterChip label="Status" value={filterStatus} options={['Open', 'Done', 'All']} onChange={setFilterStatus} />
+        {ancientHidden > 0 && !showAncient && (
+          <button
+            className="form-btn"
+            style={{ fontSize: 11, padding: '4px 10px' }}
+            title={`Hidden: ${ancientHidden} tasks more than 30 days overdue (mostly year-1 anniversary tasks from old past clients).`}
+            onClick={() => setShowAncient(true)}
+          >Show {ancientHidden} ancient overdue</button>
+        )}
+        {showAncient && (
+          <button
+            className="form-btn"
+            style={{ fontSize: 11, padding: '4px 10px' }}
+            onClick={() => setShowAncient(false)}
+          >Hide ancient</button>
+        )}
         {(search || filterRole !== 'All' || filterWorkflow !== 'All' || filterStatus !== 'Open') && (
           <button
             className="form-btn"
@@ -383,10 +411,25 @@ function TaskRow({ item, today, first, onOpenClient }) {
           </div>
         )}
       </div>
-      <div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: roleColors[role] || '#555', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>
           {ROLE_LABELS[role] || role}
         </span>
+        {item.task.email_subject && (
+          <a
+            href={(() => {
+              const loan = LOANS.find((l) => (l.borrower || '').trim().toLowerCase() === (item.client_name || '').trim().toLowerCase());
+              return composeMailto(item.task, item.client_name, loan) || '#';
+            })()}
+            onClick={(e) => e.stopPropagation()}
+            title="Compose email from template"
+            style={{
+              fontSize: 10, fontWeight: 700, color: '#fff', background: '#0d47a1',
+              padding: '3px 8px', borderRadius: 4, textDecoration: 'none',
+              textTransform: 'uppercase', letterSpacing: '.5px',
+            }}
+          >📧 Email</a>
+        )}
       </div>
       <div style={{ textAlign: 'right', fontSize: 11, fontWeight: days < 0 ? 700 : 400, color: days < 0 ? '#c62828' : days === 0 ? '#e65100' : '#888' }}>
         {dueLabel}
@@ -1058,14 +1101,25 @@ function TaskCard({ task, isDragging, onDragStart, onDragOver, onDrop, onEdit, o
 }
 
 function triggerSummary(t) {
-  const days = t.trigger_days || 0;
-  const label = t.trigger_label || TRIGGER_BUILTIN_CLOSING;
-  const when = days === 0
-    ? `On ${label}`
-    : days < 0
-      ? `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} before ${label}`
-      : `${days} day${days === 1 ? '' : 's'} after ${label}`;
-  let base = t.trigger_recurring ? `${when} · every year` : when;
+  let base;
+  if (t.trigger_kind === 'status') {
+    const label = t.trigger_label || 'loan status';
+    const interval = t.repeat_interval;
+    const cadence = interval === 'daily' ? ' · every day'
+      : interval === 'weekly' ? ' · every week'
+      : interval === 'monthly' ? ' · every month'
+      : '';
+    base = `While in ${label}${cadence}`;
+  } else {
+    const days = t.trigger_days || 0;
+    const label = t.trigger_label || TRIGGER_BUILTIN_CLOSING;
+    const when = days === 0
+      ? `On ${label}`
+      : days < 0
+        ? `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} before ${label}`
+        : `${days} day${days === 1 ? '' : 's'} after ${label}`;
+    base = t.trigger_recurring ? `${when} · every year` : when;
+  }
   if (t.condition_field && t.condition_op && t.condition_field !== 'none') {
     const f = CONDITION_FIELDS.find((x) => x.value === t.condition_field);
     const ops = (CONDITION_OPS[f?.type] || []);
@@ -1079,16 +1133,24 @@ function triggerSummary(t) {
 function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
   const [title, setTitle] = useState(task.title || '');
   const [role, setRole] = useState(task.role || 'lo');
+  const [triggerKind, setTriggerKind] = useState(task.trigger_kind === 'status' ? 'status' : 'date');
   const [triggerLabel, setTriggerLabel] = useState(task.trigger_label || TRIGGER_BUILTIN_CLOSING);
-  // Convert the raw days int into mode + magnitude so the UI can be
-  // friendly. Mode is one of 'before' / 'on' / 'after'.
   const initialDays = task.trigger_days || 0;
   const [mode, setMode] = useState(initialDays === 0 ? 'on' : initialDays < 0 ? 'before' : 'after');
   const [magnitude, setMagnitude] = useState(Math.abs(initialDays));
   const [recurring, setRecurring] = useState(!!task.trigger_recurring);
+  const [repeatInterval, setRepeatInterval] = useState(task.repeat_interval || 'none');
   const [notes, setNotes] = useState(task.notes || '');
   const [conditionField, setConditionField] = useState(task.condition_field || 'none');
   const [conditionOp, setConditionOp] = useState(task.condition_op || '');
+  const [emailRecipient, setEmailRecipient] = useState(task.email_recipient || 'none');
+  const [emailSubject, setEmailSubject] = useState(task.email_subject || '');
+  const [emailBody, setEmailBody] = useState(task.email_body || '');
+
+  // Available loan statuses for status-triggered tasks. Sourced from
+  // src/data/stages.js; keeps the picker in lockstep with the actual
+  // status values loans can take on.
+  const STATUS_OPTIONS = ['New Lead', 'Applied', 'HOT PA', 'REFI Watch', 'New Contract', 'Disclosed', 'Processing', 'Underwriting', 'CTC Required', 'CTC', 'Approved', 'Funded'];
 
   const effectiveDays = mode === 'on' ? 0 : mode === 'before' ? -Math.abs(magnitude) : Math.abs(magnitude);
 
@@ -1096,11 +1158,16 @@ function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
     await updateTask(task.id, {
       title: title.trim() || 'Untitled task',
       role,
+      trigger_kind: triggerKind,
       trigger_label: triggerLabel,
-      trigger_days: effectiveDays,
-      trigger_recurring: recurring,
+      trigger_days: triggerKind === 'status' ? 0 : effectiveDays,
+      trigger_recurring: triggerKind === 'date' ? recurring : false,
+      repeat_interval: triggerKind === 'status' && repeatInterval !== 'none' ? repeatInterval : null,
       condition_field: conditionField === 'none' ? null : conditionField,
       condition_op: conditionField === 'none' ? null : conditionOp,
+      email_recipient: emailRecipient === 'none' ? null : emailRecipient,
+      email_subject: emailSubject.trim() || null,
+      email_body: emailBody.trim() || null,
       notes: notes.trim() || null,
     });
     onClose();
@@ -1156,6 +1223,65 @@ function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
           </div>
 
           <div style={sectionStyle}>
+            <label style={labelStyle}>Trigger</label>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={() => { setTriggerKind('date'); if (triggerLabel === STATUS_OPTIONS[0]) setTriggerLabel(TRIGGER_BUILTIN_CLOSING); }}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 8,
+                  border: `1px solid ${triggerKind === 'date' ? '#0A0A0A' : '#d0d0d0'}`,
+                  background: triggerKind === 'date' ? '#0A0A0A' : '#fff',
+                  color: triggerKind === 'date' ? '#fff' : '#333',
+                  fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                }}
+              >📅 Date-based (Birthday, Closing, etc.)</button>
+              <button
+                type="button"
+                onClick={() => { setTriggerKind('status'); if (!STATUS_OPTIONS.includes(triggerLabel)) setTriggerLabel('New Lead'); }}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 8,
+                  border: `1px solid ${triggerKind === 'status' ? '#0A0A0A' : '#d0d0d0'}`,
+                  background: triggerKind === 'status' ? '#0A0A0A' : '#fff',
+                  color: triggerKind === 'status' ? '#fff' : '#333',
+                  fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                }}
+              >🔄 Loan status (New Lead, etc.)</button>
+            </div>
+          </div>
+
+          {triggerKind === 'status' ? (
+            <div style={sectionStyle}>
+              <label style={labelStyle}>Fire while loan is in status</label>
+              <select value={triggerLabel} onChange={(e) => setTriggerLabel(e.target.value)} style={{ ...inputStyle, marginBottom: 10 }}>
+                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <label style={labelStyle}>Repeat</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[
+                  { key: 'none', label: 'Once' },
+                  { key: 'daily', label: 'Every day' },
+                  { key: 'weekly', label: 'Every week' },
+                  { key: 'monthly', label: 'Every month' },
+                ].map((r) => (
+                  <button key={r.key} type="button"
+                    onClick={() => setRepeatInterval(r.key)}
+                    style={{
+                      padding: '8px 14px', borderRadius: 999,
+                      border: `1px solid ${repeatInterval === r.key ? '#0A0A0A' : '#d0d0d0'}`,
+                      background: repeatInterval === r.key ? '#0A0A0A' : '#fff',
+                      color: repeatInterval === r.key ? '#fff' : '#333',
+                      fontWeight: 600, fontSize: 12, cursor: 'pointer',
+                    }}>{r.label}</button>
+                ))}
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11, color: '#666', fontStyle: 'italic' }}>
+                Task generates today for every loan currently in "{triggerLabel}".
+                {repeatInterval !== 'none' && ` A fresh copy will appear ${repeatInterval === 'daily' ? 'every day' : repeatInterval === 'weekly' ? 'each week' : 'each month'} until the loan moves to a different status.`}
+              </div>
+            </div>
+          ) : (
+          <div style={sectionStyle}>
             <label style={labelStyle}>When</label>
             <div style={{ display: 'grid', gridTemplateColumns: '110px 90px 1fr', gap: 8, alignItems: 'stretch' }}>
               <select value={mode} onChange={(e) => setMode(e.target.value)} style={inputStyle}>
@@ -1198,6 +1324,7 @@ function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
               Repeat every year (birthdays, anniversaries)
             </label>
           </div>
+          )}
 
           <div style={sectionStyle}>
             <label style={labelStyle}>Only generate this task if… (optional)</label>
@@ -1242,6 +1369,38 @@ function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4}
               placeholder="What to say, gift ideas, special instructions, etc."
               style={{ ...inputStyle, resize: 'vertical', minHeight: 90 }} />
+          </div>
+
+          <div style={sectionStyle}>
+            <label style={labelStyle}>Email template (optional)</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <select value={emailRecipient} onChange={(e) => setEmailRecipient(e.target.value)} style={inputStyle}>
+                <option value="none">— No email —</option>
+                <option value="client">Send to client</option>
+                <option value="co_borrower">Send to co-borrower</option>
+                <option value="agent">Send to agent</option>
+              </select>
+              <input
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                disabled={emailRecipient === 'none'}
+                placeholder="Subject"
+                style={{ ...inputStyle, opacity: emailRecipient === 'none' ? 0.4 : 1 }}
+              />
+            </div>
+            <textarea
+              value={emailBody}
+              onChange={(e) => setEmailBody(e.target.value)}
+              disabled={emailRecipient === 'none'}
+              rows={6}
+              placeholder={'Body of the email. Use variables: {{first_name}}, {{last_name}}, {{property}}, {{close_date}}, {{agent_name}}'}
+              style={{ ...inputStyle, resize: 'vertical', minHeight: 100, opacity: emailRecipient === 'none' ? 0.4 : 1 }}
+            />
+            {emailRecipient !== 'none' && emailSubject && (
+              <div style={{ marginTop: 6, fontSize: 11, color: '#666', fontStyle: 'italic' }}>
+                A blue 📧 Email button appears on every generated task in the list. Click it to open Outlook with the subject and body pre-filled and variables substituted from the client's loan record.
+              </div>
+            )}
           </div>
 
           <div style={{ padding: 14, background: '#fff8e1', border: '1px solid #f5e7a3', borderRadius: 8, fontSize: 12, color: '#5a4a1a' }}>

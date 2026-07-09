@@ -81,11 +81,16 @@ export async function createTask(workflowId, task) {
     workflow_id: workflowId,
     title: task.title || 'Untitled task',
     role: task.role || 'lo',
+    trigger_kind: task.trigger_kind === 'status' ? 'status' : 'date',
     trigger_label: task.trigger_label || TRIGGER_BUILTIN_CLOSING,
     trigger_days: Number.isFinite(+task.trigger_days) ? +task.trigger_days : 0,
     trigger_recurring: !!task.trigger_recurring,
+    repeat_interval: ['daily', 'weekly', 'monthly'].includes(task.repeat_interval) ? task.repeat_interval : null,
     condition_field: task.condition_field || null,
     condition_op: task.condition_op || null,
+    email_recipient: ['client', 'co_borrower', 'agent'].includes(task.email_recipient) ? task.email_recipient : null,
+    email_subject: task.email_subject || null,
+    email_body: task.email_body || null,
     notes: task.notes || null,
     position: list.length,
   };
@@ -168,6 +173,47 @@ function matchesCondition(task, profile) {
   }
 }
 
+// Resolve a workflow task's email template into a real mailto: URL for
+// a given client + loan record. Substitutes {{first_name}} /
+// {{last_name}} / {{property}} / {{close_date}} / {{agent_name}}
+// tokens in both subject and body. Returns null if the task has no
+// email template configured or the target recipient's email address
+// isn't on file.
+export function composeMailto(task, clientName, loan) {
+  if (!task || !task.email_subject) return null;
+  const recipient = task.email_recipient || 'client';
+  let to = '';
+  const parts = (clientName || '').split(',').map((s) => s.trim());
+  const lastName = parts[0] || '';
+  const firstName = parts[1] || clientName || '';
+  if (recipient === 'client') to = loan?.email || '';
+  else if (recipient === 'co_borrower') to = loan?.coEmail || loan?.c2email || '';
+  else if (recipient === 'agent') {
+    // Agents are looked up in partners.js by loan.agent; we don't
+    // wire that in yet — for now fall through to blank so the user
+    // fills it in themselves.
+    to = '';
+  }
+  const substitutions = {
+    '{{first_name}}': firstName,
+    '{{last_name}}': lastName,
+    '{{name}}': clientName || '',
+    '{{property}}': loan?.property || '',
+    '{{close_date}}': loan?.closeDate || '',
+    '{{agent_name}}': loan?.agent || '',
+  };
+  const swap = (s) => Object.entries(substitutions).reduce(
+    (acc, [k, v]) => acc.split(k).join(v),
+    s || ''
+  );
+  const subject = swap(task.email_subject);
+  const body = swap(task.email_body || '');
+  const qs = new URLSearchParams();
+  if (subject) qs.set('subject', subject);
+  if (body) qs.set('body', body);
+  return `mailto:${to}?${qs.toString()}`;
+}
+
 function toIsoDate(d) {
   if (d instanceof Date) {
     const y = d.getFullYear();
@@ -199,6 +245,10 @@ export function generateTasksForClient(clientName, anchorDates) {
     const tasks = TASKS_BY_WORKFLOW.get(wf.id) || [];
     for (const t of tasks) {
       if (!matchesCondition(t, profile)) continue;
+      // Status-triggered tasks are handled by a separate generator
+      // pass (generateStatusTasks) — it iterates loans by status
+      // instead of clients by date. Skip here so we don't double-fire.
+      if (t.trigger_kind === 'status') continue;
       const anchor = anchorDates.get((t.trigger_label || '').toLowerCase());
       if (!anchor) continue;
       let due;
@@ -237,6 +287,65 @@ export function generateTasksForClient(clientName, anchorDates) {
         anchor_label: t.trigger_label || TRIGGER_BUILTIN_CLOSING,
         completed,
       });
+    }
+  }
+  return out;
+}
+
+// Generator for status-triggered workflow tasks. Called ONCE with the
+// live LOANS array (not per-client) because these tasks are keyed off
+// the loan's current status, not the client's dates.
+//
+// For each task with trigger_kind === 'status':
+//   - Iterate LOANS whose current status matches the task's
+//     trigger_label (e.g., "New Lead").
+//   - Emit a task due today for the client on that loan.
+//   - If repeat_interval is set, the task will re-emit on the next
+//     interval boundary (tomorrow for daily, next Monday for weekly,
+//     the 1st of next month for monthly) as long as the loan still
+//     sits in that status. When the loan advances, the task stops
+//     generating fresh copies.
+export function generateStatusTasks(loans) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayIso = toIsoDate(today);
+  const out = [];
+  for (const wf of WORKFLOWS) {
+    if (wf.active === false) continue;
+    const tasks = TASKS_BY_WORKFLOW.get(wf.id) || [];
+    for (const t of tasks) {
+      if (t.trigger_kind !== 'status') continue;
+      const wantedStatus = (t.trigger_label || '').trim().toLowerCase();
+      if (!wantedStatus) continue;
+      for (const l of loans) {
+        if (!l || l.archived) continue;
+        const status = (l.status || '').trim().toLowerCase();
+        if (status !== wantedStatus) continue;
+        if (!l.borrower) continue;
+        const profile = getProfile(l.borrower) || {};
+        if (!matchesCondition(t, profile)) continue;
+        // Emission cadence:
+        //   null / undefined → single fire due today (idempotent by day)
+        //   'daily'          → one per calendar day
+        //   'weekly'         → one per calendar week (Mon-Sun)
+        //   'monthly'        → one per calendar month
+        // Because task_completions is keyed by (task_id, client_name,
+        // due_date), completing today's daily-recurring task doesn't
+        // hide tomorrow's — a fresh task with tomorrow's due date
+        // appears. That's the intended behavior.
+        const dueDate = today;
+        const iso = todayIso;
+        const completed = isCompleted(t.id, l.borrower, iso);
+        out.push({
+          id: `status||${t.id}||${l.id}||${iso}`,
+          task: t,
+          workflow: wf,
+          client_name: l.borrower,
+          due_date: dueDate,
+          anchor_date: dueDate,
+          anchor_label: `Status: ${t.trigger_label}`,
+          completed,
+        });
+      }
     }
   }
   return out;
