@@ -434,6 +434,13 @@ export function generateStatusTasks(loans) {
         if (!l.borrower) continue;
         const profile = getProfile(l.borrower) || {};
         if (!matchesCondition(t, profile)) continue;
+        // Same decision-branch gating as date-triggered tasks: don't
+        // emit a status-triggered branch task until its upstream
+        // decision has been answered with the matching outcome for
+        // this same client. Previously status-generated branches
+        // fired unconditionally, so "Send denial email" showed up
+        // for every New Lead regardless of the review decision.
+        if (!satisfiesDependency(t, l.borrower)) continue;
         // Emission cadence:
         //   null / undefined → single fire due today (idempotent by day)
         //   'daily'          → one per calendar day

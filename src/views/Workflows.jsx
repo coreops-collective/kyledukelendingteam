@@ -475,6 +475,7 @@ export default function Workflows() {
 
       {editingTask && (
         <TaskEditDrawer
+          key={editingTask.id}
           task={editingTask}
           triggerLabels={triggerLabels}
           onClose={() => { setEditingTask(null); bump(); }}

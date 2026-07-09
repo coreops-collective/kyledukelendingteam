@@ -1028,6 +1028,7 @@ export function WorkflowEditorDrawer({ onClose }) {
 
       {editingTask && (
         <TaskEditDrawer
+          key={editingTask.id}
           task={editingTask}
           triggerLabels={triggerLabels}
           onClose={() => { setEditingTask(null); bump(); }}

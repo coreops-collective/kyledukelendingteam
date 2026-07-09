@@ -41,8 +41,8 @@ function loadStored(key, fallback) {
 export default function Tasks() {
   const [tasks, setTasks] = useState(() => loadStored(TASKS_KEY, TASKS_SEED));
   const [projects, setProjects] = useState(() => loadStored(PROJECTS_KEY, PROJECTS_SEED));
-  const [, forceWorkflow] = useState(0);
-  const bumpWorkflow = () => forceWorkflow((n) => n + 1);
+  const [workflowVersion, setWorkflowVersion] = useState(0);
+  const bumpWorkflow = () => setWorkflowVersion((n) => n + 1);
 
   // Load workflow templates + tasks + completions + client profiles
   // once on mount. All the reads below (generateStatusTasks etc.)
@@ -68,10 +68,9 @@ export default function Tasks() {
       !l.archived && PRE_CONTRACT_STAGES.includes(l.stage)
     );
     const generated = generateStatusTasks(preContractLoans);
-    // Sort by due date so overdue floats to the top.
     generated.sort((a, b) => a.due_date - b.due_date);
     return generated;
-  }, [tasks.length, forceWorkflow]); // regenerate on manual-task changes too
+  }, [workflowVersion]); // real counter — was previously the setter, which never changed identity so the memo went stale
 
   const toggleWorkflowTask = (item) => {
     const iso = fmtIsoToday();
