@@ -28,35 +28,63 @@ export default function Tour({ steps, onClose, onStepChange }) {
   useLayoutEffect(() => {
     if (!step) return;
     let rafId = null;
-    const measure = () => {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 40; // ~650ms at 60fps — enough for the drawer
+                             // slide-in transition and its own layout.
+    const tryMeasure = () => {
       if (!step.target) { setRect(null); return; }
       const el = document.querySelector(step.target);
-      if (!el) { setRect(null); return; }
-      const r = el.getBoundingClientRect();
-      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-    };
-    const scheduleMeasure = () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(measure);
-    };
-    // Snap the target into view instantly and leave ~120px above it
-    // so the app header (page title + Take a tour + date pill) stays
-    // visible and tall targets show their TOP first — not their
-    // middle, which would leave the beginning of the section above
-    // the fold and unreachable.
-    if (step.target) {
-      const el = document.querySelector(step.target);
       if (el) {
-        el.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' });
-        window.scrollBy(0, -120);
+        // Only scroll on first successful find; subsequent retries
+        // (during drawer slide-in) shouldn't jerk the page around.
+        if (attempts === 0) {
+          el.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' });
+          window.scrollBy(0, -120);
+        }
+        const r = el.getBoundingClientRect();
+        // If the element rendered at zero size (still animating in),
+        // wait another frame for it to settle.
+        if (r.width < 4 || r.height < 4) {
+          if (attempts < MAX_ATTEMPTS) {
+            attempts += 1;
+            rafId = requestAnimationFrame(tryMeasure);
+          }
+          return;
+        }
+        setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+        return;
       }
-    }
-    scheduleMeasure();
-    window.addEventListener('resize', scheduleMeasure);
-    window.addEventListener('scroll', scheduleMeasure, true);
+      // Target not in DOM yet — usually means an action:'openEditor'
+      // step is still waiting for the drawer to mount. Retry until
+      // it shows up or we hit the ceiling.
+      if (attempts < MAX_ATTEMPTS) {
+        attempts += 1;
+        rafId = requestAnimationFrame(tryMeasure);
+      } else {
+        setRect(null); // fall back to centered card
+      }
+    };
+    const rescheduleOnScroll = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      // Track the target through window scroll/resize but skip the
+      // initial-scroll behavior in tryMeasure by pre-setting attempts.
+      attempts = MAX_ATTEMPTS; // no more initial-position tricks
+      rafId = requestAnimationFrame(() => {
+        if (!step.target) return;
+        const el = document.querySelector(step.target);
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        if (r.width >= 4 && r.height >= 4) {
+          setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+        }
+      });
+    };
+    tryMeasure();
+    window.addEventListener('resize', rescheduleOnScroll);
+    window.addEventListener('scroll', rescheduleOnScroll, true);
     return () => {
-      window.removeEventListener('resize', scheduleMeasure);
-      window.removeEventListener('scroll', scheduleMeasure, true);
+      window.removeEventListener('resize', rescheduleOnScroll);
+      window.removeEventListener('scroll', rescheduleOnScroll, true);
       if (rafId) cancelAnimationFrame(rafId);
     };
   }, [step, idx]);
@@ -80,7 +108,9 @@ export default function Tour({ steps, onClose, onStepChange }) {
   const prev = () => { if (idx > 0) setIdx(idx - 1); };
 
   // Card positioning — place next to the spotlight when possible;
-  // fall back to centered if no target.
+  // fall back to centered if no target. Vertically CENTER the card
+  // against the target so a short section doesn't leave the card
+  // floating awkwardly up top.
   const CARD_W = 400;
   const CARD_H_EST = 300;
   const PAD = 20;
@@ -94,22 +124,20 @@ export default function Tour({ steps, onClose, onStepChange }) {
     overflow: 'hidden',
   };
   if (!rect) {
-    // Center the card.
-    cardStyle = {
-      ...cardStyle,
-      top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-    };
+    cardStyle = { ...cardStyle, top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
   } else {
-    // Choose the side with the most room.
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const spaceRight = vw - (rect.left + rect.width);
     const spaceLeft = rect.left;
     const spaceBottom = vh - (rect.top + rect.height);
+    // Preferred vertical anchor: center card on the target's midpoint.
+    const centerY = rect.top + rect.height / 2 - CARD_H_EST / 2;
+    const clampedTop = Math.max(PAD, Math.min(vh - CARD_H_EST - PAD, centerY));
     if (spaceRight >= CARD_W + PAD) {
-      cardStyle = { ...cardStyle, top: Math.max(PAD, Math.min(vh - CARD_H_EST - PAD, rect.top)), left: rect.left + rect.width + PAD };
+      cardStyle = { ...cardStyle, top: clampedTop, left: rect.left + rect.width + PAD };
     } else if (spaceLeft >= CARD_W + PAD) {
-      cardStyle = { ...cardStyle, top: Math.max(PAD, Math.min(vh - CARD_H_EST - PAD, rect.top)), left: rect.left - CARD_W - PAD };
+      cardStyle = { ...cardStyle, top: clampedTop, left: rect.left - CARD_W - PAD };
     } else if (spaceBottom >= CARD_H_EST + PAD) {
       cardStyle = { ...cardStyle, top: rect.top + rect.height + PAD, left: Math.max(PAD, Math.min(vw - CARD_W - PAD, rect.left)) };
     } else {
