@@ -6,6 +6,7 @@ import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, saveLoansNow, subscribeLoans } from '../lib/loansStore.js';
+import { fireWebhooks } from '../lib/webhooks.js';
 import { appendNotesHistory, loadNotesHistory } from '../lib/notesHistory.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -973,10 +974,30 @@ export default function LoanManagement() {
   const handleEditStatus = useCallback((id, statusValue) => {
     const loan = LOANS.find((l) => l.id === id);
     if (!loan) return;
+    const prevStatus = loan.status || '';
     loan.status = statusValue;
     const nextStage = STATUS_TO_STAGE[statusValue];
     if (nextStage) loan.stage = nextStage;
     markLoansDirty(loan);
+    // Fire GHL webhook subscriptions listening for status changes.
+    // Payload matches the shape GHL expects for their contact-update
+    // webhook — full loan record plus the transition details.
+    if (prevStatus !== statusValue) {
+      fireWebhooks('loan.status_changed', {
+        loan_id: loan.id,
+        borrower: loan.borrower,
+        phone: loan.phone,
+        email: loan.email,
+        agent: loan.agent,
+        lo: loan.lo,
+        property: loan.property,
+        amount: loan.amount,
+        close_date: loan.closeDate,
+        old_status: prevStatus,
+        new_status: statusValue,
+        status: statusValue, // duplicate for filter-matching convenience
+      });
+    }
     bump();
   }, [bump]);
 

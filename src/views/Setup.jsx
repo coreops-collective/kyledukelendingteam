@@ -3,6 +3,10 @@ import { USERS, ROLE_LABELS, sbInsertUser, sbUpdateUser, sbDeleteUser } from '..
 import { getCurrentUser, isAdmin } from '../lib/auth.js';
 import EmailDeliverySettings from './EmailDeliverySettings.jsx';
 import NotificationRules from './NotificationRules.jsx';
+import {
+  WEBHOOK_EVENTS, getWebhookSubscriptions, loadWebhookSubscriptions,
+  createWebhookSubscription, updateWebhookSubscription, deleteWebhookSubscription,
+} from '../lib/webhooks.js';
 
 function roleOptions(me, currentRole) {
   if (me?.role === 'branch_manager') {
@@ -281,10 +285,208 @@ function SetupInner() {
 
       {me?.role === 'branch_manager' && <EmailDeliverySettings />}
       <NotificationRules />
+      <WebhookSettings />
 
       {add && <AddUserDrawer me={me} onClose={() => setAdd(false)} onSaved={rerender} toast={setToast} />}
       {edit && <EditUserDrawer me={me} user={edit} onClose={() => setEdit(null)} onSaved={rerender} toast={setToast} />}
       <Toast toast={toast} onClose={() => setToast(null)} />
     </>
+  );
+}
+
+// ─── Webhook settings (branch manager + admin only) ──────────────
+// Configures HTTP POST subscriptions so events in the hub (loan
+// status change, new intake, new partner) push out to Go High Level
+// or any other webhook receiver. Includes a step-by-step walkthrough
+// so a first-time setup can be self-service.
+function WebhookSettings() {
+  const [, force] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [draft, setDraft] = useState({ event: 'loan.status_changed', url: '', filter_status: '', label: '' });
+
+  useEffect(() => {
+    loadWebhookSubscriptions().then(() => force((n) => n + 1));
+    const on = () => force((n) => n + 1);
+    window.addEventListener('kdt-webhooks-loaded', on);
+    window.addEventListener('kdt-webhooks-changed', on);
+    return () => {
+      window.removeEventListener('kdt-webhooks-loaded', on);
+      window.removeEventListener('kdt-webhooks-changed', on);
+    };
+  }, []);
+
+  const subs = getWebhookSubscriptions();
+
+  const submit = async () => {
+    if (!draft.url.trim()) return alert('Webhook URL is required.');
+    await createWebhookSubscription({
+      event: draft.event,
+      url: draft.url.trim(),
+      filter_status: draft.filter_status || null,
+      label: draft.label || null,
+    });
+    setDraft({ event: draft.event, url: '', filter_status: '', label: '' });
+  };
+
+  const eventLabel = (v) => (WEBHOOK_EVENTS.find((e) => e.value === v) || {}).label || v;
+
+  const STATUS_OPTIONS = ['', 'New Lead', 'Applied', 'HOT PA', 'REFI Watch', 'New Contract', 'Disclosed', 'Processing', 'Underwriting', 'CTC Required', 'CTC', 'Approved', 'Funded'];
+
+  const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
+  const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4, display: 'block' };
+
+  return (
+    <div className="section-card" style={{ marginTop: 18 }}>
+      <div
+        className="section-header"
+        style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <div>
+          <div className="section-title">Webhooks (Go High Level integration)</div>
+          <div className="section-sub">
+            {subs.length} active · push status changes and new leads to GHL so campaigns auto-fire
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            className="form-btn"
+            onClick={(e) => { e.stopPropagation(); setShowGuide((g) => !g); setExpanded(true); }}
+          >{showGuide ? 'Hide setup guide' : 'How to set this up'}</button>
+          <span style={{ color: '#888', fontSize: 14 }}>{expanded ? '▾' : '▸'}</span>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="section-body" style={{ padding: '18px 22px' }}>
+          {showGuide && <WebhookSetupGuide />}
+
+          <div style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: 8, padding: 14, marginBottom: 18 }}>
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 10 }}>
+              Add a new webhook
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div>
+                <label style={labelStyle}>Fire when</label>
+                <select value={draft.event} onChange={(e) => setDraft((d) => ({ ...d, event: e.target.value }))} style={inputStyle}>
+                  {WEBHOOK_EVENTS.map((e) => <option key={e.value} value={e.value}>{e.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Only if new status is (optional)</label>
+                <select value={draft.filter_status} onChange={(e) => setDraft((d) => ({ ...d, filter_status: e.target.value }))} style={inputStyle}>
+                  {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || '— any —'}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={labelStyle}>GHL webhook URL</label>
+                <input value={draft.url} onChange={(e) => setDraft((d) => ({ ...d, url: e.target.value }))} placeholder="https://services.leadconnectorhq.com/hooks/…" style={inputStyle} />
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={labelStyle}>Label (for your own reference)</label>
+                <input value={draft.label} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} placeholder="e.g. Start 10-day-of-pain campaign" style={inputStyle} />
+              </div>
+            </div>
+            <button className="form-btn primary" onClick={submit}>+ Save webhook</button>
+          </div>
+
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 10 }}>
+            Active webhooks ({subs.length})
+          </div>
+          {subs.length === 0 ? (
+            <div style={{ color: '#888', fontSize: 12, fontStyle: 'italic', padding: 12 }}>
+              No webhooks configured yet. Add one above.
+            </div>
+          ) : (
+            subs.map((s) => (
+              <div key={s.id} style={{ padding: 10, border: '1px solid #eee', borderRadius: 6, marginBottom: 8, display: 'grid', gridTemplateColumns: '1fr 100px 30px', gap: 8, alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{s.label || '(no label)'}</div>
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                    {eventLabel(s.event)}
+                    {s.filter_status ? ` · only when status = ${s.filter_status}` : ''}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#888', marginTop: 2, fontFamily: 'Menlo, monospace', wordBreak: 'break-all' }}>{s.url}</div>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#555' }}>
+                  <input
+                    type="checkbox"
+                    checked={s.active !== false}
+                    onChange={(e) => updateWebhookSubscription(s.id, { active: e.target.checked })}
+                  />
+                  Active
+                </label>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(`Delete webhook "${s.label || 'unnamed'}"?`)) return;
+                    await deleteWebhookSubscription(s.id);
+                  }}
+                  title="Delete"
+                  style={{ background: 'transparent', border: 'none', color: '#c62828', cursor: 'pointer', fontSize: 14 }}
+                >×</button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WebhookSetupGuide() {
+  const step = { marginBottom: 14, padding: 12, background: '#f5f9ff', border: '1px solid #cfe4f5', borderRadius: 8 };
+  const stepNum = { display: 'inline-block', width: 22, height: 22, borderRadius: '50%', background: '#0d47a1', color: '#fff', textAlign: 'center', lineHeight: '22px', fontWeight: 700, fontSize: 11, marginRight: 8 };
+  const code = { display: 'block', margin: '6px 0', padding: '8px 12px', background: '#0A0A0A', color: '#fff', borderRadius: 4, fontFamily: 'Menlo,monospace', fontSize: 11, wordBreak: 'break-all' };
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Setting up a Go High Level webhook</div>
+      <div style={step}>
+        <div style={{ fontSize: 12, fontWeight: 700 }}><span style={stepNum}>1</span>Create the trigger in GHL</div>
+        <div style={{ fontSize: 12, color: '#333', marginTop: 6, marginLeft: 30 }}>
+          In GHL: <em>Automation → Workflows → + New Workflow → Start from scratch → Add Trigger → Inbound Webhook</em>.
+          GHL will show a webhook URL — copy it. Looks like <code>https://services.leadconnectorhq.com/hooks/…</code>
+        </div>
+      </div>
+      <div style={step}>
+        <div style={{ fontSize: 12, fontWeight: 700 }}><span style={stepNum}>2</span>Paste the URL below</div>
+        <div style={{ fontSize: 12, color: '#333', marginTop: 6, marginLeft: 30 }}>
+          Fill in "Add a new webhook" with:<br />
+          — <strong>Fire when:</strong> the event you want to push (usually "Loan status changes").<br />
+          — <strong>Only if new status is:</strong> narrows to one status (e.g., "New Lead" so GHL only starts the 10-day-of-pain when a NEW lead lands).<br />
+          — <strong>GHL webhook URL:</strong> the URL you copied.<br />
+          — <strong>Label:</strong> what this webhook does — helps you find it later.
+        </div>
+      </div>
+      <div style={step}>
+        <div style={{ fontSize: 12, fontWeight: 700 }}><span style={stepNum}>3</span>What GHL receives</div>
+        <div style={{ fontSize: 12, color: '#333', marginTop: 6, marginLeft: 30 }}>
+          Every time your event fires, the hub POSTs this JSON to that URL:
+          <span style={code}>{`{
+  "event": "loan.status_changed",
+  "fired_at": "2026-06-12T14:03:00Z",
+  "subscription_label": "Start 10-day-of-pain",
+  "data": {
+    "borrower": "Smith, Jane",
+    "phone": "555-1234", "email": "jane@example.com",
+    "old_status": "", "new_status": "New Lead",
+    "agent": "Olivia Evans", "lo": "Kyle",
+    "property": "TBD", "amount": 300000,
+    "close_date": ""
+  }
+}`}</span>
+          In GHL's Inbound Webhook trigger, map <code>data.email</code> to Contact Email, <code>data.borrower</code> to Contact Name, and any other fields you want to use inside your workflow.
+        </div>
+      </div>
+      <div style={step}>
+        <div style={{ fontSize: 12, fontWeight: 700 }}><span style={stepNum}>4</span>Add campaign actions in GHL</div>
+        <div style={{ fontSize: 12, color: '#333', marginTop: 6, marginLeft: 30 }}>
+          Now that the trigger receives the contact, add the actions in GHL — start an email campaign, add a tag, send an SMS, whatever the play calls for. The hub's job ends at "webhook fired"; GHL owns the campaign from there.
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: '#666', fontStyle: 'italic', padding: '8px 4px' }}>
+        Testing tip: toggle any loan's status in Loan Management to fire the webhook. GHL's "Test Trigger" tab will show the payload arriving live.
+      </div>
+    </div>
   );
 }
