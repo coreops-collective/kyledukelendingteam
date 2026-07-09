@@ -20,25 +20,32 @@ export default function Tour({ steps, onClose }) {
 
   useLayoutEffect(() => {
     if (!step) return;
-    const recalc = () => {
+    let rafId = null;
+    const measure = () => {
       if (!step.target) { setRect(null); return; }
       const el = document.querySelector(step.target);
       if (!el) { setRect(null); return; }
-      // Scroll the element into view before measuring — matters for
-      // long pages where the target is off-screen.
-      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-      // Delay measurement slightly so the smooth scroll finishes.
-      setTimeout(() => {
-        const r = el.getBoundingClientRect();
-        setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-      }, 350);
+      const r = el.getBoundingClientRect();
+      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
     };
-    recalc();
-    window.addEventListener('resize', recalc);
-    window.addEventListener('scroll', recalc, true);
+    const scheduleMeasure = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(measure);
+    };
+    // Snap the target into view instantly (no smooth scroll — that's
+    // what made the tour feel like it lagged behind), then measure on
+    // the next paint frame so the position is final.
+    if (step.target) {
+      const el = document.querySelector(step.target);
+      if (el) el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+    }
+    scheduleMeasure();
+    window.addEventListener('resize', scheduleMeasure);
+    window.addEventListener('scroll', scheduleMeasure, true);
     return () => {
-      window.removeEventListener('resize', recalc);
-      window.removeEventListener('scroll', recalc, true);
+      window.removeEventListener('resize', scheduleMeasure);
+      window.removeEventListener('scroll', scheduleMeasure, true);
+      if (rafId) cancelAnimationFrame(rafId);
     };
   }, [step, idx]);
 
@@ -117,7 +124,6 @@ export default function Tour({ steps, onClose }) {
             border: '3px solid #fbc02d',
             pointerEvents: 'none',
             zIndex: 10000,
-            transition: 'top .25s, left .25s, width .25s, height .25s',
           }}
         />
       ) : (
