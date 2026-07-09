@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   getWorkflows, getTasksFor, loadWorkflows,
-  createWorkflow, updateWorkflow, deleteWorkflow, createTask, updateTask, deleteTask,
+  createWorkflow, deleteWorkflow, createTask, updateTask, deleteTask,
   ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING, WORKFLOW_CATEGORIES,
 } from '../lib/workflows.js';
 import { loadKeyDateTypes, getKeyDateTypeLabels } from '../lib/keyDateTypes.js';
@@ -152,10 +152,9 @@ export default function Workflows() {
 
   return (
     <>
-      <div className="wf-header-row" style={{ marginBottom: 12 }}>
-        <div>
-          <h2>Workflows &amp; SOPs</h2>
-          <div className="desc">Click any task to edit · drag ⋮⋮ to reorder · + Add Task to append</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, color: '#666' }}>
+          Click any task to edit · drag ⋮⋮ to reorder · + Add Task to append
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="form-btn" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
@@ -189,29 +188,8 @@ export default function Workflows() {
                   fontSize: 13,
                 }}>
                   <div style={{ fontWeight: 600 }}>{w.name || 'Untitled'}</div>
-                  <div style={{ fontSize: 10, color: isActive ? '#bbb' : '#888', marginTop: 2, display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span>{count} task{count === 1 ? '' : 's'}</span>
-                    {/* Quick-move dropdown so re-categorizing existing
-                        workflows doesn't require clicking into each one
-                        and hunting for the header dropdown. */}
-                    <select
-                      value={w.category || 'Loan'}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        updateWorkflow(w.id, { category: e.target.value }).then(bump);
-                      }}
-                      style={{
-                        fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
-                        letterSpacing: '.3px', padding: '2px 6px', borderRadius: 4,
-                        border: '1px solid ' + (isActive ? 'rgba(255,255,255,.3)' : '#ddd'),
-                        background: isActive ? 'rgba(255,255,255,.1)' : '#fff',
-                        color: isActive ? '#fff' : '#555',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {WORKFLOW_CATEGORIES.map((c) => <option key={c} value={c} style={{ color: '#000' }}>{c}</option>)}
-                    </select>
+                  <div style={{ fontSize: 10, color: isActive ? '#bbb' : '#888', marginTop: 2 }}>
+                    {count} task{count === 1 ? '' : 's'}
                   </div>
                 </div>
               );
