@@ -1330,7 +1330,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
             </div>
           </div>
 
-          <div style={sectionStyle}>
+          <div style={sectionStyle} data-tour="editor-trigger">
             <label style={labelStyle}>Trigger</label>
             <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
               <button
@@ -1457,7 +1457,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
           </div>
           )}
 
-          <div style={sectionStyle}>
+          <div style={sectionStyle} data-tour="editor-condition">
             <label style={labelStyle}>Only generate this task if… (optional)</label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <select
@@ -1544,7 +1544,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
               style={{ ...inputStyle, resize: 'vertical', minHeight: 90 }} />
           </div>
 
-          <div style={sectionStyle}>
+          <div style={sectionStyle} data-tour="editor-email">
             <label style={labelStyle}>Email template (optional)</label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <select value={emailRecipient} onChange={(e) => setEmailRecipient(e.target.value)} style={inputStyle}>

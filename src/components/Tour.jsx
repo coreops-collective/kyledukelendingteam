@@ -12,11 +12,18 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 // the target so the spotlight dims everything except the highlighted
 // element. Recomputes on window resize / scroll so the card and hole
 // track the target through layout changes.
-export default function Tour({ steps, onClose }) {
+export default function Tour({ steps, onClose, onStepChange }) {
   const [idx, setIdx] = useState(0);
   const [rect, setRect] = useState(null);
 
   const step = steps[idx] || null;
+
+  // Fire onStepChange whenever the active step changes so the parent
+  // can trigger side effects — auto-open the task editor for the
+  // in-editor steps, close it for the closing step, etc.
+  useEffect(() => {
+    if (onStepChange && step) onStepChange(step, idx);
+  }, [idx, step, onStepChange]);
 
   useLayoutEffect(() => {
     if (!step) return;
@@ -32,12 +39,17 @@ export default function Tour({ steps, onClose }) {
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(measure);
     };
-    // Snap the target into view instantly (no smooth scroll — that's
-    // what made the tour feel like it lagged behind), then measure on
-    // the next paint frame so the position is final.
+    // Snap the target into view instantly and leave ~120px above it
+    // so the app header (page title + Take a tour + date pill) stays
+    // visible and tall targets show their TOP first — not their
+    // middle, which would leave the beginning of the section above
+    // the fold and unreachable.
     if (step.target) {
       const el = document.querySelector(step.target);
-      if (el) el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+      if (el) {
+        el.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' });
+        window.scrollBy(0, -120);
+      }
     }
     scheduleMeasure();
     window.addEventListener('resize', scheduleMeasure);

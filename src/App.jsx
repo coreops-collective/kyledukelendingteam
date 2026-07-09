@@ -85,15 +85,9 @@ export default function App() {
       .finally(() => setUsersReady(true));
   }, []);
 
-  // On page reload / fresh tab, always land on the homepage.
-  // In-app navigation (clicking a sidebar link) runs after mount and is
-  // unaffected because this effect runs exactly once.
-  useEffect(() => {
-    if (location.pathname !== '/' && location.pathname !== '/snapshot') {
-      navigate('/snapshot', { replace: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Refresh preserves the current URL — no forced /snapshot redirect.
+  // (Deep links, bookmarks, and browser back/forward all keep working
+  // because we don't run any pathname-mangling effects on mount.)
 
   // Sync body[data-role] for legacy role-gating CSS
   useEffect(() => {

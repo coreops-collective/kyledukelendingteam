@@ -119,9 +119,11 @@ Click "+ Add task" next to any answer to create a task that only fires when that
 If the LO answers "Denied" on the Credit Review, only the Denied-branch tasks generate. Approved-branch tasks stay dormant. Perfect for the Borrower Consultation flow.`,
   },
   {
+    action: 'openEditor',
+    target: '[data-tour="editor-trigger"]',
     title: 'Task editor: trigger types',
     body:
-`When you edit any task, you'll see two big trigger buttons up top:
+`I just opened the task editor for you so you can see this live.
 
 📅 Date-based — anchored to a specific date. Loan dates (Closing, Appraisal Deadline, Loan Intake Submitted, ICD Signed, all 11 of them) plus any Key Date Type you defined. Add an offset like "3 days before" or "1 week after".
 
@@ -130,6 +132,8 @@ If the LO answers "Denied" on the Credit Review, only the Denied-branch tasks ge
 Which one you pick depends on whether the trigger is a moment in time (date) or a state the loan lives in for a while (status).`,
   },
   {
+    action: 'openEditor',
+    target: '[data-tour="editor-email"]',
     title: 'Email templates + Send Email Now',
     body:
 `Any task can have an email template attached: pick recipient (client, co-borrower, or agent), fill in a subject and a body.
@@ -139,6 +143,8 @@ Use merge tags like {{first_name}}, {{property}}, {{close_date}}, {{agent_name}}
 On the Client for Life task list, tasks with a template show a bright blue "📧 Send Email Now" button that opens Outlook with everything filled in.`,
   },
   {
+    action: 'openEditor',
+    target: '[data-tour="editor-condition"]',
     title: 'Conditional generation',
     body:
 `You can gate a task on two things:
@@ -150,6 +156,7 @@ On the Client for Life task list, tasks with a template show a bright blue "📧
 Layer both if you need — client condition AND decision dependency.`,
   },
   {
+    action: 'closeEditor',
     title: 'You are ready',
     body:
 `Everything you build here flows automatically to Client for Life.
@@ -479,7 +486,26 @@ export default function Workflows() {
         />
       )}
       {datesOpen && <ManageKeyDateTypesDrawer onClose={() => { setDatesOpen(false); bump(); }} />}
-      {tourOpen && <Tour steps={TOUR_STEPS} onClose={() => setTourOpen(false)} />}
+      {tourOpen && (
+        <Tour
+          steps={TOUR_STEPS}
+          onClose={() => { setTourOpen(false); setEditingTask(null); }}
+          onStepChange={(s) => {
+            // Steps that talk about controls inside the task editor
+            // auto-open the drawer on the first task so the reader can
+            // see the actual UI being described. Steps whose action is
+            // 'closeEditor' shut it again.
+            if (s.action === 'openEditor') {
+              if (!editingTask) {
+                const first = tasks[0];
+                if (first) setEditingTask(first);
+              }
+            } else if (s.action === 'closeEditor') {
+              setEditingTask(null);
+            }
+          }}
+        />
+      )}
     </>
   );
 }
