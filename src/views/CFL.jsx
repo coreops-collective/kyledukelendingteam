@@ -962,7 +962,7 @@ export function WorkflowEditorDrawer({ onClose }) {
 
           {active ? (
             <div>
-              <WorkflowHeader workflow={active} onDelete={() => handleDeleteWorkflow(active)} bump={bump} />
+              <WorkflowHeader key={active.id} workflow={active} onDelete={() => handleDeleteWorkflow(active)} bump={bump} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 10px' }}>
                 <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555' }}>
                   Tasks ({tasks.length})

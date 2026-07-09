@@ -264,7 +264,7 @@ export default function Workflows() {
           {/* Active workflow — header + inline-editable task list */}
           {wf && (
             <div>
-              <WorkflowHeader workflow={wf} onDelete={handleDeleteWorkflow} bump={bump} />
+              <WorkflowHeader key={wf.id} workflow={wf} onDelete={handleDeleteWorkflow} bump={bump} />
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 10px' }}>
                 <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555' }}>
