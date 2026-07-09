@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   getWorkflows, getTasksFor, loadWorkflows,
-  ROLES, ROLE_LABELS,
+  ROLES, ROLE_LABELS, WORKFLOW_CATEGORIES,
 } from '../lib/workflows.js';
 import { loadKeyDateTypes } from '../lib/keyDateTypes.js';
 import { WorkflowEditorDrawer, ManageKeyDateTypesDrawer, triggerSummary } from './CFL.jsx';
@@ -22,6 +22,10 @@ export default function Workflows() {
   const [layout, setLayout] = useState('checklist');
   const [editorOpen, setEditorOpen] = useState(false);
   const [datesOpen, setDatesOpen] = useState(false);
+  // Category filter chip. Defaults to Loan since that's the biggest
+  // bucket. Kimberly toggles between Client for Life / Loan / Lead
+  // Nurture / Other to keep the tab strip focused on one purpose.
+  const [category, setCategory] = useState('Loan');
 
   useEffect(() => {
     loadWorkflows().then(bump);
@@ -35,10 +39,52 @@ export default function Workflows() {
     return () => events.forEach((e) => window.removeEventListener(e, on));
   }, []);
 
-  const workflows = getWorkflows();
+  const allWorkflows = getWorkflows();
+  const workflows = allWorkflows.filter((w) => (w.category || 'Loan') === category);
   const wf = workflows.find((w) => w.id === activeId) || workflows[0] || null;
   const tasks = wf ? getTasksFor(wf.id) : [];
   const totalTasks = tasks.length;
+
+  // Per-category counts drive the little numeric badges on the chip bar
+  // so Kimberly can see at a glance which buckets have content.
+  const categoryCounts = useMemo(() => {
+    const counts = {};
+    WORKFLOW_CATEGORIES.forEach((c) => { counts[c] = 0; });
+    allWorkflows.forEach((w) => {
+      const c = w.category || 'Loan';
+      counts[c] = (counts[c] || 0) + 1;
+    });
+    return counts;
+  }, [allWorkflows]);
+
+  const categoryBar = (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+      {WORKFLOW_CATEGORIES.map((c) => {
+        const active = c === category;
+        return (
+          <button
+            key={c}
+            onClick={() => { setCategory(c); setActiveId(null); }}
+            style={{
+              padding: '8px 14px', borderRadius: 999,
+              border: `1px solid ${active ? '#0A0A0A' : '#d0d0d0'}`,
+              background: active ? '#0A0A0A' : '#fff',
+              color: active ? '#fff' : '#333',
+              fontWeight: 700, fontSize: 12, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            {c}
+            <span style={{
+              padding: '2px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+              background: active ? 'rgba(255,255,255,.2)' : '#eee',
+              color: active ? '#fff' : '#666',
+            }}>{categoryCounts[c] || 0}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   if (!workflows.length) {
     return (
@@ -46,17 +92,18 @@ export default function Workflows() {
         <div className="wf-header-row" style={{ marginBottom: 20 }}>
           <div>
             <h2>Workflows &amp; SOPs</h2>
-            <div className="desc">Shared with Client for Life. Build once — used everywhere.</div>
+            <div className="desc">Client for Life · Loan · Lead Nurture — separated by category.</div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="form-btn" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
-            <button className="form-btn primary" onClick={() => setEditorOpen(true)}>+ Build first workflow</button>
+            <button className="form-btn primary" onClick={() => setEditorOpen(true)}>+ New Workflow</button>
           </div>
         </div>
+        {categoryBar}
         <div style={{ padding: 40, textAlign: 'center', border: '2px dashed #e0e0e0', borderRadius: 8, color: '#888' }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#555', marginBottom: 6 }}>No workflows yet</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#555', marginBottom: 6 }}>No <em>{category}</em> workflows yet</div>
           <div style={{ fontSize: 12 }}>
-            Workflows here drive both this SOPs view AND the auto-generated task list on Client for Life. Click above to build one.
+            Click <strong>+ New Workflow</strong> and pick "{category}" when prompted for the category.
           </div>
         </div>
         {editorOpen && <WorkflowEditorDrawer onClose={() => { setEditorOpen(false); bump(); }} />}
@@ -67,6 +114,7 @@ export default function Workflows() {
 
   return (
     <>
+      {categoryBar}
       <div className="wf-tabs">
         {workflows.map((w) => (
           <button

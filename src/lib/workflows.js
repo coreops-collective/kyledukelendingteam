@@ -25,6 +25,12 @@ export const TRIGGER_BUILTIN_CLOSING = 'Closing';
 export const ROLES = ['lo', 'loa', 'admin', 'automated'];
 export const ROLE_LABELS = { lo: 'LO', loa: 'LOA', admin: 'Admin', automated: 'Automated' };
 
+// Workflow categories keep the three big kinds of workflow apart on
+// the Workflows / SOPs page and inside the editor. The team can extend
+// beyond these four by typing a custom value; the UI keeps predefined
+// on top and custom entries below.
+export const WORKFLOW_CATEGORIES = ['Client for Life', 'Loan', 'Lead Nurture', 'Other'];
+
 export async function loadWorkflows() {
   try {
     const [{ data: wfs }, { data: ts }, { data: cs }] = await Promise.all([
@@ -46,10 +52,10 @@ export async function loadWorkflows() {
   }
 }
 
-export async function createWorkflow(name, description = '') {
+export async function createWorkflow(name, description = '', category = 'Loan') {
   const { data, error } = await supabase
     .from('workflow_templates')
-    .insert({ name, description, position: WORKFLOWS.length })
+    .insert({ name, description, category, position: WORKFLOWS.length })
     .select().single();
   if (error) { console.warn('[workflows] createWorkflow:', error.message); return null; }
   WORKFLOWS.push(data);

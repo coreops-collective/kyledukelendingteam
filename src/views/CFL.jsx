@@ -11,7 +11,7 @@ import {
   createTask, updateTask, deleteTask,
   markTaskCompleted, unmarkTaskCompleted,
   generateTasksForClient, generateStatusTasks, buildAnchorsForClient, composeMailto,
-  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING,
+  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING, WORKFLOW_CATEGORIES,
   CONDITION_FIELDS, CONDITION_OPS,
 } from '../lib/workflows.js';
 import {
@@ -816,7 +816,15 @@ export function WorkflowEditorDrawer({ onClose }) {
   const handleNewWorkflow = async () => {
     const name = window.prompt('Name the workflow (e.g. "New Funded Loan", "Birthday Outreach")');
     if (!name) return;
-    const wf = await createWorkflow(name.trim());
+    // Ask which bucket the workflow belongs to so it lands in the
+    // right place on the Workflows / SOPs page.
+    const catRaw = window.prompt(
+      'Category?\n\n1 = Client for Life\n2 = Loan\n3 = Lead Nurture\n4 = Other',
+      '2'
+    );
+    const catMap = { '1': 'Client for Life', '2': 'Loan', '3': 'Lead Nurture', '4': 'Other' };
+    const category = catMap[(catRaw || '').trim()] || 'Loan';
+    const wf = await createWorkflow(name.trim(), '', category);
     if (wf) setActiveId(wf.id);
     bump();
   };
@@ -978,8 +986,11 @@ function WorkflowSidebar({ workflows, activeId, onPick, onNew }) {
               transition: 'background .12s',
             }}>
               <div style={{ fontWeight: 600 }}>{wf.name || 'Untitled'}</div>
-              <div style={{ fontSize: 10, color: isActive ? '#bbb' : '#888', marginTop: 2 }}>
-                {count} task{count === 1 ? '' : 's'}
+              <div style={{ fontSize: 10, color: isActive ? '#bbb' : '#888', marginTop: 2, display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span>{count} task{count === 1 ? '' : 's'}</span>
+                {wf.category && (
+                  <span style={{ padding: '1px 6px', background: isActive ? 'rgba(255,255,255,.15)' : '#eee', color: isActive ? '#fff' : '#555', borderRadius: 10, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px' }}>{wf.category}</span>
+                )}
               </div>
             </div>
           );
@@ -1007,13 +1018,23 @@ function WorkflowHeader({ workflow, onDelete, bump }) {
           onFocus={(e) => e.target.style.borderBottomColor = '#0A0A0A'}
           onBlurCapture={(e) => e.target.style.borderBottomColor = 'transparent'}
         />
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px' }}>Category</span>
+          <select
+            value={workflow.category || 'Loan'}
+            onChange={(e) => updateWorkflow(workflow.id, { category: e.target.value }).then(bump)}
+            style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 6, fontFamily: 'inherit' }}
+          >
+            {WORKFLOW_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
         <input
           defaultValue={workflow.description || ''}
           placeholder="Description (optional)"
           onBlur={(e) => updateWorkflow(workflow.id, { description: e.target.value }).then(bump)}
           style={{
             width: '100%', fontSize: 12, color: '#666',
-            border: 'none', padding: '4px 2px',
+            border: 'none', padding: '4px 2px', marginTop: 4,
             background: 'transparent', outline: 'none',
           }}
         />
