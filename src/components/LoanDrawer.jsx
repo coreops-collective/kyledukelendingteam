@@ -53,8 +53,17 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     onSaved?.();
   };
 
+  // Co-borrower field aliases — different views ended up writing to
+  // either the legacy c2* keys or the canonical co* keys, so every
+  // write mirrors to both names to keep them in sync. Same story on
+  // the read path in the JSX below.
+  const CO_ALIASES = {
+    c2first: 'coFirst', c2last: 'coLast', c2phone: 'coPhone', c2email: 'coEmail',
+    coFirst: 'c2first', coLast: 'c2last', coPhone: 'c2phone', coEmail: 'c2email',
+  };
   const set = (key, value) => {
     loan[key] = value;
+    if (CO_ALIASES[key]) loan[CO_ALIASES[key]] = value;
     if (key === 'status') {
       const nextStage = STATUS_TO_STAGE[value];
       if (nextStage) loan.stage = nextStage;
@@ -194,13 +203,13 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
               <I type="email" defaultValue={loan.email || ''} onBlur={(e) => set('email', e.target.value)} />
             </Field>
             <Field label="Co-Borrower First">
-              <I defaultValue={loan.c2first || ''} onBlur={(e) => set('c2first', e.target.value)} />
+              <I defaultValue={loan.c2first || loan.coFirst || ''} onBlur={(e) => set('coFirst', e.target.value)} />
             </Field>
             <Field label="Co-Borrower Last">
-              <I defaultValue={loan.c2last || ''} onBlur={(e) => set('c2last', e.target.value)} />
+              <I defaultValue={loan.c2last || loan.coLast || ''} onBlur={(e) => set('coLast', e.target.value)} />
             </Field>
             <Field label="Co-Borrower Phone" full>
-              <I type="tel" defaultValue={loan.c2phone || ''} onBlur={(e) => set('c2phone', e.target.value)} />
+              <I type="tel" defaultValue={loan.c2phone || loan.coPhone || ''} onBlur={(e) => set('coPhone', e.target.value)} />
             </Field>
           </div>
 

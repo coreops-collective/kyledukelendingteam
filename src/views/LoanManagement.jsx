@@ -742,9 +742,9 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                   <td><EditSelect value={l.leadSource || ''} options={LEAD_SOURCES} empty="—" onChange={(v) => onEdit(l.id, 'leadSource', v)} /></td>
                   <td><ZoomEditCell label="Phone" type="tel" value={l.phone} onChange={(v) => onEdit(l.id, 'phone', v)} /></td>
                   <td><ZoomEditCell label="Email" type="email" value={l.email} onChange={(v) => onEdit(l.id, 'email', v)} /></td>
-                  <td><ZoomEditCell label="Co-Borrower First" value={l.c2first} onChange={(v) => onEdit(l.id, 'c2first', v)} /></td>
-                  <td><ZoomEditCell label="Co-Borrower Last" value={l.c2last} onChange={(v) => onEdit(l.id, 'c2last', v)} /></td>
-                  <td><ZoomEditCell label="Co-Borrower Phone" type="tel" value={l.c2phone} onChange={(v) => onEdit(l.id, 'c2phone', v)} /></td>
+                  <td><ZoomEditCell label="Co-Borrower First" value={l.c2first || l.coFirst} onChange={(v) => onEdit(l.id, 'coFirst', v)} /></td>
+                  <td><ZoomEditCell label="Co-Borrower Last" value={l.c2last || l.coLast} onChange={(v) => onEdit(l.id, 'coLast', v)} /></td>
+                  <td><ZoomEditCell label="Co-Borrower Phone" type="tel" value={l.c2phone || l.coPhone} onChange={(v) => onEdit(l.id, 'coPhone', v)} /></td>
                 </tr>
               );
             })}
@@ -959,10 +959,18 @@ export default function LoanManagement() {
   // Mutate the shared LOANS array (same pattern as legacy) + force re-render.
   // Editing the close date auto-recomputes the ICD deadline (3 days back,
   // skipping Sundays) so the team doesn't have to do the math by hand.
+  // Co-borrower fields have two legacy names in the data (c2* and
+  // co*) — mirror every edit to both so the drawer, the past-client
+  // editor, and this spreadsheet all see the same value.
+  const CO_ALIASES = {
+    c2first: 'coFirst', c2last: 'coLast', c2phone: 'coPhone', c2email: 'coEmail',
+    coFirst: 'c2first', coLast: 'c2last', coPhone: 'c2phone', coEmail: 'c2email',
+  };
   const handleEdit = useCallback((id, key, value) => {
     const loan = LOANS.find((l) => l.id === id);
     if (!loan) return;
     loan[key] = value;
+    if (CO_ALIASES[key]) loan[CO_ALIASES[key]] = value;
     if (key === 'closeDate') {
       const auto = computeIcdDeadline(value);
       if (auto) loan.icdDeadline = auto;

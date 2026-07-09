@@ -512,9 +512,16 @@ function CoBorrowerEditor({ client, onChange }) {
   const existingBday = coName ? getDate(coName, 'Birthday') : null;
   const [coBday, setCoBday] = useState(existingBday?.date_value || '');
 
+  // Legacy loans stored co-borrower fields as c2first/c2last/... —
+  // some views still read those. Mirror every write here so both
+  // names carry the current value.
+  const CO_ALIAS = {
+    coFirst: 'c2first', coLast: 'c2last', coPhone: 'c2phone', coEmail: 'c2email',
+  };
   const commit = async (field, value) => {
     if (isLive) {
       loan[field] = value;
+      if (CO_ALIAS[field]) loan[CO_ALIAS[field]] = value;
       markLoansDirty(loan);
     } else {
       // Map camelCase local field → snake_case profile column.

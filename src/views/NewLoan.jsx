@@ -77,7 +77,31 @@ export default function NewLoan() {
 
   async function submit(e) {
     e?.preventDefault?.();
-    if (!form.first || !form.last) { setToast({ title: 'Missing fields', msg: 'First and last name required' }); return; }
+    // Real required-field validation. The submit button is
+    // type="button" so HTML `required` attributes on the inputs
+    // don't run — we have to check ourselves. Missing any of these
+    // was creating headless loans that silently dropped out of Team
+    // stats, LO filters, and agent lookups.
+    const missing = [];
+    if (!form.first) missing.push('First name');
+    if (!form.last) missing.push('Last name');
+    if (!form.phone) missing.push('Phone');
+    if (!form.email) missing.push('Email');
+    if (!form.lo) missing.push('LO');
+    if (!form.type) missing.push('Loan type');
+    if (form.hasCo === 'Yes') {
+      if (!form.coFirst) missing.push('Co-borrower first name');
+      if (!form.coLast) missing.push('Co-borrower last name');
+    }
+    if (missing.length) {
+      setToast({ title: 'Missing required fields', msg: missing.join(', ') });
+      return;
+    }
+    // "+ Add new agent" is a UI-only placeholder — persisting the
+    // literal string "__new__" onto the loan would leak into every
+    // realtor-lookup and agent-milestone view. Treat it as blank so
+    // the user comes back and picks a real agent.
+    const cleanAgent = (form.agent === '__new__' || !form.agent) ? '' : form.agent;
     const num = (v) => { const n = parseFloat(String(v).replace(/[,$]/g, '')); return isNaN(n) ? null : n; };
     const propAddr = isContract ? form.addr : (isPre ? null : form.addrPost);
     const row = {
@@ -94,7 +118,7 @@ export default function NewLoan() {
       pre_approval_amount: num(form.preapp),
       property_address: propAddr || null,
       estimated_close_date: isPre ? (form.estClose || null) : null,
-      agent: form.agent || null, lead_source: form.src || null,
+      agent: cleanAgent || null, lead_source: form.src || null,
       status_notes: form.notes || '',
       stage: form.status || 'new',
       is_locked: isContract ? (form.locked || null) : null,
@@ -127,17 +151,26 @@ export default function NewLoan() {
         if (form.email) ex.email = form.email;
         if (propAddr) ex.property = propAddr;
         if (num(form.amt)) ex.amount = num(form.amt);
-        if (form.agent) ex.agent = form.agent;
+        if (cleanAgent) ex.agent = cleanAgent;
         if (form.notes) ex.notes = form.notes;
         if (form.closeDate) ex.closeDate = form.closeDate;
         if (form.hasCo === 'Yes') {
+          // Dual-write co-borrower fields so both legacy (c2*) and
+          // canonical (co*) consumers see the update.
           ex.c2first = form.coFirst; ex.c2last = form.coLast;
           ex.c2phone = form.coPhone; ex.c2email = form.coEmail;
+          ex.coFirst = form.coFirst; ex.coLast = form.coLast;
+          ex.coPhone = form.coPhone; ex.coEmail = form.coEmail;
         }
         touchedLoan = ex;
       }
     } else {
-      const newId = 'NL' + Date.now().toString(36).toUpperCase();
+      // Local loan id — Date.now() alone collided on rapid submits
+      // and silently overwrote the first row. Append 4 random hex
+      // digits so two intakes within the same millisecond stay
+      // distinct.
+      const rand = Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0');
+      const newId = 'NL' + Date.now().toString(36).toUpperCase() + rand.toUpperCase();
       const newLoan = {
         id: newId,
         borrower: `${form.last}, ${form.first}`,
@@ -151,13 +184,22 @@ export default function NewLoan() {
         email: form.email || '',
         property: propAddr || 'TBD',
         closeDate: isContract ? (form.closeDate || '') : (form.estClose || ''),
-        agent: form.agent || '',
+        agent: cleanAgent || '',
         leadSource: form.src || '',
         notes: form.notes || '',
+        // Co-borrower fields are written to BOTH legacy (c2*) and
+        // canonical (co*) names because different views read from
+        // different names. See the round-3 commit for the
+        // canonicalization details. Dual-write here means no
+        // consumer sees stale data.
         c2first: form.hasCo === 'Yes' ? form.coFirst : '',
         c2last: form.hasCo === 'Yes' ? form.coLast : '',
         c2phone: form.hasCo === 'Yes' ? form.coPhone : '',
         c2email: form.hasCo === 'Yes' ? form.coEmail : '',
+        coFirst: form.hasCo === 'Yes' ? form.coFirst : '',
+        coLast: form.hasCo === 'Yes' ? form.coLast : '',
+        coPhone: form.hasCo === 'Yes' ? form.coPhone : '',
+        coEmail: form.hasCo === 'Yes' ? form.coEmail : '',
       };
       LOANS.push(newLoan);
       touchedLoan = newLoan;
