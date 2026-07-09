@@ -1,31 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   getWorkflows, getTasksFor, loadWorkflows,
-  ROLES, ROLE_LABELS, WORKFLOW_CATEGORIES,
+  createWorkflow, deleteWorkflow, createTask, updateTask, deleteTask,
+  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING, WORKFLOW_CATEGORIES,
 } from '../lib/workflows.js';
-import { loadKeyDateTypes } from '../lib/keyDateTypes.js';
-import { WorkflowEditorDrawer, ManageKeyDateTypesDrawer, triggerSummary } from './CFL.jsx';
+import { loadKeyDateTypes, getKeyDateTypeLabels } from '../lib/keyDateTypes.js';
+import {
+  ManageKeyDateTypesDrawer, TaskEditDrawer, TaskCard, WorkflowHeader, triggerSummary,
+} from './CFL.jsx';
 
-// SOPs / Workflows tab. Reads from the SAME workflow_templates +
-// workflow_tasks tables that power Client for Life — so the SOPs the
-// team documents here and the client-outreach tasks CFL generates are
-// literally the same rows. Click "Edit workflows" and the shared
-// WorkflowEditorDrawer opens exactly as it does inside CFL.
-//
-// Two visualizations preserved from the legacy view:
-//   - Step List: numbered cards down the page, one per task.
-//   - Swim Lanes: tasks grouped by role (LO / LOA / Admin / Automated).
+// Workflows & SOPs — the one and only workflow management surface.
+// Reads from the same workflow_templates + workflow_tasks tables as
+// Client for Life. Tasks are editable INLINE on this page (no
+// secondary drawer needed): click any task to open its editor,
+// + Add Task drops a new one at the bottom, × removes it, drag to
+// reorder. New Workflow creates a new bucket via a two-prompt flow.
 export default function Workflows() {
   const [, force] = useState(0);
   const bump = () => force((n) => n + 1);
   const [activeId, setActiveId] = useState(null);
-  const [layout, setLayout] = useState('checklist');
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
   const [datesOpen, setDatesOpen] = useState(false);
-  // Category filter chip. Defaults to Loan since that's the biggest
-  // bucket. Kimberly toggles between Client for Life / Loan / Lead
-  // Nurture / Other to keep the tab strip focused on one purpose.
   const [category, setCategory] = useState('Loan');
+  const [draggingTaskId, setDraggingTaskId] = useState(null);
 
   useEffect(() => {
     loadWorkflows().then(bump);
@@ -43,10 +40,7 @@ export default function Workflows() {
   const workflows = allWorkflows.filter((w) => (w.category || 'Loan') === category);
   const wf = workflows.find((w) => w.id === activeId) || workflows[0] || null;
   const tasks = wf ? getTasksFor(wf.id) : [];
-  const totalTasks = tasks.length;
 
-  // Per-category counts drive the little numeric badges on the chip bar
-  // so Kimberly can see at a glance which buckets have content.
   const categoryCounts = useMemo(() => {
     const counts = {};
     WORKFLOW_CATEGORIES.forEach((c) => { counts[c] = 0; });
@@ -56,6 +50,75 @@ export default function Workflows() {
     });
     return counts;
   }, [allWorkflows]);
+
+  const catalogLabels = getKeyDateTypeLabels();
+  const triggerLabels = catalogLabels.length > 0
+    ? [TRIGGER_BUILTIN_CLOSING, ...catalogLabels]
+    : [TRIGGER_BUILTIN_CLOSING];
+
+  const handleNewWorkflow = async () => {
+    const name = window.prompt(`Name the new ${category} workflow:`);
+    if (!name || !name.trim()) return;
+    const created = await createWorkflow(name.trim(), '', category);
+    if (created) setActiveId(created.id);
+    bump();
+  };
+
+  const handleDeleteWorkflow = async () => {
+    if (!wf) return;
+    if (!window.confirm(`Delete workflow "${wf.name}" and all of its tasks? This can't be undone.`)) return;
+    await deleteWorkflow(wf.id);
+    setActiveId(null);
+    bump();
+  };
+
+  const handleAddTask = async () => {
+    if (!wf) return;
+    const t = await createTask(wf.id, { title: 'New task' });
+    if (t) setEditingTask(t);
+    bump();
+  };
+
+  const handleDuplicate = async (t) => {
+    const copy = await createTask(wf.id, {
+      title: `${t.title} (copy)`,
+      role: t.role,
+      trigger_kind: t.trigger_kind,
+      trigger_label: t.trigger_label,
+      trigger_days: t.trigger_days,
+      trigger_recurring: t.trigger_recurring,
+      repeat_interval: t.repeat_interval,
+      condition_field: t.condition_field,
+      condition_op: t.condition_op,
+      email_recipient: t.email_recipient,
+      email_subject: t.email_subject,
+      email_body: t.email_body,
+      notes: t.notes,
+    });
+    if (copy) setEditingTask(copy);
+    bump();
+  };
+
+  const handleDelete = async (t) => {
+    if (!window.confirm(`Delete task "${t.title}"?`)) return;
+    await deleteTask(t.id);
+    bump();
+  };
+
+  const handleDrop = async (targetTask) => {
+    if (!draggingTaskId || draggingTaskId === targetTask.id) return;
+    const list = [...tasks];
+    const from = list.findIndex((t) => t.id === draggingTaskId);
+    const to = list.findIndex((t) => t.id === targetTask.id);
+    if (from < 0 || to < 0) return;
+    const [moved] = list.splice(from, 1);
+    list.splice(to, 0, moved);
+    await Promise.all(list.map((t, i) =>
+      t.position !== i ? updateTask(t.id, { position: i }) : null
+    ));
+    setDraggingTaskId(null);
+    bump();
+  };
 
   const categoryBar = (
     <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -86,184 +149,103 @@ export default function Workflows() {
     </div>
   );
 
-  if (!workflows.length) {
-    return (
-      <div>
-        <div className="wf-header-row" style={{ marginBottom: 20 }}>
-          <div>
-            <h2>Workflows &amp; SOPs</h2>
-            <div className="desc">Client for Life · Loan · Lead Nurture — separated by category.</div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="form-btn" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
-            <button className="form-btn primary" onClick={() => setEditorOpen(true)}>+ New Workflow</button>
-          </div>
-        </div>
-        {categoryBar}
-        <div style={{ padding: 40, textAlign: 'center', border: '2px dashed #e0e0e0', borderRadius: 8, color: '#888' }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#555', marginBottom: 6 }}>No <em>{category}</em> workflows yet</div>
-          <div style={{ fontSize: 12 }}>
-            Click <strong>+ New Workflow</strong> and pick "{category}" when prompted for the category.
-          </div>
-        </div>
-        {editorOpen && <WorkflowEditorDrawer onClose={() => { setEditorOpen(false); bump(); }} />}
-        {datesOpen && <ManageKeyDateTypesDrawer onClose={() => { setDatesOpen(false); bump(); }} />}
-      </div>
-    );
-  }
-
   return (
     <>
-      {categoryBar}
-      <div className="wf-tabs">
-        {workflows.map((w) => (
-          <button
-            key={w.id}
-            className={`wf-tab ${w.id === (wf && wf.id) ? 'active' : ''}`}
-            onClick={() => setActiveId(w.id)}
-          >
-            {w.name}
-            <span style={{ opacity: .5, marginLeft: 6, fontSize: 10 }}>{(getTasksFor(w.id) || []).length}</span>
-          </button>
-        ))}
-      </div>
-      <div className="wf-header-row">
+      <div className="wf-header-row" style={{ marginBottom: 12 }}>
         <div>
-          <h2>{wf.name}</h2>
-          <div className="desc">{wf.description || 'Shared with Client for Life · edits here propagate everywhere'}</div>
+          <h2>Workflows &amp; SOPs</h2>
+          <div className="desc">Click any task to edit · drag ⋮⋮ to reorder · + Add Task to append</div>
         </div>
-        <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 22, fontWeight: 700, color: 'var(--brand-red)', lineHeight: 1 }}>{totalTasks}</div>
-            <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginTop: 4 }}>Tasks</div>
-          </div>
-          <div style={{ display: 'flex', gap: 6, background: '#f4f4f6', borderRadius: 8, padding: 4 }}>
-            <button
-              onClick={() => setLayout('checklist')}
-              style={layoutBtnStyle(layout === 'checklist')}
-            >Step List</button>
-            <button
-              onClick={() => setLayout('swim')}
-              style={layoutBtnStyle(layout === 'swim')}
-            >Swim Lanes</button>
-          </div>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button className="form-btn" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
-          <button className="form-btn primary" onClick={() => setEditorOpen(true)}>Edit Workflows</button>
+          <button className="form-btn primary" onClick={handleNewWorkflow}>+ New Workflow</button>
         </div>
       </div>
-      {layout === 'checklist' ? <StepList tasks={tasks} /> : <SwimLanes tasks={tasks} />}
-      {editorOpen && <WorkflowEditorDrawer onClose={() => { setEditorOpen(false); bump(); }} />}
-      {datesOpen && <ManageKeyDateTypesDrawer onClose={() => { setDatesOpen(false); bump(); }} />}
-    </>
-  );
-}
 
-const layoutBtnStyle = (active) => ({
-  padding: '6px 14px', border: 'none',
-  background: active ? '#fff' : 'transparent',
-  boxShadow: active ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
-  borderRadius: 6,
-  fontFamily: "'Oswald',sans-serif", fontSize: 10,
-  textTransform: 'uppercase', letterSpacing: '.6px', fontWeight: 700,
-  color: active ? 'var(--brand-red)' : '#888',
-  cursor: 'pointer',
-});
+      {categoryBar}
 
-const ROLE_COLORS = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
-const ROLE_BGS = { lo: '#f8f8fa', loa: '#fffdf0', admin: '#f5fbf5', automated: '#fffafb' };
-
-function StepList({ tasks }) {
-  if (tasks.length === 0) {
-    return (
-      <div style={{ padding: 30, textAlign: 'center', border: '2px dashed #e0e0e0', borderRadius: 8, color: '#888' }}>
-        <div style={{ fontSize: 12 }}>No tasks in this workflow yet. Click "Edit Workflows" to add.</div>
-      </div>
-    );
-  }
-  return (
-    <div className="wf-checklist-polished">
-      {tasks.map((t, idx) => {
-        const role = t.role || 'lo';
-        return (
-          <div key={t.id} className={`wf-task-polished role-${role}`}>
-            <div className="wf-num">{idx + 1}</div>
-            <div className="wf-task-body">
-              <div className="wf-task-head" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span
-                  className={`wf-task-label ${role}`}
-                  style={{ padding: '2px 8px', borderRadius: 4, background: ROLE_COLORS[role], color: '#fff', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}
-                >
-                  {ROLE_LABELS[role] || role}
-                </span>
-                <span style={{ fontSize: 11, color: '#888' }}>{triggerSummary(t)}</span>
-                {t.email_subject && (
-                  <span style={{ fontSize: 10, background: '#0d47a1', color: '#fff', padding: '2px 8px', borderRadius: 4, fontWeight: 700, letterSpacing: '.5px', textTransform: 'uppercase' }}>
-                    📧 Email
-                  </span>
-                )}
-              </div>
-              <div className="wf-task-text">{t.title || '(no title)'}</div>
-              {t.notes && (
-                <div className="wf-task-meta" style={{ marginTop: 4, fontSize: 11, color: '#666', fontStyle: 'italic' }}>{t.notes}</div>
-              )}
-              {t.email_subject && (
-                <div className="wf-task-meta" style={{ marginTop: 4, fontSize: 11, color: '#0d47a1' }}>
-                  <strong>Subject:</strong> {t.email_subject}
-                </div>
-              )}
-            </div>
+      {workflows.length === 0 ? (
+        <div style={{ padding: 40, textAlign: 'center', border: '2px dashed #e0e0e0', borderRadius: 8, color: '#888' }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#555', marginBottom: 6 }}>
+            No <em>{category}</em> workflows yet
           </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function SwimLanes({ tasks }) {
-  const byRole = useMemo(() => {
-    const map = { lo: [], loa: [], admin: [], automated: [] };
-    tasks.forEach((t, i) => {
-      const r = ROLES.includes(t.role) ? t.role : 'lo';
-      map[r].push({ ...t, order: i + 1 });
-    });
-    return map;
-  }, [tasks]);
-  return (
-    <div className="wf-swim-wrap">
-      <div className="wf-swim-grid">
-        {ROLES.map((r) => (
-          <div key={r} className="wf-lane" style={{ background: ROLE_BGS[r], borderTop: `4px solid ${ROLE_COLORS[r]}` }}>
-            <div className="wf-lane-head">
-              <div className="wf-lane-title">{ROLE_LABELS[r]}</div>
-              <div className="wf-lane-count">{byRole[r].length}</div>
-            </div>
-            <div className="wf-lane-body">
-              {byRole[r].length === 0 ? (
-                <div style={{ padding: 20, textAlign: 'center', color: '#bbb', fontSize: 11, fontStyle: 'italic' }}>No tasks</div>
-              ) : (
-                byRole[r].map((t) => (
-                  <div key={t.id} className="wf-lane-card">
-                    <div className="wf-lane-card-head">
-                      <span style={{
-                        fontFamily: "'Oswald',sans-serif", fontSize: 10, fontWeight: 700,
-                        color: ROLE_COLORS[r], background: '#fff', padding: '2px 7px',
-                        borderRadius: 10, border: `1px solid ${ROLE_COLORS[r]}`,
-                      }}>#{t.order}</span>
-                      {t.email_subject && (
-                        <span style={{ fontSize: 9, background: '#0d47a1', color: '#fff', padding: '2px 6px', borderRadius: 4, marginLeft: 6, fontWeight: 700 }}>📧</span>
-                      )}
-                    </div>
-                    <div className="wf-lane-card-text">{t.title || '(no title)'}</div>
-                    <div className="wf-lane-meta" style={{ fontSize: 10, color: '#888', marginTop: 6 }}>
-                      {triggerSummary(t)}
-                    </div>
+          <div style={{ fontSize: 12 }}>
+            Click <strong>+ New Workflow</strong> above to build the first one in this category.
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16 }}>
+          {/* Workflow list on the left, click to switch */}
+          <div style={{ borderRight: '1px solid #eee', paddingRight: 12 }}>
+            {workflows.map((w) => {
+              const isActive = w.id === (wf && wf.id);
+              const count = (getTasksFor(w.id) || []).length;
+              return (
+                <div key={w.id} onClick={() => setActiveId(w.id)} style={{
+                  padding: '10px 12px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
+                  background: isActive ? '#0A0A0A' : 'transparent',
+                  color: isActive ? '#fff' : '#222',
+                  fontSize: 13,
+                }}>
+                  <div style={{ fontWeight: 600 }}>{w.name || 'Untitled'}</div>
+                  <div style={{ fontSize: 10, color: isActive ? '#bbb' : '#888', marginTop: 2 }}>
+                    {count} task{count === 1 ? '' : 's'}
                   </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Active workflow — header + inline-editable task list */}
+          {wf && (
+            <div>
+              <WorkflowHeader workflow={wf} onDelete={handleDeleteWorkflow} bump={bump} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 10px' }}>
+                <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555' }}>
+                  Tasks ({tasks.length})
+                </div>
+                <button className="form-btn primary" onClick={handleAddTask}>+ Add Task</button>
+              </div>
+
+              {tasks.length === 0 ? (
+                <div style={{ padding: 30, textAlign: 'center', border: '2px dashed #e0e0e0', borderRadius: 8, color: '#888' }}>
+                  <div style={{ fontSize: 12, marginBottom: 12 }}>No tasks in this workflow yet.</div>
+                  <button className="form-btn primary" onClick={handleAddTask}>+ Add first task</button>
+                </div>
+              ) : (
+                tasks.map((t) => (
+                  <TaskCard
+                    key={t.id}
+                    task={t}
+                    isDragging={draggingTaskId === t.id}
+                    onDragStart={() => setDraggingTaskId(t.id)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => handleDrop(t)}
+                    onEdit={() => setEditingTask(t)}
+                    onDuplicate={() => handleDuplicate(t)}
+                    onDelete={() => handleDelete(t)}
+                  />
                 ))
               )}
             </div>
-          </div>
-        ))}
-      </div>
-    </div>
+          )}
+        </div>
+      )}
+
+      {editingTask && (
+        <TaskEditDrawer
+          task={editingTask}
+          triggerLabels={triggerLabels}
+          onClose={() => { setEditingTask(null); bump(); }}
+          onDelete={async () => {
+            await deleteTask(editingTask.id);
+            setEditingTask(null);
+            bump();
+          }}
+        />
+      )}
+      {datesOpen && <ManageKeyDateTypesDrawer onClose={() => { setDatesOpen(false); bump(); }} />}
+    </>
   );
 }

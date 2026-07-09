@@ -1000,7 +1000,7 @@ function WorkflowSidebar({ workflows, activeId, onPick, onNew }) {
   );
 }
 
-function WorkflowHeader({ workflow, onDelete, bump }) {
+export function WorkflowHeader({ workflow, onDelete, bump }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, padding: '4px 0' }}>
       <div style={{ flex: 1 }}>
@@ -1061,7 +1061,7 @@ function EmptyTaskState({ onAdd }) {
   );
 }
 
-function TaskCard({ task, isDragging, onDragStart, onDragOver, onDrop, onEdit, onDuplicate, onDelete }) {
+export function TaskCard({ task, isDragging, onDragStart, onDragOver, onDrop, onEdit, onDuplicate, onDelete }) {
   const role = task.role || 'lo';
   const roleColors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
   return (
@@ -1144,7 +1144,7 @@ export function triggerSummary(t) {
 }
 
 // ─── Single-task edit drawer (opens over the workflow editor) ──
-function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
+export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
   const [title, setTitle] = useState(task.title || '');
   const [role, setRole] = useState(task.role || 'lo');
   const [triggerKind, setTriggerKind] = useState(task.trigger_kind === 'status' ? 'status' : 'date');
