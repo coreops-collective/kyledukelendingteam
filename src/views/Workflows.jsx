@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   getWorkflows, getTasksFor, loadWorkflows,
   createWorkflow, deleteWorkflow, createTask, updateTask, deleteTask,
-  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING, WORKFLOW_CATEGORIES,
+  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING,
+  WORKFLOW_CATEGORIES, allWorkflowCategories, addWorkflowCategory,
 } from '../lib/workflows.js';
 import { loadKeyDateTypes, getKeyDateTypeLabels } from '../lib/keyDateTypes.js';
 import {
@@ -30,6 +31,7 @@ export default function Workflows() {
     const events = [
       'kdt-workflows-changed', 'kdt-workflows-loaded',
       'kdt-key-date-types-changed', 'kdt-key-date-types-loaded',
+      'kdt-workflow-categories-changed',
     ];
     const on = () => bump();
     events.forEach((e) => window.addEventListener(e, on));
@@ -45,12 +47,23 @@ export default function Workflows() {
   // — it's a mutable module-level array that keeps the same reference
   // when items are added/removed, so a memo keyed on it goes stale
   // and the badges freeze at their first-render values.
+  const knownCategories = allWorkflowCategories();
   const categoryCounts = {};
-  WORKFLOW_CATEGORIES.forEach((c) => { categoryCounts[c] = 0; });
+  knownCategories.forEach((c) => { categoryCounts[c] = 0; });
   allWorkflows.forEach((w) => {
     const c = w.category || 'Loan';
     categoryCounts[c] = (categoryCounts[c] || 0) + 1;
   });
+
+  const promptForNewCategory = () => {
+    const raw = window.prompt('Name the new category:');
+    const clean = (raw || '').trim();
+    if (!clean) return null;
+    addWorkflowCategory(clean);
+    setCategory(clean);
+    bump();
+    return clean;
+  };
 
   const catalogLabels = getKeyDateTypeLabels();
   const triggerLabels = catalogLabels.length > 0
@@ -58,7 +71,7 @@ export default function Workflows() {
     : [TRIGGER_BUILTIN_CLOSING];
 
   const handleNewWorkflow = async () => {
-    const name = window.prompt(`Name the new ${category} workflow:`);
+    const name = window.prompt(`Name the new "${category}" workflow:`);
     if (!name || !name.trim()) return;
     const created = await createWorkflow(name.trim(), '', category);
     if (created) setActiveId(created.id);
@@ -123,7 +136,7 @@ export default function Workflows() {
 
   const categoryBar = (
     <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-      {WORKFLOW_CATEGORIES.map((c) => {
+      {knownCategories.map((c) => {
         const active = c === category;
         return (
           <button
@@ -147,6 +160,17 @@ export default function Workflows() {
           </button>
         );
       })}
+      <button
+        onClick={promptForNewCategory}
+        title="Add a custom category"
+        style={{
+          padding: '8px 14px', borderRadius: 999,
+          border: '1px dashed #d0d0d0',
+          background: '#fff',
+          color: '#666',
+          fontWeight: 600, fontSize: 12, cursor: 'pointer',
+        }}
+      >+ New category</button>
     </div>
   );
 

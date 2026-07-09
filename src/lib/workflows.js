@@ -25,11 +25,47 @@ export const TRIGGER_BUILTIN_CLOSING = 'Closing';
 export const ROLES = ['lo', 'loa', 'admin', 'automated'];
 export const ROLE_LABELS = { lo: 'LO', loa: 'LOA', admin: 'Admin', automated: 'Automated' };
 
-// Workflow categories keep the three big kinds of workflow apart on
-// the Workflows / SOPs page and inside the editor. The team can extend
-// beyond these four by typing a custom value; the UI keeps predefined
-// on top and custom entries below.
-export const WORKFLOW_CATEGORIES = ['Client for Life', 'Loan', 'Lead Nurture', 'Other'];
+// Predefined workflow categories. Custom values added via
+// addWorkflowCategory() persist to localStorage and are appended to
+// this list at read time via allWorkflowCategories().
+export const WORKFLOW_CATEGORIES = ['Client for Life', 'Loan', 'Lead Nurture'];
+
+const CUSTOM_CATS_KEY = 'kdt-workflow-categories';
+
+function loadCustomCategories() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CUSTOM_CATS_KEY) || '[]');
+    return Array.isArray(raw) ? raw.filter((c) => typeof c === 'string' && c.trim()) : [];
+  } catch { return []; }
+}
+
+// Full category list = predefined + team-added custom + any category
+// already in use on a workflow row (so a category typed on one
+// device shows up on another once workflows sync).
+export function allWorkflowCategories() {
+  const seen = new Set(WORKFLOW_CATEGORIES);
+  loadCustomCategories().forEach((c) => seen.add(c));
+  WORKFLOWS.forEach((w) => { if (w.category) seen.add(w.category); });
+  const predefined = WORKFLOW_CATEGORIES;
+  const extras = [...seen].filter((c) => !predefined.includes(c)).sort((a, b) => a.localeCompare(b));
+  return [...predefined, ...extras];
+}
+
+// Persist a new custom category and fire an event so any open UI
+// picks it up without a reload. Safe to call with an already-known
+// category — it's just a set-insert.
+export function addWorkflowCategory(name) {
+  const clean = (name || '').trim();
+  if (!clean) return false;
+  if (WORKFLOW_CATEGORIES.includes(clean)) return false;
+  const current = loadCustomCategories();
+  if (current.includes(clean)) return false;
+  try {
+    localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify([...current, clean]));
+    window.dispatchEvent(new Event('kdt-workflow-categories-changed'));
+    return true;
+  } catch { return false; }
+}
 
 export async function loadWorkflows() {
   try {

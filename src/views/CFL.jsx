@@ -11,7 +11,8 @@ import {
   createTask, updateTask, deleteTask,
   markTaskCompleted, unmarkTaskCompleted,
   generateTasksForClient, generateStatusTasks, buildAnchorsForClient, composeMailto,
-  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING, WORKFLOW_CATEGORIES,
+  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING,
+  WORKFLOW_CATEGORIES, allWorkflowCategories, addWorkflowCategory,
   CONDITION_FIELDS, CONDITION_OPS,
 } from '../lib/workflows.js';
 import {
@@ -1022,10 +1023,22 @@ export function WorkflowHeader({ workflow, onDelete, bump }) {
           <span style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px' }}>Category</span>
           <select
             value={workflow.category || 'Loan'}
-            onChange={(e) => updateWorkflow(workflow.id, { category: e.target.value }).then(bump)}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === '__new__') {
+                const raw = window.prompt('Name the new category:');
+                const clean = (raw || '').trim();
+                if (!clean) return;
+                addWorkflowCategory(clean);
+                updateWorkflow(workflow.id, { category: clean }).then(bump);
+              } else {
+                updateWorkflow(workflow.id, { category: v }).then(bump);
+              }
+            }}
             style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 6, fontFamily: 'inherit' }}
           >
-            {WORKFLOW_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            {allWorkflowCategories().map((c) => <option key={c} value={c}>{c}</option>)}
+            <option value="__new__">+ New category…</option>
           </select>
         </div>
         <input
