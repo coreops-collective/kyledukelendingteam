@@ -366,27 +366,25 @@ function TaskRow({ item, today, first, onOpenClient }) {
   const roleColors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
   const days = Math.round((item.due_date - today) / DAY);
   const dueLabel = days < 0 ? `${-days}d overdue` : days === 0 ? 'Today' : `${days}d`;
-  const onToggle = () => {
+  const decisionOptions = Array.isArray(item.task.decision_options) ? item.task.decision_options : [];
+  const isDecision = decisionOptions.length > 0;
+  const dueIso = (() => {
     const due = item.due_date;
-    const iso = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
+    return `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
+  })();
+  const onToggle = () => {
     if (item.completed) {
-      unmarkTaskCompleted(item.task.id, item.client_name, iso);
+      unmarkTaskCompleted(item.task.id, item.client_name, dueIso);
       return;
     }
-    // Decision-branch tasks prompt for which outcome to record so the
-    // dependent branches downstream fire on the right path.
-    const options = Array.isArray(item.task.decision_options) ? item.task.decision_options : null;
-    let outcome = null;
-    if (options && options.length > 0) {
-      const list = options.map((o, i) => `${i + 1}. ${o}`).join('\n');
-      const raw = window.prompt(`Which outcome for "${item.task.title}"?\n\n${list}`);
-      if (!raw) return; // cancel
-      const idx = parseInt(raw.trim(), 10);
-      outcome = Number.isFinite(idx) && idx >= 1 && idx <= options.length
-        ? options[idx - 1]
-        : raw.trim();
-    }
-    markTaskCompleted(item.task.id, item.client_name, iso, null, outcome);
+    // Decision points don't get a plain checkbox — the answer buttons
+    // handle completion. Show a helpful nudge if someone still tries
+    // to check the checkbox.
+    if (isDecision) return;
+    markTaskCompleted(item.task.id, item.client_name, dueIso);
+  };
+  const answerDecision = (outcome) => {
+    markTaskCompleted(item.task.id, item.client_name, dueIso, null, outcome);
   };
   const loan = LOANS.find((l) => (l.borrower || '').trim().toLowerCase() === (item.client_name || '').trim().toLowerCase());
   const mailto = item.task.email_subject ? composeMailto(item.task, item.client_name, loan) : null;
@@ -400,12 +398,18 @@ function TaskRow({ item, today, first, onOpenClient }) {
     <div style={{
       display: 'grid', gridTemplateColumns: '30px 1fr 220px 90px 80px', gap: 10,
       padding: '12px 14px', borderTop: first ? 'none' : '1px solid #f1f1f1',
-      alignItems: 'center', background: item.completed ? '#fafafa' : '#fff',
+      alignItems: isDecision ? 'flex-start' : 'center',
+      background: item.completed ? '#fafafa' : isDecision ? '#f5f9ff' : '#fff',
     }}>
-      <input type="checkbox" checked={item.completed} onChange={onToggle}
-        style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }} />
+      {isDecision ? (
+        <div style={{ fontSize: 20, textAlign: 'center', color: '#0d47a1' }} title="Decision Point">❓</div>
+      ) : (
+        <input type="checkbox" checked={item.completed} onChange={onToggle}
+          style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }} />
+      )}
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: item.completed ? '#aaa' : '#222', textDecoration: item.completed ? 'line-through' : 'none' }}>
+          {isDecision && <span style={{ fontSize: 10, background: '#0d47a1', color: '#fff', padding: '2px 6px', borderRadius: 4, marginRight: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>Decision</span>}
           {item.task.title}
         </div>
         <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
@@ -418,6 +422,25 @@ function TaskRow({ item, today, first, onOpenClient }) {
           {' · '}{item.workflow.name}
           {item.task.notes ? ` · ${item.task.notes}` : ''}
         </div>
+        {isDecision && !item.completed && (
+          <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {decisionOptions.map((opt) => (
+              <button
+                key={opt}
+                onClick={(e) => { e.stopPropagation(); answerDecision(opt); }}
+                style={{
+                  padding: '6px 12px', borderRadius: 999, border: '1px solid #0d47a1',
+                  background: '#fff', color: '#0d47a1', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                }}
+              >{opt}</button>
+            ))}
+          </div>
+        )}
+        {isDecision && item.completed && (
+          <div style={{ marginTop: 6, fontSize: 11, color: '#2e7d32', fontWeight: 600 }}>
+            ✓ Answered — downstream branch generating
+          </div>
+        )}
       </div>
       <div style={{ fontSize: 11, color: '#666' }}>
         <div><strong style={{ color: '#222', fontWeight: 700 }}>Due</strong> {fmtDate(item.due_date)}</div>
@@ -1261,43 +1284,15 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
         </div>
         <div className="drawer-body">
           <div style={sectionStyle}>
-            <label style={labelStyle}>Type</label>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                type="button"
-                onClick={() => setTaskType('task')}
-                style={{
-                  flex: 1, padding: '10px 14px', borderRadius: 8,
-                  border: `1px solid ${taskType === 'task' ? '#0A0A0A' : '#d0d0d0'}`,
-                  background: taskType === 'task' ? '#0A0A0A' : '#fff',
-                  color: taskType === 'task' ? '#fff' : '#333',
-                  fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                }}
-              >✅ Task</button>
-              <button
-                type="button"
-                onClick={() => setTaskType('decision')}
-                style={{
-                  flex: 1, padding: '10px 14px', borderRadius: 8,
-                  border: `1px solid ${taskType === 'decision' ? '#0d47a1' : '#d0d0d0'}`,
-                  background: taskType === 'decision' ? '#0d47a1' : '#fff',
-                  color: taskType === 'decision' ? '#fff' : '#333',
-                  fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                }}
-              >❓ Decision Point</button>
-            </div>
-            <div style={{ marginTop: 6, fontSize: 11, color: '#666', fontStyle: 'italic' }}>
-              {taskType === 'decision'
-                ? 'A question the LO/LOA/Admin answers. Their answer picks which downstream tasks generate.'
-                : 'A regular action item. Can optionally be gated on an earlier decision point.'}
-            </div>
-          </div>
-
-          <div style={sectionStyle}>
             <label style={labelStyle}>{taskType === 'decision' ? 'Question' : 'Task'}</label>
             <input value={title} onChange={(e) => setTitle(e.target.value)}
               placeholder={taskType === 'decision' ? 'What are you asking? e.g. "Approved, denied, or credit repair?"' : 'What needs to happen?'}
               style={{ ...inputStyle, fontSize: 16, fontWeight: 600 }} autoFocus />
+            {taskType === 'decision' && (
+              <div style={{ marginTop: 6, fontSize: 11, color: '#0d47a1', fontStyle: 'italic', fontWeight: 600 }}>
+                ❓ This is a Decision Point — the LO/LOA/Admin picks an answer from the list below.
+              </div>
+            )}
           </div>
 
           <div style={sectionStyle}>

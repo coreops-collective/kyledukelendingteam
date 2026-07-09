@@ -93,6 +93,20 @@ export default function Workflows() {
     bump();
   };
 
+  // Decision Point creation seeds decision_options with two starter
+  // answers so the editor drawer opens in decision-point mode
+  // (taskType is inferred from decision_options being non-empty).
+  // The user renames the question + adjusts the answers from there.
+  const handleAddDecisionPoint = async () => {
+    if (!wf) return;
+    const t = await createTask(wf.id, {
+      title: 'What was the outcome?',
+      decision_options: ['Yes', 'No'],
+    });
+    if (t) setEditingTask(t);
+    bump();
+  };
+
   // "+ Add task for this branch" on a decision-parent task auto-wires
   // the new task's depends_on_task_id + depends_on_outcome so it only
   // appears once the parent's decision has been answered with that
@@ -247,13 +261,23 @@ export default function Workflows() {
                 <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555' }}>
                   Tasks ({tasks.length})
                 </div>
-                <button className="form-btn primary" onClick={handleAddTask}>+ Add Task</button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="form-btn" style={{ background: '#0d47a1', color: '#fff', border: 'none' }} onClick={handleAddDecisionPoint}>
+                    ❓ + Add Decision Point
+                  </button>
+                  <button className="form-btn primary" onClick={handleAddTask}>
+                    ✅ + Add Task
+                  </button>
+                </div>
               </div>
 
               {tasks.length === 0 ? (
                 <div style={{ padding: 30, textAlign: 'center', border: '2px dashed #e0e0e0', borderRadius: 8, color: '#888' }}>
                   <div style={{ fontSize: 12, marginBottom: 12 }}>No tasks in this workflow yet.</div>
-                  <button className="form-btn primary" onClick={handleAddTask}>+ Add first task</button>
+                  <div style={{ display: 'inline-flex', gap: 6 }}>
+                    <button className="form-btn primary" onClick={handleAddTask}>✅ + Add Task</button>
+                    <button className="form-btn" style={{ background: '#0d47a1', color: '#fff', border: 'none' }} onClick={handleAddDecisionPoint}>❓ + Add Decision Point</button>
+                  </div>
                 </div>
               ) : (
                 <TaskTree
