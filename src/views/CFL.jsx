@@ -97,8 +97,27 @@ export default function CFL() {
       }
       seen.set(k, { name: name.trim(), closeDate: rawCloseDate, parsed });
     };
-    LOANS.forEach((l) => collect(l.borrower, l.closeDate));
+    LOANS.forEach((l) => {
+      collect(l.borrower, l.closeDate);
+      // Co-borrower on the loan becomes their own client for CFL
+      // purposes. They inherit the loan's closeDate for Closing +
+      // Closing Anniversary triggers, and any birthday saved
+      // against their name via NewLoan intake or the CoBorrowerEditor
+      // fires their own birthday tasks.
+      const coFirst = l.coFirst || l.c2first;
+      const coLast = l.coLast || l.c2last;
+      if (coFirst && coLast) {
+        collect(`${coLast}, ${coFirst}`.trim(), l.closeDate);
+      }
+    });
     PAST_CLIENTS.forEach((c) => collect(c.name, c.closeDate));
+    // Also pick up anyone who has a client_dates entry but isn't in
+    // LOANS or PAST_CLIENTS (e.g., a co-borrower whose birthday was
+    // saved before their name landed in the loans record). Ensures
+    // saved birthdays never orphan.
+    clientDates.forEach((row) => {
+      if (row.client_name) collect(row.client_name, null);
+    });
     const items = [];
     seen.forEach(({ name, closeDate }) => {
       const anchors = buildAnchorsForClient(name, { closeDate, clientDates });

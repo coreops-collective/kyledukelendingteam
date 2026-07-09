@@ -4,15 +4,16 @@ import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { sbInsert } from '../lib/supabase.js';
 import { markLoansDirty } from '../lib/loansStore.js';
+import { upsertClientDate } from '../lib/clientDates.js';
 
 const LO_OPTIONS = ['Kyle Duke', 'Missy'];
 
 export default function NewLoan() {
   const [form, setForm] = useState({
     lo: '', kind: '', existingId: '', status: '',
-    first: '', last: '', phone: '', email: '',
+    first: '', last: '', phone: '', email: '', bday: '',
     hasCo: 'No',
-    coFirst: '', coLast: '', coPhone: '', coEmail: '',
+    coFirst: '', coLast: '', coPhone: '', coEmail: '', coBday: '',
     type: 'VA', purpose: 'Purchase', amt: '', fico: '', preapp: '',
     agent: '', src: 'Realtor Referral',
     estClose: '',
@@ -163,6 +164,25 @@ export default function NewLoan() {
     }
 
     markLoansDirty(touchedLoan);
+
+    // Birthdays go straight into client_dates so both the borrower and
+    // any co-borrower each become their own Client for Life card with
+    // birthday tasks firing automatically. Fire-and-forget — a failed
+    // birthday save shouldn't block the intake.
+    const borrowerName = `${form.last}, ${form.first}`.trim().replace(/^,\s*/, '');
+    if (borrowerName && form.bday) {
+      upsertClientDate(borrowerName, 'Birthday', form.bday, { recurring: true }).catch(() => {});
+    }
+    if (form.hasCo === 'Yes' && form.coFirst && form.coLast) {
+      // Store co-borrower under "Last, First" to match the main
+      // borrower convention — that's what LOANS.borrower uses, and
+      // the CFL client picker + task list both key off it.
+      const coName = `${form.coLast}, ${form.coFirst}`.trim();
+      if (form.coBday) {
+        upsertClientDate(coName, 'Birthday', form.coBday, { recurring: true }).catch(() => {});
+      }
+    }
+
     const isFresh = stageKey === 'fresh';
     setToast({
       title: 'New Loan Intake',
@@ -245,6 +265,7 @@ export default function NewLoan() {
           <div className="form-field"><label className="req">Borrower Last Name</label><input value={form.last} onChange={set('last')} required /></div>
           <div className="form-field"><label className="req">Phone</label><input type="tel" value={form.phone} onChange={set('phone')} required /></div>
           <div className="form-field"><label className="req">Email</label><input type="email" value={form.email} onChange={set('email')} required /></div>
+          <div className="form-field"><label>Borrower Birthday</label><input type="date" value={form.bday} onChange={set('bday')} /></div>
 
           <div className="form-field full">
             <label className="req">Is there a co-borrower?</label>
@@ -259,6 +280,7 @@ export default function NewLoan() {
               <div className="form-field"><label className="req">Co-Borrower Last Name</label><input value={form.coLast} onChange={set('coLast')} required /></div>
               <div className="form-field"><label className="req">Co-Borrower Phone</label><input type="tel" value={form.coPhone} onChange={set('coPhone')} required /></div>
               <div className="form-field"><label className="req">Co-Borrower Email</label><input type="email" value={form.coEmail} onChange={set('coEmail')} required /></div>
+              <div className="form-field"><label>Co-Borrower Birthday</label><input type="date" value={form.coBday} onChange={set('coBday')} /></div>
             </>
           )}
           <div className="form-field"><label className="req">Loan Type</label>

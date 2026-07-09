@@ -873,6 +873,11 @@ export default function LoanManagement() {
   const losLoans = LOANS.filter((l) => {
     if (filters.status === 'Archived') return l.archived;
     if (l.archived) return false;
+    // Funded loans are usually hidden here (they live in All Loans), but
+    // the team explicitly picking the Funded filter surfaces them so
+    // Kimberly can fix name spellings + backfill co-borrowers on
+    // already-closed files without dropping into All Loans.
+    if (filters.status === 'Funded') return l.stage === 'funded' || (l.status || '') === 'Funded';
     return LOS_STAGES.includes(l.stage) || (l.status || '') === 'Adversed';
   });
 

@@ -1,8 +1,9 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import { getCurrentUser } from '../lib/auth.js';
+import { LOANS } from '../data/loans.js';
 import { getAllFunded } from '../lib/fundedLoans.js';
-import { subscribeLoans } from '../lib/loansStore.js';
+import { subscribeLoans, markLoansDirty } from '../lib/loansStore.js';
 import {
   loadClientDates, getDate, upsertClientDate, deleteClientDate,
 } from '../lib/clientDates.js';
@@ -398,6 +399,193 @@ function ReviewField({ clientName }) {
   );
 }
 
+// Identity editor — lets Kimberly fix typos in name / phone / email
+// directly from the past-client drawer. For records that came out of
+// the live LOANS pipeline (_source === 'loans') we mutate the loan
+// row in place and markLoansDirty so the change persists to Supabase.
+// Legacy PAST_CLIENTS seed records show a note explaining they're
+// read-only — they were entered before the hub existed.
+function IdentityEditor({ client, onChange }) {
+  const c = client;
+  const [open, setOpen] = useState(false);
+  const isEditable = c._source === 'loans';
+  const loan = isEditable ? LOANS.find((l) => l.id === c.id) : null;
+
+  const save = (field, value) => {
+    if (!loan) return;
+    // Map the past-client shape field back to the loan field.
+    const mapping = { name: 'borrower', phone: 'phone', email: 'email' };
+    const loanField = mapping[field] || field;
+    loan[loanField] = value;
+    // Also update the derived past-client shape so the drawer reflects
+    // the change without a full re-fetch.
+    c[field] = value;
+    markLoansDirty(loan);
+    onChange && onChange();
+  };
+
+  const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box' };
+  const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 };
+
+  return (
+    <div style={{ marginTop: 14, padding: 12, background: '#fafafa', border: '1px solid #e5e5e5', borderRadius: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        onClick={() => setOpen((o) => !o)}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '.6px' }}>
+          Fix name / phone / email {open ? '▾' : '▸'}
+        </div>
+        <div style={{ fontSize: 10, color: '#888' }}>
+          {isEditable ? 'Persists to Supabase' : 'Legacy record · read only'}
+        </div>
+      </div>
+      {open && (
+        <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ gridColumn: '1/-1' }}>
+            <div style={labelStyle}>Client Name</div>
+            <input
+              defaultValue={c.name || ''}
+              disabled={!isEditable}
+              onBlur={(e) => isEditable && save('name', e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <div style={labelStyle}>Phone</div>
+            <input
+              defaultValue={c.phone || ''}
+              disabled={!isEditable}
+              onBlur={(e) => isEditable && save('phone', e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <div style={labelStyle}>Email</div>
+            <input
+              defaultValue={c.email || ''}
+              disabled={!isEditable}
+              onBlur={(e) => isEditable && save('email', e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+          {!isEditable && (
+            <div style={{ gridColumn: '1/-1', fontSize: 11, color: '#888', fontStyle: 'italic', padding: 6 }}>
+              This is a legacy record from the historical PAST_CLIENTS list — before the hub existed. To make it editable, Lauren can migrate it into the live loans table.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Co-borrower editor — captures first name, last name, phone, email,
+// and birthday. For loans-sourced records the first four persist onto
+// the loan row (coFirst / coLast / coPhone / coEmail). Birthday goes
+// through client_dates keyed by the co-borrower's own name, so they
+// get their own CFL client card. The BirthdayField on the main
+// borrower stays untouched.
+function CoBorrowerEditor({ client, onChange }) {
+  const c = client;
+  const isEditable = c._source === 'loans';
+  const loan = isEditable ? LOANS.find((l) => l.id === c.id) : null;
+  const [open, setOpen] = useState(false);
+
+  // Local state so typing feels responsive; blur commits to the store.
+  const [coFirst, setCoFirst] = useState(loan?.coFirst || c.coFirst || '');
+  const [coLast, setCoLast] = useState(loan?.coLast || c.coLast || '');
+  const [coPhone, setCoPhone] = useState(loan?.coPhone || c.coPhone || '');
+  const [coEmail, setCoEmail] = useState(loan?.coEmail || c.coEmail || '');
+  const coName = `${(coFirst || '').trim()} ${(coLast || '').trim()}`.trim();
+  const existingBday = coName ? getDate(coName, 'Birthday') : null;
+  const [coBday, setCoBday] = useState(existingBday?.date_value || '');
+
+  const commitLoanField = (field, value) => {
+    if (!loan) return;
+    loan[field] = value;
+    markLoansDirty(loan);
+    onChange && onChange();
+  };
+
+  const commitBirthday = async () => {
+    if (!coName) return;
+    if (!coBday.trim()) {
+      if (existingBday) await deleteClientDate(coName, 'Birthday');
+      return;
+    }
+    await upsertClientDate(coName, 'Birthday', coBday, { recurring: true });
+  };
+
+  const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box' };
+  const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 };
+
+  return (
+    <div style={{ marginTop: 14, padding: 12, background: '#eef7ff', border: '1px solid #cfe4f5', borderRadius: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        onClick={() => setOpen((o) => !o)}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#0d3a5c' }}>
+          Co-borrower {open ? '▾' : '▸'}
+        </div>
+        <div style={{ fontSize: 10, color: '#556' }}>
+          {coName ? coName : 'None on file'} {isEditable ? '' : ' · read only'}
+        </div>
+      </div>
+      {open && (
+        <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div>
+            <div style={labelStyle}>First name</div>
+            <input value={coFirst} disabled={!isEditable}
+              onChange={(e) => setCoFirst(e.target.value)}
+              onBlur={() => commitLoanField('coFirst', coFirst)}
+              style={inputStyle} />
+          </div>
+          <div>
+            <div style={labelStyle}>Last name</div>
+            <input value={coLast} disabled={!isEditable}
+              onChange={(e) => setCoLast(e.target.value)}
+              onBlur={() => commitLoanField('coLast', coLast)}
+              style={inputStyle} />
+          </div>
+          <div>
+            <div style={labelStyle}>Phone</div>
+            <input value={coPhone} disabled={!isEditable}
+              onChange={(e) => setCoPhone(e.target.value)}
+              onBlur={() => commitLoanField('coPhone', coPhone)}
+              style={inputStyle} />
+          </div>
+          <div>
+            <div style={labelStyle}>Email</div>
+            <input value={coEmail} disabled={!isEditable}
+              onChange={(e) => setCoEmail(e.target.value)}
+              onBlur={() => commitLoanField('coEmail', coEmail)}
+              style={inputStyle} />
+          </div>
+          <div style={{ gridColumn: '1/-1' }}>
+            <div style={labelStyle}>🎂 Birthday {coName ? `(for ${coName})` : '(save name first)'}</div>
+            <input
+              type="date"
+              value={coBday}
+              disabled={!coName}
+              onChange={(e) => setCoBday(e.target.value)}
+              onBlur={commitBirthday}
+              style={inputStyle}
+            />
+            {coName && (
+              <div style={{ fontSize: 10, color: '#556', marginTop: 4 }}>
+                Creates a Client for Life card for {coName} and drives their own birthday tasks.
+              </div>
+            )}
+          </div>
+          {!isEditable && (
+            <div style={{ gridColumn: '1/-1', fontSize: 11, color: '#556', fontStyle: 'italic', padding: 6 }}>
+              This is a legacy record — text edits won't persist. The birthday IS savable because it goes to the separate client_dates table.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PastClientDrawer({ client, refiRate, onClose }) {
   const c = client;
   const [, force] = useState(0);
@@ -458,8 +646,10 @@ function PastClientDrawer({ client, refiRate, onClose }) {
             <Row label="Email" value={c.email} />
           </div>
 
+          <IdentityEditor client={c} onChange={() => force((n) => n + 1)} />
           <BirthdayField clientName={c.name} />
           <ReviewField clientName={c.name} />
+          <CoBorrowerEditor client={c} onChange={() => force((n) => n + 1)} />
 
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eee' }}>
             <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555', marginBottom: 10 }}>
