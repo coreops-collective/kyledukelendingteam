@@ -157,6 +157,11 @@ export async function updateTask(id, patch) {
   for (const list of TASKS_BY_WORKFLOW.values()) {
     const t = list.find((x) => x.id === id);
     if (t) Object.assign(t, patch);
+    // If position changed, re-sort in place so the workflow editor
+    // reflects the drag-and-drop reorder without needing a page
+    // reload. Without this, updating each task's position in Supabase
+    // succeeds but the in-memory array stays in its original order.
+    if ('position' in patch) list.sort((a, b) => (a.position || 0) - (b.position || 0));
   }
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
@@ -457,19 +462,45 @@ export function generateStatusTasks(loans) {
   return out;
 }
 
-// Build the anchor-date map for one client from the available sources:
-// loan.closeDate (for "Closing"), past-client closeDate, and every
-// client_dates row matching this client. Also auto-aliases derived
-// labels: "Closing Anniversary" uses the loan's closeDate as its anchor
-// since the anniversary is just the same month/day repeating each
-// year — no one should have to manually re-enter it per client.
+// Built-in trigger labels sourced directly from the loan record.
+// Kimberly needs to anchor workflow tasks to things like "3 days
+// after the appraisal deadline" or "1 day before ICD signed" and
+// these are all fields we already have on every loan.
+//
+// Format: [ label shown in the picker, loan field to pull the date from ]
+export const LOAN_DATE_ANCHORS = [
+  ['Closing', 'closeDate'],
+  ['Closing Anniversary', 'closeDate'],
+  ['Loan Intake Submitted', 'dateApplied'],
+  ['Appraisal Ordered', 'apprOrdered'],
+  ['Appraisal Deadline', 'apprDeadline'],
+  ['Appraisal Received', 'apprReceived'],
+  ['Title Received', 'titleReceived'],
+  ['Rate Lock Expiration', 'lockExp'],
+  ['ICD Deadline', 'icdDeadline'],
+  ['ICD Sent', 'icdSent'],
+  ['ICD Signed', 'icdSigned'],
+];
+
+// Build the anchor-date map for one client. Sources:
+//   - Every built-in loan date field (LOAN_DATE_ANCHORS) that's set
+//     on the loan record.
+//   - Every client_dates row matching this client (Birthday, custom
+//     labels, etc.).
+// Labels are lowercased before insertion so the case-insensitive
+// generator lookup finds them regardless of how they're capitalized
+// in the picker.
 export function buildAnchorsForClient(clientName, sources) {
   const anchors = new Map();
-  const closing = sources?.closeDate ? parseLocalDate(sources.closeDate) : null;
-  if (closing) {
-    anchors.set('closing', closing);
-    anchors.set('closing anniversary', closing);
-  }
+  const loan = sources || {};
+  LOAN_DATE_ANCHORS.forEach(([label, field]) => {
+    const raw = loan[field];
+    if (!raw) return;
+    const d = parseLocalDate(raw);
+    if (d) anchors.set(label.toLowerCase(), d);
+  });
+  // Client-managed date rows layer on top of the loan built-ins,
+  // so a user-supplied Birthday overrides nothing but adds to the map.
   const datesMap = sources?.clientDates;
   if (datesMap) {
     datesMap.forEach((row) => {

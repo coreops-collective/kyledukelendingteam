@@ -11,7 +11,7 @@ import {
   createTask, updateTask, deleteTask,
   markTaskCompleted, unmarkTaskCompleted,
   generateTasksForClient, generateStatusTasks, buildAnchorsForClient, composeMailto,
-  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING,
+  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING, LOAN_DATE_ANCHORS,
   WORKFLOW_CATEGORIES, allWorkflowCategories, addWorkflowCategory,
   CONDITION_FIELDS, CONDITION_OPS,
 } from '../lib/workflows.js';
@@ -102,32 +102,42 @@ export default function CFL() {
         // missing a closeDate lose to anything with one.
         if (prevParsed && (!parsed || parsed <= prevParsed)) return;
       }
-      seen.set(k, { name: name.trim(), closeDate: rawCloseDate, parsed });
+      // Store the full loan (or past-client) record so the anchor
+      // builder can pull every loan-lifecycle date (Appraisal
+      // Deadline, ICD Signed, Loan Intake Submitted, etc.), not just
+      // closeDate. Past clients contribute what they have; LOANS
+      // records win when both exist.
+      seen.set(k, { name: name.trim(), closeDate: rawCloseDate, parsed, source: prev?.source });
     };
+    const seenSource = new Map();
     LOANS.forEach((l) => {
       collect(l.borrower, l.closeDate);
-      // Co-borrower on the loan becomes their own client for CFL
-      // purposes. They inherit the loan's closeDate for Closing +
-      // Closing Anniversary triggers, and any birthday saved
-      // against their name via NewLoan intake or the CoBorrowerEditor
-      // fires their own birthday tasks.
+      const key = (l.borrower || '').trim().toLowerCase();
+      if (key) seenSource.set(key, l);
       const coFirst = l.coFirst || l.c2first;
       const coLast = l.coLast || l.c2last;
       if (coFirst && coLast) {
-        collect(`${coLast}, ${coFirst}`.trim(), l.closeDate);
+        const coName = `${coLast}, ${coFirst}`.trim();
+        collect(coName, l.closeDate);
+        seenSource.set(coName.toLowerCase(), l);
       }
     });
-    PAST_CLIENTS.forEach((c) => collect(c.name, c.closeDate));
-    // Also pick up anyone who has a client_dates entry but isn't in
-    // LOANS or PAST_CLIENTS (e.g., a co-borrower whose birthday was
-    // saved before their name landed in the loans record). Ensures
-    // saved birthdays never orphan.
+    PAST_CLIENTS.forEach((c) => {
+      collect(c.name, c.closeDate);
+      const key = (c.name || '').trim().toLowerCase();
+      if (key && !seenSource.has(key)) seenSource.set(key, c);
+    });
     clientDates.forEach((row) => {
       if (row.client_name) collect(row.client_name, null);
     });
     const items = [];
-    seen.forEach(({ name, closeDate }) => {
-      const anchors = buildAnchorsForClient(name, { closeDate, clientDates });
+    seen.forEach(({ name }) => {
+      const key = name.trim().toLowerCase();
+      const record = seenSource.get(key) || {};
+      // Anchor builder now reads every loan-date field (closeDate,
+      // apprDeadline, icdSigned, etc.) from the loan record and
+      // supplements with client_dates rows for user-managed dates.
+      const anchors = buildAnchorsForClient(name, { ...record, clientDates });
       if (anchors.size === 0) return;
       items.push(...generateTasksForClient(name, anchors));
     });
@@ -923,9 +933,14 @@ export function WorkflowEditorDrawer({ onClose }) {
   // anchor. Falls back to the historical allKnownDateLabels() when the
   // catalog is empty so the editor isn't broken pre-seed.
   const catalogLabels = getKeyDateTypeLabels();
-  const triggerLabels = catalogLabels.length > 0
-    ? [TRIGGER_BUILTIN_CLOSING, ...catalogLabels]
-    : [TRIGGER_BUILTIN_CLOSING, ...allKnownDateLabels()];
+  const builtinLabels = LOAN_DATE_ANCHORS.map(([label]) => label);
+  const seenTL = new Set();
+  const triggerLabels = [...builtinLabels, ...catalogLabels, ...(catalogLabels.length ? [] : allKnownDateLabels())].filter((l) => {
+    const k = l.toLowerCase();
+    if (seenTL.has(k)) return false;
+    seenTL.add(k);
+    return true;
+  });
 
   return (
     <>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   getWorkflows, getTasksFor, loadWorkflows,
   createWorkflow, deleteWorkflow, createTask, updateTask, deleteTask,
-  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING,
+  ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING, LOAN_DATE_ANCHORS,
   WORKFLOW_CATEGORIES, allWorkflowCategories, addWorkflowCategory,
 } from '../lib/workflows.js';
 import { loadKeyDateTypes, getKeyDateTypeLabels } from '../lib/keyDateTypes.js';
@@ -65,10 +65,19 @@ export default function Workflows() {
     return clean;
   };
 
+  // Full trigger-label picker: loan-lifecycle dates (Closing,
+  // Appraisal Deadline, Loan Intake Submitted, etc.) come first,
+  // then user-managed key-date types (Birthday, Wedding Anniversary,
+  // custom). De-duped so a custom "Closing" doesn't appear twice.
   const catalogLabels = getKeyDateTypeLabels();
-  const triggerLabels = catalogLabels.length > 0
-    ? [TRIGGER_BUILTIN_CLOSING, ...catalogLabels]
-    : [TRIGGER_BUILTIN_CLOSING];
+  const builtinLabels = LOAN_DATE_ANCHORS.map(([label]) => label);
+  const seenTL = new Set();
+  const triggerLabels = [...builtinLabels, ...catalogLabels].filter((l) => {
+    const k = l.toLowerCase();
+    if (seenTL.has(k)) return false;
+    seenTL.add(k);
+    return true;
+  });
 
   const handleNewWorkflow = async () => {
     const name = window.prompt(`Name the new "${category}" workflow:`);
