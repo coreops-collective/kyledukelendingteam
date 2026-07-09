@@ -93,6 +93,24 @@ export default function Workflows() {
     bump();
   };
 
+  // "+ Add task for this branch" on a decision-parent task auto-wires
+  // the new task's depends_on_task_id + depends_on_outcome so it only
+  // appears once the parent's decision has been answered with that
+  // specific outcome. Editor opens on the new task ready to fill in.
+  const handleAddBranchTask = async (parent, outcome) => {
+    if (!wf) return;
+    const t = await createTask(wf.id, {
+      title: `New task (if ${outcome})`,
+      role: parent.role || 'lo',
+      trigger_kind: parent.trigger_kind || 'status',
+      trigger_label: parent.trigger_label,
+      depends_on_task_id: parent.id,
+      depends_on_outcome: outcome,
+    });
+    if (t) setEditingTask(t);
+    bump();
+  };
+
   const handleDuplicate = async (t) => {
     const copy = await createTask(wf.id, {
       title: `${t.title} (copy)`,
@@ -238,19 +256,16 @@ export default function Workflows() {
                   <button className="form-btn primary" onClick={handleAddTask}>+ Add first task</button>
                 </div>
               ) : (
-                tasks.map((t) => (
-                  <TaskCard
-                    key={t.id}
-                    task={t}
-                    isDragging={draggingTaskId === t.id}
-                    onDragStart={() => setDraggingTaskId(t.id)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => handleDrop(t)}
-                    onEdit={() => setEditingTask(t)}
-                    onDuplicate={() => handleDuplicate(t)}
-                    onDelete={() => handleDelete(t)}
-                  />
-                ))
+                <TaskTree
+                  tasks={tasks}
+                  draggingTaskId={draggingTaskId}
+                  setDraggingTaskId={setDraggingTaskId}
+                  onDrop={handleDrop}
+                  onEdit={(t) => setEditingTask(t)}
+                  onDuplicate={handleDuplicate}
+                  onDelete={handleDelete}
+                  onAddBranchTask={handleAddBranchTask}
+                />
               )}
             </div>
           )}
@@ -270,6 +285,103 @@ export default function Workflows() {
         />
       )}
       {datesOpen && <ManageKeyDateTypesDrawer onClose={() => { setDatesOpen(false); bump(); }} />}
+    </>
+  );
+}
+
+// Nested-branch renderer. Each top-level task (no depends_on_task_id)
+// gets a TaskCard. If it has decision_options, we render the
+// question + answers below the card, and beneath each answer we
+// indent every task that depends_on that specific (parent, outcome)
+// pair. "+ Add task for this branch" per answer wires the new
+// child correctly.
+function TaskTree({ tasks, draggingTaskId, setDraggingTaskId, onDrop, onEdit, onDuplicate, onDelete, onAddBranchTask }) {
+  // Group child tasks by parent id.
+  const childrenByParent = new Map();
+  tasks.forEach((t) => {
+    if (!t.depends_on_task_id) return;
+    if (!childrenByParent.has(t.depends_on_task_id)) childrenByParent.set(t.depends_on_task_id, []);
+    childrenByParent.get(t.depends_on_task_id).push(t);
+  });
+
+  const topLevel = tasks.filter((t) => !t.depends_on_task_id);
+
+  const cardProps = (t) => ({
+    task: t,
+    isDragging: draggingTaskId === t.id,
+    onDragStart: () => setDraggingTaskId(t.id),
+    onDragOver: (e) => e.preventDefault(),
+    onDrop: () => onDrop(t),
+    onEdit: () => onEdit(t),
+    onDuplicate: () => onDuplicate(t),
+    onDelete: () => onDelete(t),
+  });
+
+  return (
+    <>
+      {topLevel.map((t) => {
+        const options = Array.isArray(t.decision_options) ? t.decision_options : [];
+        const children = childrenByParent.get(t.id) || [];
+        return (
+          <div key={t.id}>
+            <TaskCard {...cardProps(t)} />
+            {options.length > 0 && (
+              <div style={{
+                marginLeft: 40, marginBottom: 14, padding: '12px 14px',
+                borderLeft: '3px solid #0d47a1', background: '#f5f9ff',
+                borderRadius: '0 8px 8px 0',
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#0d47a1', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>
+                  Question: "{t.title}"
+                </div>
+                {options.map((outcome) => {
+                  const branchTasks = children.filter((c) => (c.depends_on_outcome || '') === outcome);
+                  return (
+                    <div key={outcome} style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
+                          If answered <span style={{ padding: '2px 8px', background: '#0d47a1', color: '#fff', borderRadius: 4, fontSize: 11, marginLeft: 4 }}>{outcome}</span>
+                        </div>
+                        <button
+                          className="form-btn"
+                          style={{ fontSize: 11, padding: '4px 10px' }}
+                          onClick={() => onAddBranchTask(t, outcome)}
+                        >+ Add task</button>
+                      </div>
+                      {branchTasks.length === 0 ? (
+                        <div style={{ fontSize: 11, color: '#888', fontStyle: 'italic', padding: 6, marginLeft: 6 }}>
+                          No tasks for this branch yet.
+                        </div>
+                      ) : (
+                        branchTasks.map((child) => (
+                          <div key={child.id} style={{ marginLeft: 6 }}>
+                            <TaskCard {...cardProps(child)} />
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  );
+                })}
+                {/* Any children whose outcome isn't in the parent's
+                    options list (e.g. was removed) get surfaced so
+                    they aren't invisible. */}
+                {children.filter((c) => !options.includes(c.depends_on_outcome || '')).length > 0 && (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #cfe4f5' }}>
+                    <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>
+                      Orphan branches (answer no longer in the list — edit the child or restore the answer):
+                    </div>
+                    {children.filter((c) => !options.includes(c.depends_on_outcome || '')).map((child) => (
+                      <div key={child.id} style={{ marginLeft: 6, opacity: 0.7 }}>
+                        <TaskCard {...cardProps(child)} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }
