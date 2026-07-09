@@ -41,15 +41,16 @@ export default function Workflows() {
   const wf = workflows.find((w) => w.id === activeId) || workflows[0] || null;
   const tasks = wf ? getTasksFor(wf.id) : [];
 
-  const categoryCounts = useMemo(() => {
-    const counts = {};
-    WORKFLOW_CATEGORIES.forEach((c) => { counts[c] = 0; });
-    allWorkflows.forEach((w) => {
-      const c = w.category || 'Loan';
-      counts[c] = (counts[c] || 0) + 1;
-    });
-    return counts;
-  }, [allWorkflows]);
+  // Compute counts inline every render. Can't useMemo on allWorkflows
+  // — it's a mutable module-level array that keeps the same reference
+  // when items are added/removed, so a memo keyed on it goes stale
+  // and the badges freeze at their first-render values.
+  const categoryCounts = {};
+  WORKFLOW_CATEGORIES.forEach((c) => { categoryCounts[c] = 0; });
+  allWorkflows.forEach((w) => {
+    const c = w.category || 'Loan';
+    categoryCounts[c] = (categoryCounts[c] || 0) + 1;
+  });
 
   const catalogLabels = getKeyDateTypeLabels();
   const triggerLabels = catalogLabels.length > 0
