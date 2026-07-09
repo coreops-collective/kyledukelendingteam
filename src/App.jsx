@@ -145,6 +145,18 @@ export default function App() {
             <div className="page-sub" id="pageSub">The Kyle Duke Home Loan Team · Lending Hub</div>
           </div>
           <div className="header-right">
+            {/* Page-scoped Take a tour trigger. Only appears on
+                routes that have a tour registered. Fires an event the
+                page component listens for so we don't need a
+                global-tour registry / context wired here. */}
+            {['/workflows'].includes(location.pathname) && (
+              <button
+                className="chip"
+                style={{ cursor: 'pointer', border: '1px solid #d0d0d0', background: '#fff', color: 'var(--brand-red, #c62828)', fontWeight: 700 }}
+                onClick={() => window.dispatchEvent(new Event('kdt-start-tour'))}
+                title="Guided walkthrough of every feature on this page"
+              >📖 Take a tour</button>
+            )}
             <span className="chip" id="todayChip">{todayString()}</span>
           </div>
         </header>

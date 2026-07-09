@@ -9,6 +9,158 @@ import { loadKeyDateTypes, getKeyDateTypeLabels } from '../lib/keyDateTypes.js';
 import {
   ManageKeyDateTypesDrawer, TaskEditDrawer, TaskCard, WorkflowHeader, triggerSummary,
 } from './CFL.jsx';
+import Tour from '../components/Tour.jsx';
+
+// Ordered walk-through of every Workflows & SOPs feature. Each step
+// spotlights the DOM element matching `target` (a querySelector) and
+// shows a card explaining what it does. Body uses \n\n for
+// paragraph breaks (Tour splits on those). Non-target steps center
+// the card and dim the whole page.
+const TOUR_STEPS = [
+  {
+    title: 'Welcome to Workflows & SOPs',
+    body:
+`This is where you build the automation for the Kyle Duke team.
+
+Every workflow you create here becomes a live task list on Client for Life — the tasks generate against real loans and clients based on the triggers you configure.
+
+Let's walk through it. Use ← and → keys, or the buttons at the bottom. Hit Skip or Esc any time.`,
+  },
+  {
+    target: '[data-tour="categories"]',
+    title: 'Categories keep workflows organized',
+    body:
+`Workflows live in buckets: Client for Life, Loan, Lead Nurture, plus any custom category you add.
+
+Click a chip to filter — only workflows in that category show up in the sidebar below.
+
+The number on each chip tells you how many workflows are in it. Click "+ New category" on the right to add your own bucket.`,
+  },
+  {
+    target: '[data-tour="manage-dates"]',
+    title: 'Manage Key Date Types',
+    body:
+`These are the kinds of dates your workflows can trigger on: Birthday, Wedding Anniversary, Closing Anniversary, Spouse Birthday.
+
+Add custom ones like "Kid's Birthday" or "Lease End" — any date type you want to build workflows against.
+
+Whatever you define here shows up in the trigger dropdown of every task editor. Set once, use everywhere.`,
+  },
+  {
+    target: '[data-tour="new-workflow"]',
+    title: 'Start with a workflow',
+    body:
+`Click here to spin up a new workflow — "Birthday Outreach", "Loan Officer Consultation SOP", "Buyer Watch Nurture", whatever you want.
+
+You'll pick a name and the workflow lands in the currently-selected category tab.
+
+Then you fill it up with tasks and decision points — that's the next few steps.`,
+  },
+  {
+    target: '[data-tour="sidebar"]',
+    title: 'Sidebar: every workflow in this category',
+    body:
+`All workflows in the active category tab live here.
+
+Click any name to open it on the right.
+
+Task counts show at a glance which workflows are empty or lightly built — useful when you're mid-build and juggling a few.`,
+  },
+  {
+    target: '[data-tour="workflow-header"]',
+    title: 'Edit the workflow itself',
+    body:
+`Rename the workflow by clicking on the title and typing.
+
+Change its category with the dropdown — it moves buckets immediately, no confirm needed.
+
+Add a description that helps everyone else on the team understand the workflow's purpose.
+
+"Delete workflow" wipes it and every task inside. There's a confirm before it goes, but this can't be undone.`,
+  },
+  {
+    target: '[data-tour="add-buttons"]',
+    title: 'Two kinds of steps: Task and Decision Point',
+    body:
+`✅ Task = a regular action item. Someone does it, checks it off, moves on.
+
+❓ Decision Point = a question the LO / LOA / Admin answers. Their pick routes the file down one branch of the workflow — Approved goes one way, Denied goes another.
+
+Decision Points always come with a set of answers you define. Tasks can be gated on those answers, which is what makes branching workflows possible.`,
+  },
+  {
+    target: '[data-tour="task-card"]',
+    title: 'Reorder with the drag handle',
+    body:
+`Grab the ⋮⋮ dots on the left side of any card.
+
+Drag above or below another card — the new position saves automatically the moment you drop.
+
+Order matters both for how the workflow reads top-to-bottom AND for what appears first when this workflow's tasks land on the Client for Life task list.`,
+  },
+  {
+    target: '[data-tour="task-actions"]',
+    title: 'Edit, Copy, or Delete a task',
+    body:
+`Edit opens the full task editor with every option — role, trigger, email template, conditional generation, decision branches.
+
+Copy duplicates the task in place with all its settings intact. Great when you have a template task and need a slight variant.
+
+× deletes with a confirm — no accidental removals.`,
+  },
+  {
+    target: '[data-tour="decision-branches"]',
+    title: 'Branches show under decisions',
+    body:
+`When a task is a Decision Point, this blue panel below it lays out every answer with its own list of tasks.
+
+Click "+ Add task" next to any answer to create a task that only fires when that answer is chosen. The dependency is wired for you.
+
+If the LO answers "Denied" on the Credit Review, only the Denied-branch tasks generate. Approved-branch tasks stay dormant. Perfect for the Borrower Consultation flow.`,
+  },
+  {
+    title: 'Task editor: trigger types',
+    body:
+`When you edit any task, you'll see two big trigger buttons up top:
+
+📅 Date-based — anchored to a specific date. Loan dates (Closing, Appraisal Deadline, Loan Intake Submitted, ICD Signed, all 11 of them) plus any Key Date Type you defined. Add an offset like "3 days before" or "1 week after".
+
+🔄 Loan status — fires while the loan is in a specific status like "New Lead" or "Underwriting". Can repeat daily, weekly, or monthly for as long as the loan sits in that status.
+
+Which one you pick depends on whether the trigger is a moment in time (date) or a state the loan lives in for a while (status).`,
+  },
+  {
+    title: 'Email templates + Send Email Now',
+    body:
+`Any task can have an email template attached: pick recipient (client, co-borrower, or agent), fill in a subject and a body.
+
+Use merge tags like {{first_name}}, {{property}}, {{close_date}}, {{agent_name}} — they get swapped for the actual client data at compose time.
+
+On the Client for Life task list, tasks with a template show a bright blue "📧 Send Email Now" button that opens Outlook with everything filled in.`,
+  },
+  {
+    title: 'Conditional generation',
+    body:
+`You can gate a task on two things:
+
+1. A client-profile field. Example: "Only generate if Review Left is NO" — so the "Ask again in 2 weeks" task only fires for clients who still haven't left a review.
+
+2. A Decision Point answer. Example: "Only generate after Credit Review answered Denied" — the picker lists every Decision Point in the current workflow, and their answers.
+
+Layer both if you need — client condition AND decision dependency.`,
+  },
+  {
+    title: 'You are ready',
+    body:
+`Everything you build here flows automatically to Client for Life.
+
+Once a workflow has tasks + at least one client has a matching trigger (a loan in the right status, a key date on file, etc.), the tasks appear on the Client for Life task list.
+
+You can reopen this tour any time by clicking "📖 Take a tour" up top.
+
+Go build something.`,
+  },
+];
 
 // Workflows & SOPs — the one and only workflow management surface.
 // Reads from the same workflow_templates + workflow_tasks tables as
@@ -24,6 +176,7 @@ export default function Workflows() {
   const [datesOpen, setDatesOpen] = useState(false);
   const [category, setCategory] = useState('Loan');
   const [draggingTaskId, setDraggingTaskId] = useState(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   useEffect(() => {
     loadWorkflows().then(bump);
@@ -35,7 +188,13 @@ export default function Workflows() {
     ];
     const on = () => bump();
     events.forEach((e) => window.addEventListener(e, on));
-    return () => events.forEach((e) => window.removeEventListener(e, on));
+    // App header fires kdt-start-tour when the user clicks "Take a tour".
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, on));
+      window.removeEventListener('kdt-start-tour', startTour);
+    };
   }, []);
 
   const allWorkflows = getWorkflows();
@@ -222,12 +381,12 @@ export default function Workflows() {
           Click any task to edit · drag ⋮⋮ to reorder · + Add Task to append
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="form-btn" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
-          <button className="form-btn primary" onClick={handleNewWorkflow}>+ New Workflow</button>
+          <button data-tour="manage-dates" className="form-btn" onClick={() => setDatesOpen(true)}>Manage Key Date Types</button>
+          <button data-tour="new-workflow" className="form-btn primary" onClick={handleNewWorkflow}>+ New Workflow</button>
         </div>
       </div>
 
-      {categoryBar}
+      <div data-tour="categories">{categoryBar}</div>
 
       {workflows.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center', border: '2px dashed #e0e0e0', borderRadius: 8, color: '#888' }}>
@@ -241,7 +400,7 @@ export default function Workflows() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16 }}>
           {/* Workflow list on the left, click to switch */}
-          <div style={{ borderRight: '1px solid #eee', paddingRight: 12 }}>
+          <div data-tour="sidebar" style={{ borderRight: '1px solid #eee', paddingRight: 12 }}>
             {workflows.map((w) => {
               const isActive = w.id === (wf && wf.id);
               const count = (getTasksFor(w.id) || []).length;
@@ -264,13 +423,15 @@ export default function Workflows() {
           {/* Active workflow — header + inline-editable task list */}
           {wf && (
             <div>
-              <WorkflowHeader key={wf.id} workflow={wf} onDelete={handleDeleteWorkflow} bump={bump} />
+              <div data-tour="workflow-header">
+                <WorkflowHeader key={wf.id} workflow={wf} onDelete={handleDeleteWorkflow} bump={bump} />
+              </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 10px' }}>
                 <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#555' }}>
                   Tasks ({tasks.length})
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div data-tour="add-buttons" style={{ display: 'flex', gap: 6 }}>
                   <button className="form-btn" style={{ background: '#0d47a1', color: '#fff', border: 'none' }} onClick={handleAddDecisionPoint}>
                     ❓ + Add Decision Point
                   </button>
@@ -318,6 +479,7 @@ export default function Workflows() {
         />
       )}
       {datesOpen && <ManageKeyDateTypesDrawer onClose={() => { setDatesOpen(false); bump(); }} />}
+      {tourOpen && <Tour steps={TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </>
   );
 }
@@ -352,14 +514,16 @@ function TaskTree({ tasks, draggingTaskId, setDraggingTaskId, onDrop, onEdit, on
 
   return (
     <>
-      {topLevel.map((t) => {
+      {topLevel.map((t, i) => {
         const options = Array.isArray(t.decision_options) ? t.decision_options : [];
         const children = childrenByParent.get(t.id) || [];
         return (
-          <div key={t.id}>
-            <TaskCard {...cardProps(t)} />
+          <div key={t.id} data-tour={i === 0 ? 'task-card' : undefined}>
+            <div data-tour={i === 0 ? 'task-actions' : undefined}>
+              <TaskCard {...cardProps(t)} />
+            </div>
             {options.length > 0 && (
-              <div style={{
+              <div data-tour="decision-branches" style={{
                 marginLeft: 40, marginBottom: 14, padding: '12px 14px',
                 borderLeft: '3px solid #0d47a1', background: '#f5f9ff',
                 borderRadius: '0 8px 8px 0',
