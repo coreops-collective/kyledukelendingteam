@@ -156,7 +156,7 @@ function AddRuleDrawer({ onClose, onSaved, initial }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 560, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Notification Rule</div>
           <div className="drawer-borrower">{isEdit ? 'Edit Rule' : 'Add Rule'}</div>
         </div>

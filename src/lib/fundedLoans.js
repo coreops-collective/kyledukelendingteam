@@ -1,6 +1,7 @@
 import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
 import { getProfile } from './clientProfiles.js';
+import { parseLocalDate } from './clientDates.js';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -11,8 +12,8 @@ const MONTH_NAMES = [
 // the merged list uniformly. Pulls month / year off closeDate so the
 // existing INCOME / All Loans filters keep working.
 function loanToFundedRecord(l) {
-  const d = l.closeDate ? new Date(l.closeDate) : null;
-  const valid = d && !isNaN(d);
+  const d = l.closeDate ? parseLocalDate(l.closeDate) : null;
+  const valid = !!d;
   return {
     id: l.id,
     name: l.borrower || '',

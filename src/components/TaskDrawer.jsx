@@ -58,7 +58,7 @@ export default function TaskDrawer({ task, kind, parentTitle, editable = true, o
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 640, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">{stage}</div>
           <div className="drawer-borrower">{title}</div>
         </div>

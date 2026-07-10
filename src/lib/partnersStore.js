@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { PARTNERS } from '../data/partners.js';
+import { showError } from './toaster.js';
 
 // Persistence layer for PARTNERS.
 //
@@ -157,6 +158,11 @@ function reportSaveError(prefix, error) {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('partners:save-error', { detail: { message, error } }));
   }
+  // Also surface through the session-wide toaster so partners save errors
+  // are visible from any view (mid-navigation merge failures aren't tied
+  // to the local Partners.jsx listener being mounted). Retry re-triggers
+  // a flush of anything still marked dirty.
+  showError(`Partners: ${message}`, { retry: () => savePartnersNow() });
 }
 function reportSaveSuccess(action, count) {
   if (typeof window !== 'undefined') {
@@ -326,12 +332,13 @@ export async function mergePartners(source, target, loans) {
   // Reassign loans whose agent field referenced the source by name to
   // the target's name, so the live-pipeline lookup keeps working.
   let loansUpdated = 0;
+  let loansStore = null;
   if (Array.isArray(loans) && source.name && target.name && source.name !== target.name) {
-    const { markLoansDirty } = await import('./loansStore.js');
+    loansStore = await import('./loansStore.js');
     loans.forEach((l) => {
       if (l.agent === source.name) {
         l.agent = target.name;
-        markLoansDirty(l);
+        loansStore.markLoansDirty(l);
         loansUpdated += 1;
       }
     });
@@ -340,6 +347,16 @@ export async function mergePartners(source, target, loans) {
   // Persist target's new state.
   markPartnerDirty(target);
   await savePartnersNow();
+
+  // Flush the debounced loan-rename writes NOW so a crash / refresh in
+  // the ~1500ms debounce window can't leave loans pointing at a partner
+  // name that's about to be deleted. Without this, the source partner
+  // could be deleted before the loan rename ever hits Supabase, and the
+  // loans would be stuck referencing a nonexistent partner until the
+  // user edited them again.
+  if (loansUpdated > 0 && loansStore) {
+    await loansStore.saveLoansNow();
+  }
 
   // Delete source last so realtime echoes don't try to recreate it.
   await deletePartner(source);
@@ -363,10 +380,16 @@ export async function deletePartner(partner) {
       if (error) {
         console.warn('[partnersStore] delete failed:', error.message);
         window.dispatchEvent(new CustomEvent('partners:save-error', { detail: { message: error.message } }));
+        showError(`Couldn't delete ${partner.name || 'partner'}: ${error.message}`, {
+          retry: () => deletePartner(partner),
+        });
         return false;
       }
     } catch (e) {
       console.warn('[partnersStore] delete error:', e.message);
+      showError(`Couldn't delete ${partner.name || 'partner'}: ${e.message}`, {
+        retry: () => deletePartner(partner),
+      });
       return false;
     }
   }

@@ -13,6 +13,8 @@ import {
   loadWorkflows, generateStatusTasks, markTaskCompleted, unmarkTaskCompleted, ROLE_LABELS,
 } from '../lib/workflows.js';
 import { loadClientProfiles } from '../lib/clientProfiles.js';
+import { parseLocalDate } from '../lib/clientDates.js';
+import { getRoleLabel } from '../lib/jobRoles.js';
 
 const TASKS_KEY = 'kdt-tasks-v1';
 const PROJECTS_KEY = 'kdt-projects-v1';
@@ -74,8 +76,11 @@ export default function Tasks() {
 
   const toggleWorkflowTask = (item) => {
     const iso = fmtIsoToday();
-    if (item.completed) unmarkTaskCompleted(item.task.id, item.client_name, iso);
-    else markTaskCompleted(item.task.id, item.client_name, iso);
+    // item.loan_id is populated by generateStatusTasks when the task is
+    // tied to a specific loan — passing it scopes the completion to that
+    // loan so two loans sharing a borrower name don't double-complete.
+    if (item.completed) unmarkTaskCompleted(item.task.id, item.client_name, iso, item.loan_id);
+    else markTaskCompleted(item.task.id, item.client_name, iso, null, null, item.loan_id);
     bumpWorkflow();
   };
 
@@ -227,10 +232,10 @@ export default function Tasks() {
                   {list.length ? list.map(t => {
                     const proj = projects.find(p => p.id === t.projectId);
                     const pri = TASK_PRIORITIES.find(p => p.key === t.priority) || TASK_PRIORITIES[1];
-                    const dueObj = t.due ? new Date(t.due) : null;
+                    const dueObj = t.due ? parseLocalDate(t.due) : null;
                     const today = new Date(); today.setHours(0,0,0,0);
                     const overdue = dueObj && dueObj < today && t.status !== 'done';
-                    const dueLabel = dueObj && !isNaN(dueObj) ? dueObj.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+                    const dueLabel = dueObj ? dueObj.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
                     return (
                       <div key={t.id} className="tk-card" onClick={() => setOpenTaskId(t.id)}>
                         <div className="tk-card-title">{t.title}</div>
@@ -300,7 +305,7 @@ function TaskDrawer({ task, projects, onClose, onSave, onDelete }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" id="drawer" style={{width:520,maxWidth:'95vw'}}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>{'\u00d7'}</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">{'\u00d7'}</button>
           <div className="drawer-stage">
             {proj ? proj.name : 'Task'}{task.createdVia === 'siri' ? ' \u00b7 \u{1F399}\uFE0F Siri' : ''}
           </div>
@@ -394,7 +399,7 @@ function PipelineTasksPanel({ items, onToggle }) {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: roleColors[role] || '#555', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                    {ROLE_LABELS[role] || role}
+                    {getRoleLabel(role)}
                   </span>
                 </div>
               </div>

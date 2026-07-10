@@ -1,7 +1,8 @@
 // Ported 1:1 from legacy/index.html renderSnapshot (+ supporting render blocks).
 // Uses dangerouslySetInnerHTML to preserve every class name, inline style,
 // and copy string verbatim from the legacy template literal.
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import Tour from '../components/Tour.jsx';
 import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
 import { PARTNERS } from '../data/partners.js';
@@ -10,11 +11,14 @@ import {
   STATE_NAMES, buildMonthlyFunded, buildYoyHistory,
   AGENT_MILESTONES, partnerLoc,
 } from '../lib/snapshotHelpers.js';
+import { parseLocalDate } from '../lib/clientDates.js';
+import { getAllFunded } from '../lib/fundedLoans.js';
 
 function renderAnniversariesBlock(){
   const today = new Date();
   const upcoming = PAST_CLIENTS.map(c=>{
-    const d = new Date(c.closeDate);
+    const d = parseLocalDate(c.closeDate);
+    if(!d) return { ...c, daysAway: 9999, yearsTogether: 0, annivDate: '' };
     const annivThisYear = new Date(today.getFullYear(), d.getMonth(), d.getDate());
     const daysAway = Math.ceil((annivThisYear - today) / 86400000);
     const yearsTogether = today.getFullYear() - d.getFullYear();
@@ -204,13 +208,17 @@ function buildSnapshotHTML(){
   const MONTH_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const closingInMonth = (mIdx, yr) => LOANS.filter(l=>{
     if(l.archived || l.status==='Adversed' || !l.closeDate || l.stage==='funded' || l.stage==='cold') return false;
-    const d = new Date(l.closeDate);
-    return !isNaN(d) && d.getMonth()===mIdx && d.getFullYear()===yr;
+    const d = parseLocalDate(l.closeDate);
+    return d && d.getMonth()===mIdx && d.getFullYear()===yr;
   }).length;
   const closingThisMo = closingInMonth(thisMoIdx, thisYr);
   const closingNextMo = closingInMonth(nextMoIdx, nextMoYr);
-  const lifetimeVolume = PAST_CLIENTS.reduce((a,c)=>a+(c.amount||0),0);
-  const lifetimeUnits = PAST_CLIENTS.length;
+  // Lifetime volume includes PAST_CLIENTS (historical seed) plus any loans
+  // the team has funded through the app since — getAllFunded dedupes them
+  // by name+closeDate so a record in both sources only counts once.
+  const funded = getAllFunded();
+  const lifetimeVolume = funded.reduce((a,c)=>a+(c.amount||0),0);
+  const lifetimeUnits = funded.length;
   const activeWithAmt = activeLoans.filter(l=>l.amount);
   const avgLoan = activeWithAmt.length ? activeWithAmt.reduce((a,l)=>a+l.amount,0) / activeWithAmt.length : 0;
   const kpis = [
@@ -258,17 +266,197 @@ function buildSnapshotHTML(){
       ${renderAnniversariesBlock()}
       ${renderAgentMilestonesBlock()}
     </div>
-    <div class="section-card">
-      <div class="section-header"><div class="section-title">Monthly Targets</div><div class="section-sub">April 2026</div></div>
-      <div class="section-body"><div class="grid-3">
-        <div class="kpi"><div class="kpi-label">Volume Target</div><div class="kpi-value">$3.5M</div><div class="kpi-sub">26% to target \u00b7 $930K funded</div></div>
-        <div class="kpi"><div class="kpi-label">Units Target</div><div class="kpi-value">10</div><div class="kpi-sub">2 funded \u00b7 8 to go</div></div>
-        <div class="kpi"><div class="kpi-label">New Apps Target</div><div class="kpi-value">18</div><div class="kpi-sub">12 received \u00b7 67% pace</div></div>
-      </div></div>
-    </div>`;
+`;
 }
+
+// Monthly Targets \u2014 persisted per-month in localStorage. Targets live under
+// kdt-monthly-targets-v1 keyed by "YYYY-MM"; progress is computed live from
+// LOANS + the funded ledger. Edit via the pencil button.
+const TARGETS_KEY = 'kdt-monthly-targets-v1';
+const DEFAULT_TARGETS = { volume: 3_500_000, units: 10, newApps: 18 };
+
+function loadAllTargets() {
+  try {
+    const raw = localStorage.getItem(TARGETS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch { return {}; }
+}
+function saveAllTargets(map) {
+  try { localStorage.setItem(TARGETS_KEY, JSON.stringify(map || {})); } catch { /* ignore */ }
+}
+function targetKey(year, mIdx) { return `${year}-${String(mIdx + 1).padStart(2, '0')}`; }
+
+function MonthlyTargets() {
+  const [version, setVersion] = useState(0);
+  const bump = () => setVersion((v) => v + 1);
+  const [editing, setEditing] = useState(false);
+
+  const now = new Date();
+  const mIdx = now.getMonth();
+  const yr = now.getFullYear();
+  const MONTH_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const key = targetKey(yr, mIdx);
+
+  const all = loadAllTargets();
+  const t = { ...DEFAULT_TARGETS, ...(all[key] || {}) };
+
+  // Actuals: funded volume + units this month from the canonical ledger,
+  // new apps this month = LOANS with any activity this month that aren't
+  // funded/adversed/archived.
+  let volumeFunded = 0;
+  let unitsFunded = 0;
+  getAllFunded().forEach((f) => {
+    const d = parseLocalDate(f.closeDate);
+    if (!d || d.getMonth() !== mIdx || d.getFullYear() !== yr) return;
+    volumeFunded += Number(f.amount || 0);
+    unitsFunded += 1;
+  });
+  // "New apps" proxy: LOANS whose closeDate is this month AND aren't yet
+  // funded \u2014 i.e. the deals currently in pipeline for this month.
+  let newAppsCount = 0;
+  LOANS.forEach((l) => {
+    if (l.archived || l.status === 'Adversed') return;
+    if (l.stage === 'funded' || l.status === 'Funded') return;
+    if (!l.closeDate) return;
+    const d = parseLocalDate(l.closeDate);
+    if (d && d.getMonth() === mIdx && d.getFullYear() === yr) newAppsCount += 1;
+  });
+
+  const fmtMoney = (n) =>
+    n >= 1_000_000 ? '$' + (n / 1_000_000).toFixed(2) + 'M' :
+    n >= 1_000 ? '$' + Math.round(n / 1000) + 'K' : '$' + Math.round(n);
+  const pct = (a, b) => b > 0 ? Math.round((a / b) * 100) : 0;
+
+  const saveEdits = (patch) => {
+    const next = { ...all, [key]: { ...t, ...patch } };
+    saveAllTargets(next);
+    bump();
+  };
+
+  const kpiStyle = { padding: '14px 16px', background: '#fff', border: '1px solid #eee', borderRadius: 8 };
+
+  return (
+    <div className="section-card">
+      <div className="section-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div>
+          <div className="section-title">Monthly Targets</div>
+          <div className="section-sub">{MONTH_FULL[mIdx]} {yr}</div>
+        </div>
+        <button
+          onClick={() => setEditing(true)}
+          style={{ padding: '6px 12px', fontSize: 12, fontWeight: 700, border: '1px solid #d0d0d0', background: '#fff', borderRadius: 6, cursor: 'pointer' }}
+          aria-label="Edit monthly targets"
+        >Edit targets</button>
+      </div>
+      <div className="section-body">
+        <div className="grid-3">
+          <div className="kpi" style={kpiStyle}>
+            <div className="kpi-label">Volume Target</div>
+            <div className="kpi-value">{fmtMoney(t.volume)}</div>
+            <div className="kpi-sub">{pct(volumeFunded, t.volume)}% to target \u00b7 {fmtMoney(volumeFunded)} funded</div>
+          </div>
+          <div className="kpi" style={kpiStyle}>
+            <div className="kpi-label">Units Target</div>
+            <div className="kpi-value">{t.units}</div>
+            <div className="kpi-sub">{unitsFunded} funded \u00b7 {Math.max(0, t.units - unitsFunded)} to go</div>
+          </div>
+          <div className="kpi" style={kpiStyle}>
+            <div className="kpi-label">New Apps Target</div>
+            <div className="kpi-value">{t.newApps}</div>
+            <div className="kpi-sub">{newAppsCount} pipeline \u00b7 {pct(newAppsCount, t.newApps)}% pace</div>
+          </div>
+        </div>
+      </div>
+      {editing && <TargetsEditor targets={t} monthLabel={`${MONTH_FULL[mIdx]} ${yr}`} onSave={(p) => { saveEdits(p); setEditing(false); }} onClose={() => setEditing(false)} />}
+    </div>
+  );
+}
+
+function TargetsEditor({ targets, monthLabel, onSave, onClose }) {
+  const [vol, setVol] = useState(targets.volume);
+  const [units, setUnits] = useState(targets.units);
+  const [apps, setApps] = useState(targets.newApps);
+  const submit = (e) => {
+    e.preventDefault();
+    onSave({
+      volume: Math.max(0, Number(vol) || 0),
+      units: Math.max(0, Number(units) || 0),
+      newApps: Math.max(0, Number(apps) || 0),
+    });
+  };
+  return (
+    <>
+      <div className="drawer-overlay open" onClick={onClose} />
+      <aside className="drawer open" style={{ width: 420, maxWidth: '95vw' }}>
+        <div className="drawer-head">
+          <button className="drawer-close" onClick={onClose} aria-label="Close">\u00d7</button>
+          <div className="drawer-stage">Edit Targets</div>
+          <div className="drawer-borrower">{monthLabel}</div>
+        </div>
+        <form onSubmit={submit} className="drawer-body" style={{ padding: 18 }}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>Volume Target ($)</label>
+            <input type="number" min="0" step="10000" value={vol} onChange={(e) => setVol(e.target.value)} style={{ width: '100%', padding: '8px 10px' }} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>Units Target</label>
+            <input type="number" min="0" value={units} onChange={(e) => setUnits(e.target.value)} style={{ width: '100%', padding: '8px 10px' }} />
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>New Apps Target</label>
+            <input type="number" min="0" value={apps} onChange={(e) => setApps(e.target.value)} style={{ width: '100%', padding: '8px 10px' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="submit" style={{ padding: '8px 14px', background: '#c62828', color: '#fff', fontWeight: 700, border: 'none', borderRadius: 6, cursor: 'pointer' }}>Save</button>
+            <button type="button" onClick={onClose} style={{ padding: '8px 14px', background: '#fff', border: '1px solid #ccc', borderRadius: 6, cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </form>
+      </aside>
+    </>
+  );
+}
+
+const SNAPSHOT_TOUR_STEPS = [
+  {
+    title: 'Welcome to the Lending Snapshot',
+    body: 'This is the dashboard: KPIs, funded volume, YoY history, purchase vs refi, home anniversaries, and monthly targets.\n\nEverything is live — Active Files, Pipeline Volume, and Closing counts all pull from LOANS in real time.',
+  },
+  {
+    target: '.kpi-grid',
+    title: 'Top KPIs',
+    body: 'Active files by LO, pipeline volume, REFI Watch, closings this and next month, average loan size, and lifetime volume.\n\nLifetime Volume covers PAST_CLIENTS plus every loan the app has marked Funded — deduped by borrower + close date so nothing is double-counted.',
+  },
+  {
+    target: '.bar-chart',
+    title: '12-Month Funded Volume',
+    body: 'Rolling 12-month view of funded volume from the canonical funded ledger (historical + app-funded).\n\nHover a bar to see the exact units + month/year.',
+  },
+  {
+    target: '.donut-wrap',
+    title: 'Purchase vs Refi',
+    body: 'Split of the active pipeline (pre-funded) by purpose. Refi Watch loans count here too.',
+  },
+  {
+    title: 'Monthly Targets',
+    body: 'Scroll to the bottom to set volume, units, and new-apps targets per month. Progress vs target is computed live from the funded ledger and current pipeline.\n\nEach month\'s target is saved in your browser so different months can carry different goals.',
+  },
+];
 
 export default function Snapshot(){
   const html = useMemo(buildSnapshotHTML, []);
-  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  return (
+    <div>
+      <div dangerouslySetInnerHTML={{ __html: html }} />
+      <MonthlyTargets />
+      {tourOpen && <Tour steps={SNAPSHOT_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
+    </div>
+  );
 }

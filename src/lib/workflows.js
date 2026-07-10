@@ -1,6 +1,7 @@
 import { supabase } from './supabase.js';
 import { getDate, parseLocalDate } from './clientDates.js';
 import { getProfile } from './clientProfiles.js';
+import { showError } from './toaster.js';
 
 // In-memory state for the Client for Life rebuild.
 //
@@ -12,13 +13,32 @@ const WORKFLOWS = [];
 const TASKS_BY_WORKFLOW = new Map();
 const COMPLETIONS = new Map();
 
-const cKey = (taskId, name, dueDate) =>
-  `${taskId}||${(name || '').trim().toLowerCase()}||${dueDate || ''}`;
+// Two key shapes so completions can be scoped either to a specific loan
+// (new — added with migration 022_task_completion_loan_id) OR to a
+// client name (legacy — completions written before loan_id existed).
+// The dual scheme prevents the shared-name double-complete bug: two
+// active loans for "Jane Smith" on the same task/due date now get
+// separate keys.
+const cKeyByLoan = (taskId, loanId, dueDate) =>
+  `${taskId}||loan:${loanId}||${dueDate || ''}`;
+const cKeyByName = (taskId, name, dueDate) =>
+  `${taskId}||name:${(name || '').trim().toLowerCase()}||${dueDate || ''}`;
+
+// Historical rows written before 022 landed had no loan_id, so they get
+// indexed under the name key. New rows get indexed under BOTH keys so a
+// later read that only knows the name (e.g. CFL past-client tasks with
+// no live loan) can still hit them.
+function indexCompletion(row) {
+  const dueIso = row.due_date || '';
+  COMPLETIONS.set(cKeyByName(row.task_id, row.client_name, dueIso), row);
+  if (row.loan_id) COMPLETIONS.set(cKeyByLoan(row.task_id, row.loan_id, dueIso), row);
+}
 
 export function getWorkflows() { return WORKFLOWS; }
 export function getTasksFor(workflowId) { return TASKS_BY_WORKFLOW.get(workflowId) || []; }
-export function isCompleted(taskId, clientName, dueDate) {
-  return COMPLETIONS.has(cKey(taskId, clientName, dueDate));
+export function isCompleted(taskId, clientName, dueDate, loanId) {
+  if (loanId && COMPLETIONS.has(cKeyByLoan(taskId, loanId, dueDate))) return true;
+  return COMPLETIONS.has(cKeyByName(taskId, clientName, dueDate));
 }
 
 export const TRIGGER_BUILTIN_CLOSING = 'Closing';
@@ -81,7 +101,7 @@ export async function loadWorkflows() {
       TASKS_BY_WORKFLOW.get(t.workflow_id).push(t);
     });
     COMPLETIONS.clear();
-    (cs || []).forEach((c) => COMPLETIONS.set(cKey(c.task_id, c.client_name, c.due_date), c));
+    (cs || []).forEach((c) => indexCompletion(c));
     window.dispatchEvent(new Event('kdt-workflows-loaded'));
   } catch (e) {
     console.warn('[workflows] load:', e.message);
@@ -93,7 +113,13 @@ export async function createWorkflow(name, description = '', category = 'Loan') 
     .from('workflow_templates')
     .insert({ name, description, category, position: WORKFLOWS.length })
     .select().single();
-  if (error) { console.warn('[workflows] createWorkflow:', error.message); return null; }
+  if (error) {
+    console.warn('[workflows] createWorkflow:', error.message);
+    showError(`Couldn't create workflow "${name}": ${error.message}`, {
+      retry: () => createWorkflow(name, description, category),
+    });
+    return null;
+  }
   WORKFLOWS.push(data);
   TASKS_BY_WORKFLOW.set(data.id, []);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
@@ -102,7 +128,13 @@ export async function createWorkflow(name, description = '', category = 'Loan') 
 
 export async function updateWorkflow(id, patch) {
   const { error } = await supabase.from('workflow_templates').update(patch).eq('id', id);
-  if (error) { console.warn('[workflows] updateWorkflow:', error.message); return; }
+  if (error) {
+    console.warn('[workflows] updateWorkflow:', error.message);
+    showError(`Couldn't update workflow: ${error.message}`, {
+      retry: () => updateWorkflow(id, patch),
+    });
+    return;
+  }
   const wf = WORKFLOWS.find((w) => w.id === id);
   if (wf) Object.assign(wf, patch);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
@@ -110,7 +142,13 @@ export async function updateWorkflow(id, patch) {
 
 export async function deleteWorkflow(id) {
   const { error } = await supabase.from('workflow_templates').delete().eq('id', id);
-  if (error) { console.warn('[workflows] deleteWorkflow:', error.message); return; }
+  if (error) {
+    console.warn('[workflows] deleteWorkflow:', error.message);
+    showError(`Couldn't delete workflow: ${error.message}`, {
+      retry: () => deleteWorkflow(id),
+    });
+    return;
+  }
   const idx = WORKFLOWS.findIndex((w) => w.id === id);
   if (idx >= 0) WORKFLOWS.splice(idx, 1);
   TASKS_BY_WORKFLOW.delete(id);
@@ -144,7 +182,13 @@ export async function createTask(workflowId, task) {
     position: list.length,
   };
   const { data, error } = await supabase.from('workflow_tasks').insert(row).select().single();
-  if (error) { console.warn('[workflows] createTask:', error.message); return null; }
+  if (error) {
+    console.warn('[workflows] createTask:', error.message);
+    showError(`Couldn't add task "${row.title}": ${error.message}`, {
+      retry: () => createTask(workflowId, task),
+    });
+    return null;
+  }
   if (!TASKS_BY_WORKFLOW.has(workflowId)) TASKS_BY_WORKFLOW.set(workflowId, []);
   TASKS_BY_WORKFLOW.get(workflowId).push(data);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
@@ -171,14 +215,25 @@ function wouldCreateCycle(taskId, proposedParentId) {
   return false;
 }
 
-export async function updateTask(id, patch) {
+// `opts.quiet` skips the per-row error toast so batch callers (e.g. the
+// drag-reorder that fires N updates in parallel) can aggregate failures
+// into a single toast instead of spamming N of them.
+export async function updateTask(id, patch, opts = {}) {
   if ('depends_on_task_id' in patch && wouldCreateCycle(id, patch.depends_on_task_id)) {
     console.warn('[workflows] updateTask: refusing to create decision cycle');
     // Signal failure so the caller can toast, but don't touch the DB.
     return { error: 'cycle' };
   }
   const { error } = await supabase.from('workflow_tasks').update(patch).eq('id', id);
-  if (error) { console.warn('[workflows] updateTask:', error.message); return; }
+  if (error) {
+    console.warn('[workflows] updateTask:', error.message);
+    if (!opts.quiet) {
+      showError(`Couldn't save task change: ${error.message}`, {
+        retry: () => updateTask(id, patch),
+      });
+    }
+    return { error: error.message || 'update failed' };
+  }
   for (const list of TASKS_BY_WORKFLOW.values()) {
     const t = list.find((x) => x.id === id);
     if (t) Object.assign(t, patch);
@@ -189,11 +244,18 @@ export async function updateTask(id, patch) {
     if ('position' in patch) list.sort((a, b) => (a.position || 0) - (b.position || 0));
   }
   window.dispatchEvent(new Event('kdt-workflows-changed'));
+  return { ok: true };
 }
 
 export async function deleteTask(id) {
   const { error } = await supabase.from('workflow_tasks').delete().eq('id', id);
-  if (error) { console.warn('[workflows] deleteTask:', error.message); return; }
+  if (error) {
+    console.warn('[workflows] deleteTask:', error.message);
+    showError(`Couldn't delete task: ${error.message}`, {
+      retry: () => deleteTask(id),
+    });
+    return;
+  }
   for (const [wid, list] of TASKS_BY_WORKFLOW.entries()) {
     const idx = list.findIndex((x) => x.id === id);
     if (idx >= 0) list.splice(idx, 1);
@@ -212,28 +274,59 @@ export async function deleteTask(id) {
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
 
-export async function markTaskCompleted(taskId, clientName, dueDate, completedBy, outcome) {
-  const k = cKey(taskId, clientName, dueDate);
+export async function markTaskCompleted(taskId, clientName, dueDate, completedBy, outcome, loanId) {
   const dueIso = dueDate ? toIsoDate(dueDate) : null;
-  const { data, error } = await supabase.from('task_completions').insert({
+  const baseRow = {
     task_id: taskId,
     client_name: clientName,
     due_date: dueIso,
     completed_by: completedBy || null,
     outcome: outcome || null,
-  }).select().single();
-  if (error) { console.warn('[workflows] markCompleted:', error.message); return; }
-  COMPLETIONS.set(k, data);
+  };
+  // Include loan_id when the caller has one — after 022_task_completion_loan_id
+  // this scopes the completion to a specific loan so two loans sharing a
+  // borrower name don't double-complete.
+  //
+  // Graceful downgrade: if the migration hasn't run yet, Postgres rejects
+  // the insert with "column loan_id does not exist". Detect that specific
+  // error, log once, and retry without loan_id so the completion still
+  // lands (falling back to name-scoped keying, which was the pre-022
+  // behavior). Any other error propagates to the toaster.
+  const withLoan = loanId ? { ...baseRow, loan_id: loanId } : baseRow;
+  let { data, error } = await supabase.from('task_completions').insert(withLoan).select().single();
+  if (error && loanId && /column\s+.*loan_id.*does not exist/i.test(error.message || '')) {
+    console.warn('[workflows] loan_id column missing — falling back. Run migration 022_task_completion_loan_id.');
+    ({ data, error } = await supabase.from('task_completions').insert(baseRow).select().single());
+  }
+  if (error) {
+    console.warn('[workflows] markCompleted:', error.message);
+    showError(`Couldn't mark task complete: ${error.message}`, {
+      retry: () => markTaskCompleted(taskId, clientName, dueDate, completedBy, outcome, loanId),
+    });
+    return;
+  }
+  indexCompletion(data);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
 
-export async function unmarkTaskCompleted(taskId, clientName, dueDate) {
-  const k = cKey(taskId, clientName, dueDate);
-  const completion = COMPLETIONS.get(k);
+export async function unmarkTaskCompleted(taskId, clientName, dueDate, loanId) {
+  const dueIso = dueDate ? (typeof dueDate === 'string' ? dueDate : toIsoDate(dueDate)) : '';
+  // Prefer the loan-scoped completion when we have a loan_id — that's the
+  // one that got clicked. Fall back to the name-scoped key so historical
+  // rows (no loan_id) still delete correctly.
+  const completion = (loanId && COMPLETIONS.get(cKeyByLoan(taskId, loanId, dueIso)))
+    || COMPLETIONS.get(cKeyByName(taskId, clientName, dueIso));
   if (!completion) return;
   const { error } = await supabase.from('task_completions').delete().eq('id', completion.id);
-  if (error) console.warn('[workflows] unmark:', error.message);
-  COMPLETIONS.delete(k);
+  if (error) {
+    console.warn('[workflows] unmark:', error.message);
+    showError(`Couldn't unmark task: ${error.message}`, {
+      retry: () => unmarkTaskCompleted(taskId, clientName, dueDate, loanId),
+    });
+  }
+  // Clear BOTH key shapes so a stale entry can't linger under the other one.
+  COMPLETIONS.delete(cKeyByName(taskId, clientName, dueIso));
+  if (completion.loan_id) COMPLETIONS.delete(cKeyByLoan(taskId, completion.loan_id, dueIso));
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
 
@@ -499,10 +592,11 @@ export function generateStatusTasks(loans) {
         // appears. That's the intended behavior.
         const dueDate = today;
         const iso = todayIso;
-        const completed = isCompleted(t.id, l.borrower, iso);
+        const completed = isCompleted(t.id, l.borrower, iso, l.id);
         out.push({
           id: `status||${t.id}||${l.id}||${iso}`,
           task: t,
+          loan_id: l.id,
           workflow: wf,
           client_name: l.borrower,
           due_date: dueDate,

@@ -653,7 +653,7 @@ function PastClientDrawer({ client, refiRate, onClose }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 560, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Past Client · Funded</div>
           <div className="drawer-borrower">{c.name}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{c.property || ''}</div>

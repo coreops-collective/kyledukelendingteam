@@ -8,15 +8,15 @@ import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, saveLoansNow, subscribeLoans } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
 import { appendNotesHistory, loadNotesHistory } from '../lib/notesHistory.js';
+import { parseLocalDate } from '../lib/clientDates.js';
+import Tour from '../components/Tour.jsx';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const fmt$ = (n) => (n ? '$' + Math.round(n).toLocaleString() : '—');
 
 function parseDate(s) {
-  if (!s) return null;
-  const d = new Date(s);
-  return isNaN(d) ? null : d;
+  return parseLocalDate(s);
 }
 function dateClass(s, done) {
   const d = parseDate(s);
@@ -222,7 +222,7 @@ function NotesDrawer({ loan, onSave, onClose }) {
           }}
         />
         <div className="drawer-head">
-          <button className="drawer-close" onClick={safeClose}>×</button>
+          <button className="drawer-close" onClick={safeClose} aria-label="Close">×</button>
           <div className="drawer-stage">Notes</div>
           <div className="drawer-borrower">{loan.borrower}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{loan.property || ''}</div>
@@ -855,6 +855,37 @@ export default function LoanManagement() {
 
   useEffect(() => subscribeLoans(bump), [bump]);
 
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const LM_TOUR_STEPS = [
+    {
+      title: 'Loan Management',
+      body: 'Every active loan currently in LOS — New Contract through Approved / Funded. This view is where you track deadlines, appraisal + title status, ICD workflow, and lock expiration.',
+    },
+    {
+      target: '.lm-view-toggle',
+      title: 'Cards vs Spreadsheet',
+      body: 'Toggle between the card view (skim overview) and the spreadsheet (every field in a scrollable table with per-column resize).\n\nSpreadsheet is the fastest way to edit multiple loans at once — every cell is inline-editable.',
+    },
+    {
+      target: '.income-filters',
+      title: 'Filters',
+      body: 'Filter by year, month, status, LO, loan type, and sale type. Reset (dark red chip) blows all filters back to All in one click.',
+    },
+    {
+      title: 'Deadlines panel',
+      body: 'The Deadlines panel above the loan list highlights any Appraisal Deadline, Lock Expiration, or ICD Deadline in the next 30 days. Overdue items are red; the next 7 days are orange.\n\nClick any row to jump straight to the loan.',
+    },
+    {
+      title: 'Save + webhooks',
+      body: 'Edits auto-save on blur (debounced to Supabase). Status changes fire GHL webhook subscriptions listening for loan.status_changed, so external systems stay in sync.\n\n"Save Now" flushes any pending edits immediately if you want to force it.',
+    },
+  ];
+
   // One-time backfill: any loan with a close date but no ICD deadline gets
   // the auto-computed value (3 days back, skipping Sundays). Existing
   // manual ICD deadlines are left alone.
@@ -935,11 +966,11 @@ export default function LoanManagement() {
       if (aMissing) return 1;   // empty values always sort to the bottom
       if (bMissing) return -1;
       if (isDate) {
-        const ad = new Date(av).getTime();
-        const bd = new Date(bv).getTime();
-        if (isNaN(ad)) return 1;
-        if (isNaN(bd)) return -1;
-        return sign * (ad - bd);
+        const ap = parseLocalDate(av);
+        const bp = parseLocalDate(bv);
+        if (!ap) return 1;
+        if (!bp) return -1;
+        return sign * (ap.getTime() - bp.getTime());
       }
       if (key === 'status') {
         const ai = statusOrder.indexOf(av);
@@ -1140,6 +1171,7 @@ export default function LoanManagement() {
       )}
 
       {newLoanOpen && <NewLoanDrawer onClose={() => setNewLoanOpen(false)} />}
+      {tourOpen && <Tour steps={LM_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }

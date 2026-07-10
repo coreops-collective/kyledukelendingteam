@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { showError } from './toaster.js';
 
 // In-memory client_profiles store. Keyed by lowercased client_name so
 // lookups don't care about whitespace/case differences across LOANS,
@@ -35,7 +36,13 @@ export async function upsertClientProfile(name, patch) {
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', existing.id)
         .select().single();
-      if (error) { console.warn('[clientProfiles] update:', error.message); return null; }
+      if (error) {
+        console.warn('[clientProfiles] update:', error.message);
+        showError(`Couldn't update profile for ${cleanName}: ${error.message}`, {
+          retry: () => upsertClientProfile(name, patch),
+        });
+        return null;
+      }
       PROFILES.set(key(cleanName), data);
       window.dispatchEvent(new Event('kdt-client-profiles-changed'));
       return data;
@@ -44,12 +51,21 @@ export async function upsertClientProfile(name, patch) {
       .from('client_profiles')
       .insert({ client_name: cleanName, ...patch })
       .select().single();
-    if (error) { console.warn('[clientProfiles] insert:', error.message); return null; }
+    if (error) {
+      console.warn('[clientProfiles] insert:', error.message);
+      showError(`Couldn't create profile for ${cleanName}: ${error.message}`, {
+        retry: () => upsertClientProfile(name, patch),
+      });
+      return null;
+    }
     PROFILES.set(key(cleanName), data);
     window.dispatchEvent(new Event('kdt-client-profiles-changed'));
     return data;
   } catch (e) {
     console.warn('[clientProfiles] upsert error:', e.message);
+    showError(`Couldn't save profile for ${cleanName}: ${e.message}`, {
+      retry: () => upsertClientProfile(name, patch),
+    });
     return null;
   }
 }

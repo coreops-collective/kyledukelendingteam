@@ -4,6 +4,7 @@ import FilterDropdown from '../components/FilterDropdown.jsx';
 import { isBranchManager } from '../lib/auth.js';
 import { getAllFunded } from '../lib/fundedLoans.js';
 import { subscribeLoans } from '../lib/loansStore.js';
+import { parseLocalDate } from '../lib/clientDates.js';
 
 // ---- helpers (ported from legacy) ----
 const fmt$ = (n) =>
@@ -22,13 +23,13 @@ const loBpsFor = (lo) => (lo === 'Missy' ? 1.2 : 1.3);
 //   before 2025-06-01       → 0 bps (no branch revenue)
 //   2025-06-01 … 2026-03-31 → 10 bps
 //   2026-04-01 onward       → 30 bps
-const BRANCH_GROSS_START = new Date('2025-06-01');
-const BRANCH_GROSS_BUMP = new Date('2026-04-01');
+const BRANCH_GROSS_START = parseLocalDate('2025-06-01');
+const BRANCH_GROSS_BUMP = parseLocalDate('2026-04-01');
 const KYLE_OVERRIDE_BPS = 0.1;
 function branchGrossBpsFor(closeDate) {
   if (!closeDate) return 0;
-  const d = new Date(closeDate);
-  if (isNaN(d)) return 0;
+  const d = parseLocalDate(closeDate);
+  if (!d) return 0;
   if (d < BRANCH_GROSS_START) return 0;
   if (d >= BRANCH_GROSS_BUMP) return 0.3;
   return 0.1;
@@ -190,8 +191,8 @@ function IncomeInner() {
   function statsForMonth(mIdx, yr) {
     const matches = (cd) => {
       if (!cd) return false;
-      const d = new Date(cd);
-      return !isNaN(d) && d.getMonth() === mIdx && d.getFullYear() === yr;
+      const d = parseLocalDate(cd);
+      return !!d && d.getMonth() === mIdx && d.getFullYear() === yr;
     };
 
     const inFlight = LOANS
@@ -700,8 +701,8 @@ function KyleTile({ label, dt, s, projected }) {
 function PipelineMonth({ label, mIdx, yr, defaultOpen = false }) {
   const matchesMonth = (closeDate) => {
     if (!closeDate) return false;
-    const d = new Date(closeDate);
-    return !isNaN(d) && d.getMonth() === mIdx && d.getFullYear() === yr;
+    const d = parseLocalDate(closeDate);
+    return !!d && d.getMonth() === mIdx && d.getFullYear() === yr;
   };
 
   // In-flight pipeline (anything still active in LOANS for this month).
@@ -734,9 +735,14 @@ function PipelineMonth({ label, mIdx, yr, defaultOpen = false }) {
       status: 'Funded',
     }));
 
-  const all = [...inFlight, ...funded].sort(
-    (a, b) => new Date(a.closeDate) - new Date(b.closeDate)
-  );
+  const all = [...inFlight, ...funded].sort((a, b) => {
+    const ad = parseLocalDate(a.closeDate);
+    const bd = parseLocalDate(b.closeDate);
+    if (!ad && !bd) return 0;
+    if (!ad) return 1;
+    if (!bd) return -1;
+    return ad - bd;
+  });
 
   const loGrossBps = (r) => (r.lo === 'Missy' ? 0.012 : 0.013);
   const loGross = (r) => (r.amount || 0) * loGrossBps(r);

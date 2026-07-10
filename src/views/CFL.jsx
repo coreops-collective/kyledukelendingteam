@@ -23,6 +23,9 @@ import {
   loadKeyDateTypes, getKeyDateTypes, getKeyDateTypeLabels,
   createKeyDateType, updateKeyDateType, deleteKeyDateType,
 } from '../lib/keyDateTypes.js';
+import { showError } from '../lib/toaster.js';
+import Tour from '../components/Tour.jsx';
+import { getRoleKeysForWorkflowDropdown, getRoleLabel } from '../lib/jobRoles.js';
 
 const DAY = 86400000;
 const fmtDate = (d) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
@@ -56,6 +59,34 @@ export default function CFL() {
   // Kimberly ever wants to prove they're there.
   const [showAncient, setShowAncient] = useState(false);
   const ANCIENT_DAYS = 30;
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const CFL_TOUR_STEPS = [
+    {
+      title: 'Client for Life',
+      body: 'Every past client and every funded loan gets a rolling task list generated from your Workflows.\n\nHome anniversaries, birthdays, review requests, market-check-ins — anything with a date anchor on a client turns into a task on the day it\'s due.',
+    },
+    {
+      title: 'Buckets by urgency',
+      body: 'Tasks are grouped Overdue → Today → This Week → This Month → Later. This Month and Later start collapsed so 800 pending items don\'t overwhelm the view.\n\nOverdue > 30 days stays hidden by default — toggle "Show ancient" if you want to see them.',
+    },
+    {
+      title: 'Filters + search',
+      body: 'Filter by role (LO / LOA / Admin / Automated), status (Open / Done), workflow, and free-text search across borrower + task title. Layer as many as you need to zero in.',
+    },
+    {
+      title: 'Birthdays this month',
+      body: 'The Birthdays panel at the top shows every client whose birthday falls in the current month — the number-one CFL touch point.',
+    },
+    {
+      title: 'Completing a task',
+      body: 'Check the box on any task to mark it done — it drops out of the Open filter and is recorded against the client + due date so the same task doesn\'t reappear next year.\n\nEmail tasks have a "Send Email Now" button that opens your mail client pre-filled from the template.',
+    },
+  ];
 
   useEffect(() => {
     const bumpAll = () => {
@@ -299,6 +330,7 @@ export default function CFL() {
       )}
 
       {openClient && <ClientCardDrawer clientName={openClient} onClose={() => setOpenClient(null)} />}
+      {tourOpen && <Tour steps={CFL_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }
@@ -406,17 +438,17 @@ function TaskRow({ item, today, first, onOpenClient }) {
   })();
   const onToggle = () => {
     if (item.completed) {
-      unmarkTaskCompleted(item.task.id, item.client_name, dueIso);
+      unmarkTaskCompleted(item.task.id, item.client_name, dueIso, item.loan_id);
       return;
     }
     // Decision points don't get a plain checkbox — the answer buttons
     // handle completion. Show a helpful nudge if someone still tries
     // to check the checkbox.
     if (isDecision) return;
-    markTaskCompleted(item.task.id, item.client_name, dueIso);
+    markTaskCompleted(item.task.id, item.client_name, dueIso, null, null, item.loan_id);
   };
   const answerDecision = (outcome) => {
-    markTaskCompleted(item.task.id, item.client_name, dueIso, null, outcome);
+    markTaskCompleted(item.task.id, item.client_name, dueIso, null, outcome, item.loan_id);
   };
   const loan = LOANS.find((l) => (l.borrower || '').trim().toLowerCase() === (item.client_name || '').trim().toLowerCase());
   const mailto = item.task.email_subject ? composeMailto(item.task, item.client_name, loan) : null;
@@ -484,7 +516,7 @@ function TaskRow({ item, today, first, onOpenClient }) {
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: roleColors[role] || '#555', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-          {ROLE_LABELS[role] || role}
+          {getRoleLabel(role)}
         </span>
         {mailto && (
           <a
@@ -549,7 +581,7 @@ export function ManageKeyDateTypesDrawer({ onClose }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 600, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Client for Life</div>
           <div className="drawer-borrower">Key Date Types</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
@@ -747,7 +779,7 @@ function ClientCardDrawer({ clientName, onClose }) {
       <div className="drawer-overlay open" style={{ zIndex: 200 }} onClick={onClose} />
       <aside className="drawer open" style={{ width: 620, maxWidth: '95vw', zIndex: 201 }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Client Card</div>
           <div className="drawer-borrower">{clientName}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
@@ -941,9 +973,18 @@ export function WorkflowEditorDrawer({ onClose }) {
     if (fromIdx < 0 || toIdx < 0) return;
     const [moved] = list.splice(fromIdx, 1);
     list.splice(toIdx, 0, moved);
-    await Promise.all(list.map((t, i) =>
-      t.position !== i ? updateTask(t.id, { position: i }) : null
+    // See Workflows.handleDrop for the same aggregation strategy —
+    // one toast per batch on partial failure, not N per row.
+    const results = await Promise.all(list.map((t, i) =>
+      t.position !== i ? updateTask(t.id, { position: i }, { quiet: true }) : Promise.resolve(null)
     ));
+    const failed = results.filter((r) => r && r.error);
+    if (failed.length) {
+      showError(
+        `Reorder partly failed — ${failed.length} row${failed.length === 1 ? '' : 's'} didn't save. Retry to re-apply the intended order.`,
+        { retry: () => handleDrop(targetTask) }
+      );
+    }
     setDraggingTaskId(null);
     bump();
   };
@@ -969,7 +1010,7 @@ export function WorkflowEditorDrawer({ onClose }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 980, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Client for Life</div>
           <div className="drawer-borrower">Workflows</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>Build templates · drag to reorder · click a task to edit</div>
@@ -1182,7 +1223,7 @@ export function TaskCard({ task, isDragging, onDragStart, onDragOver, onDrop, on
             background: roleColors[role] || '#555',
             padding: '3px 8px', borderRadius: 4,
             textTransform: 'uppercase', letterSpacing: '.5px',
-          }}>{ROLE_LABELS[role] || role}</span>
+          }}>{getRoleLabel(role)}</span>
           <span style={{ fontSize: 11, color: '#888' }}>{triggerSummary(task)}</span>
         </div>
         <div
@@ -1315,7 +1356,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
       <div className="drawer-overlay open" style={{ zIndex: 200 }} onClick={onClose} />
       <aside className="drawer open" style={{ width: 560, maxWidth: '95vw', zIndex: 201 }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Workflow Task</div>
           <div className="drawer-borrower">{title || 'Untitled task'}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{triggerSummary({ trigger_label: triggerLabel, trigger_days: effectiveDays, trigger_recurring: recurring })}</div>
@@ -1336,18 +1377,22 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
           <div style={sectionStyle}>
             <label style={labelStyle}>Owner</label>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {ROLES.map((r) => {
-                const active = role === r;
+              {getRoleKeysForWorkflowDropdown().map((r) => {
+                const active = role === r.key;
+                // Built-in role colors preserved for continuity; custom
+                // roles fall back to a neutral slate so the picker stays
+                // readable no matter what the team names them.
                 const colors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
+                const activeColor = colors[r.key] || '#0A0A0A';
                 return (
-                  <button key={r} type="button" onClick={() => setRole(r)} style={{
+                  <button key={r.key} type="button" onClick={() => setRole(r.key)} style={{
                     padding: '8px 14px', borderRadius: 999,
-                    border: `1px solid ${active ? colors[r] : '#d0d0d0'}`,
-                    background: active ? colors[r] : '#fff',
+                    border: `1px solid ${active ? activeColor : '#d0d0d0'}`,
+                    background: active ? activeColor : '#fff',
                     color: active ? '#fff' : '#333',
                     fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.5px',
                     cursor: 'pointer',
-                  }}>{ROLE_LABELS[r]}</button>
+                  }}>{r.label}</button>
                 );
               })}
             </div>

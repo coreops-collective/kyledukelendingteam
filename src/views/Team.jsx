@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
-import { USERS, ROLE_LABELS, sbUpdateUser } from '../data/users.js';
+import { USERS, ROLE_LABELS, sbUpdateUser, sbInsertUser } from '../data/users.js';
 import { LOANS } from '../data/loans.js';
+import { showError } from '../lib/toaster.js';
 
 // Match a team member's name to a loan's LO or LOA field. The pipeline
 // uses first-name-only values like "Kyle" / "Missy" / "Abel" / "Kim",
@@ -9,8 +10,14 @@ import { LOANS } from '../data/loans.js';
 function matchesUser(userName, loanVal) {
   if (!userName || !loanVal) return false;
   const first = userName.trim().split(/\s+/)[0].toLowerCase();
+  const full = userName.trim().toLowerCase();
   const v = String(loanVal).trim().toLowerCase();
-  return v === first || first.startsWith(v) || v.startsWith(first);
+  // Match on exact first-name (e.g. loan.lo="Kyle" -> user "Kyle Duke") or
+  // exact full-name only. The old form allowed startsWith in either
+  // direction, so a stray "K" in loan.lo double-counted for every user
+  // whose first name started with K, and "Kyle" incorrectly matched
+  // "Kyle B" if both users existed.
+  return v === first || v === full;
 }
 
 // Compute pipeline + MTD funded for one team member directly from LOANS.
@@ -168,9 +175,50 @@ export default function Team() {
       {showForm && (
         <NewTeamMemberModal
           onClose={() => setShowForm(false)}
-          onSubmit={(m) => {
-            console.log('[team] new member submitted', m);
-            setToast({ title: 'Team Member Added', msg: `${m.first} ${m.last} — welcome email queued` });
+          onSubmit={async (m) => {
+            // Map the modal's UI role labels back to the users-table
+            // canonical role slugs. Anything not in the map defaults to
+            // loan_officer (the least-privileged role) so a typo can
+            // never accidentally promote someone to Branch Manager.
+            const ROLE_MAP = {
+              'Loan Officer': 'loan_officer',
+              'Loan Officer Assistant (LOA)': 'loan_officer',
+              'Processor': 'loan_officer',
+              'Admin': 'admin',
+              'Branch Manager': 'branch_manager',
+            };
+            const initials = ((m.first[0] || '') + (m.last[0] || '')).toUpperCase();
+            const emailLocal = (m.email || '').split('@')[0].toLowerCase();
+            const draft = {
+              name: `${m.first} ${m.last}`.trim(),
+              email: m.email,
+              // Placeholder password (matches the seed convention). Admin
+              // can rotate via Setup — this only lets the row persist
+              // without violating the NOT NULL constraint on password.
+              password: emailLocal || m.first.toLowerCase(),
+              role: ROLE_MAP[m.role] || 'loan_officer',
+              initials,
+              nmls: m.nmls || '',
+              phone: m.phone || '',
+            };
+            const saved = await sbInsertUser(draft);
+            if (!saved) {
+              showError(`Couldn't add ${draft.name}. Nothing was saved.`);
+              return;
+            }
+            USERS.push({
+              id: saved.id,
+              name: saved.name,
+              email: saved.email,
+              password: saved.password,
+              role: saved.role,
+              initials: saved.initials || initials,
+              nmls: saved.nmls || '',
+              phone: saved.phone || '',
+              birthday: m.birthday || '',
+            });
+            bump();
+            setToast({ title: 'Team Member Added', msg: `${draft.name} saved. Set their password from Setup.` });
             setShowForm(false);
           }}
         />
@@ -222,7 +270,7 @@ function NewTeamMemberModal({ onClose, onSubmit }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 680, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">New Team Member</div>
           <div className="drawer-borrower">Add Team Member</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>On submit → saved + welcome email sent</div>
@@ -442,7 +490,7 @@ function TeamDatesDrawer({ user, onClose, onSaved }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 560, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Team Member · Important Dates</div>
           <div className="drawer-borrower">{target.name}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{target.email}</div>

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase.js';
+import { showError } from '../lib/toaster.js';
 
 // USERS — mutable module-level array. Seeded with a fallback that matches
 // the legacy seed, then replaced on app mount by the real Supabase `users`
@@ -23,9 +24,21 @@ export async function sbInsertUser(user) {
       role: user.role, initials: user.initials, nmls: user.nmls || '', phone: user.phone || '',
     };
     const { data, error } = await supabase.from('users').insert(row).select().single();
-    if (error) { console.warn('sbInsertUser:', error.message); return null; }
+    if (error) {
+      console.warn('sbInsertUser:', error.message);
+      showError(`Couldn't add ${user.name}: ${error.message}`, {
+        retry: () => sbInsertUser(user),
+      });
+      return null;
+    }
     return data;
-  } catch (e) { console.warn('sbInsertUser error:', e.message); return null; }
+  } catch (e) {
+    console.warn('sbInsertUser error:', e.message);
+    showError(`Couldn't add ${user.name}: ${e.message}`, {
+      retry: () => sbInsertUser(user),
+    });
+    return null;
+  }
 }
 
 export async function sbUpdateUser(id, patch) {
@@ -38,15 +51,35 @@ export async function sbUpdateUser(id, patch) {
   if (!Object.keys(row).length) return;
   try {
     const { error } = await supabase.from('users').update(row).eq('id', id);
-    if (error) console.warn('sbUpdateUser:', error.message);
-  } catch (e) { console.warn('sbUpdateUser error:', e.message); }
+    if (error) {
+      console.warn('sbUpdateUser:', error.message);
+      showError(`Couldn't save team member changes: ${error.message}`, {
+        retry: () => sbUpdateUser(id, patch),
+      });
+    }
+  } catch (e) {
+    console.warn('sbUpdateUser error:', e.message);
+    showError(`Couldn't save team member changes: ${e.message}`, {
+      retry: () => sbUpdateUser(id, patch),
+    });
+  }
 }
 
 export async function sbDeleteUser(id) {
   try {
     const { error } = await supabase.from('users').delete().eq('id', id);
-    if (error) console.warn('sbDeleteUser:', error.message);
-  } catch (e) { console.warn('sbDeleteUser error:', e.message); }
+    if (error) {
+      console.warn('sbDeleteUser:', error.message);
+      showError(`Couldn't remove team member: ${error.message}`, {
+        retry: () => sbDeleteUser(id),
+      });
+    }
+  } catch (e) {
+    console.warn('sbDeleteUser error:', e.message);
+    showError(`Couldn't remove team member: ${e.message}`, {
+      retry: () => sbDeleteUser(id),
+    });
+  }
 }
 
 export async function loadUsersFromSupabase() {

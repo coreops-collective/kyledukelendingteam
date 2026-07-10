@@ -4,6 +4,8 @@ import { STAGES, REFI_WATCH_STAGE, STAGE_TO_STATUS, stageByKey } from '../data/s
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, subscribeLoans } from '../lib/loansStore.js';
+import { fireWebhooks } from '../lib/webhooks.js';
+import Tour from '../components/Tour.jsx';
 
 const fmt$ = (n) => '$' + Math.round(n).toLocaleString();
 const fmt$M = (n) => n >= 1_000_000 ? '$' + (n / 1_000_000).toFixed(1) + 'M' : '$' + Math.round(n / 1000) + 'k';
@@ -84,6 +86,39 @@ export default function Pipeline() {
     return () => clearTimeout(t);
   }, [toast]);
   const [newLoanOpen, setNewLoanOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+
+  const pipelineTourSteps = [
+    {
+      title: 'Welcome to the Pipeline board',
+      body: 'This is the Kanban view of every active loan. Each column is a stage — New Lead through Approved — and the count + volume at the top tells you where the desk is loaded.\n\nRefi Watch sits between HOT PA and New Contract for loans you\'re tracking for an opportunity.',
+    },
+    {
+      target: '.legend',
+      title: 'Header actions',
+      body: 'The yellow / red swatches tell you what the colored dots mean on cards. Yellow = needs a note, red = action required.\n\n"+ New Loan Intake" opens the same drawer as the New Loan page — every field flows into the same LOANS store.',
+    },
+    {
+      target: '.kanban',
+      title: 'Drag to change stage',
+      body: 'Drag any card into a different column to move the loan. Status and stage stay in sync, and any GHL webhook subscription listening for that status change will fire.\n\nDropping into New Contract also emails the LOA per your notification rules.',
+    },
+    {
+      target: '.loan-card',
+      title: 'Click a card to open the drawer',
+      body: 'The drawer edits every field on the loan — LO, status, deadlines, notes, appraisal / title toggles.\n\nEdits auto-save on blur. You\'ll see a green "✓ Saved" pill for a second so you know it stuck.',
+    },
+    {
+      title: 'That\'s the tour',
+      body: 'A few power tips:\n\n• Escape closes the drawer (with a confirm if you\'ve got unsaved work).\n• Realtime sync means teammates\' edits show up within a second.\n• Adversed / Archived loans are hidden here — check All Loans to see them.',
+    },
+  ];
 
   const columns = useMemo(() => {
     const list = [];
@@ -115,12 +150,33 @@ export default function Pipeline() {
     const loan = LOANS.find((l) => l.id === loanId);
     if (!loan || loan.stage === newStageKey) return;
     const oldStageKey = loan.stage;
+    const prevStatus = loan.status || '';
     loan.stage = newStageKey;
     // Keep `status` in sync so Loan Management reflects the change.
     const mappedStatus = STAGE_TO_STATUS[newStageKey];
     if (mappedStatus) loan.status = mappedStatus;
     markLoansDirty(loan);
     bump();
+
+    // Mirror the GHL webhook LoanManagement fires on status transitions —
+    // a Kanban drag that promotes a card is a status change too.
+    const finalStatus = loan.status || '';
+    if (prevStatus !== finalStatus) {
+      fireWebhooks('loan.status_changed', {
+        loan_id: loan.id,
+        borrower: loan.borrower,
+        phone: loan.phone,
+        email: loan.email,
+        agent: loan.agent,
+        lo: loan.lo,
+        property: loan.property,
+        amount: loan.amount,
+        close_date: loan.closeDate,
+        old_status: prevStatus,
+        new_status: finalStatus,
+        status: finalStatus,
+      });
+    }
 
     // Fire loan.stage_changed event so notification rules (filtered by
     // stage, e.g. "New Contract") can email recipients. Context includes
@@ -227,6 +283,10 @@ export default function Pipeline() {
       )}
 
       {newLoanOpen && <NewLoanDrawer onClose={() => setNewLoanOpen(false)} />}
+
+      {tourOpen && (
+        <Tour steps={pipelineTourSteps} onClose={() => setTourOpen(false)} />
+      )}
 
       {toast && (
         <div

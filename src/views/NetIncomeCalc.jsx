@@ -3,6 +3,7 @@ import { isBranchManager } from '../lib/auth.js';
 import { getAllFunded } from '../lib/fundedLoans.js';
 import { LOANS } from '../data/loans.js';
 import { subscribeLoans } from '../lib/loansStore.js';
+import { parseLocalDate } from '../lib/clientDates.js';
 
 // Mirror of the Income tab's per-LO comp formulas. Kyle's personal earnings
 // = LO gross on his own loans + branch-manager override on Missy's loans.
@@ -123,8 +124,8 @@ function calcFica(wages, mode, filingStatus) {
 function kyleGrossInRange(funded, from, to) {
   return funded.reduce((acc, r) => {
     if (!r.closeDate) return acc;
-    const d = new Date(r.closeDate);
-    if (isNaN(d) || d < from || d > to) return acc;
+    const d = parseLocalDate(r.closeDate);
+    if (!d || d < from || d > to) return acc;
     if (r.lo === 'Kyle') return acc + (r.amount || 0) * KYLE_BPS;
     if (r.lo === 'Missy') return acc + (r.amount || 0) * MISSY_OVERRIDE_BPS;
     return acc;
@@ -136,8 +137,8 @@ function pipelineGrossInRange(loans, from, to) {
     if (l.archived || l.status === 'Adversed' || l.stage === 'cold') return acc;
     if (l.stage === 'funded' || l.status === 'Funded') return acc;
     if (!l.closeDate) return acc;
-    const d = new Date(l.closeDate);
-    if (isNaN(d) || d < from || d > to) return acc;
+    const d = parseLocalDate(l.closeDate);
+    if (!d || d < from || d > to) return acc;
     if (l.lo === 'Kyle') return acc + (l.amount || 0) * KYLE_BPS;
     if (l.lo === 'Missy') return acc + (l.amount || 0) * MISSY_OVERRIDE_BPS;
     return acc;
@@ -161,8 +162,8 @@ function computePaychecks(funded, year, opts) {
   const grouped = new Map();
   for (const r of funded) {
     if (!r.closeDate) continue;
-    const d = new Date(r.closeDate);
-    if (isNaN(d) || d < yearStart || d > yearEnd) continue;
+    const d = parseLocalDate(r.closeDate);
+    if (!d || d < yearStart || d > yearEnd) continue;
     let gross = 0;
     if (r.lo === 'Kyle') gross = (r.amount || 0) * KYLE_BPS;
     else if (r.lo === 'Missy') gross = (r.amount || 0) * MISSY_OVERRIDE_BPS;

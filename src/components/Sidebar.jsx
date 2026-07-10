@@ -22,6 +22,7 @@ const NAV_GROUPS = [
   ]},
   { label: 'Team', className: '', items: [
     { view: 'team', path: '/team', text: 'Team Members' },
+    { view: 'roles', path: '/roles', text: 'Roles & Responsibilities' },
     { view: 'performance', path: '/performance', text: 'Performance & Goals' },
   ]},
   { label: 'Tools', className: '', items: [

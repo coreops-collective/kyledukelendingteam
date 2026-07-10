@@ -22,7 +22,7 @@ export default function NewLoanDrawer({ onClose }) {
       <div className="drawer-overlay open" onClick={safeClose} />
       <aside className="drawer open" style={{ width: 720, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={safeClose}>×</button>
+          <button className="drawer-close" onClick={safeClose} aria-label="Close">×</button>
           <div className="drawer-stage">New Loan</div>
           <div className="drawer-borrower">Intake Form</div>
         </div>

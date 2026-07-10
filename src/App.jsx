@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
+import ToasterStack from './components/ToasterStack.jsx';
 import Pipeline from './views/Pipeline.jsx';
 import NewLoan from './views/NewLoan.jsx';
 import Placeholder from './views/Placeholder.jsx';
@@ -10,6 +11,7 @@ import LoanManagement from './views/LoanManagement.jsx';
 import AllLoans from './views/AllLoans.jsx';
 import Partners from './views/Partners.jsx';
 import Team from './views/Team.jsx';
+import Roles from './views/Roles.jsx';
 import Workflows from './views/Workflows.jsx';
 import Tasks from './views/Tasks.jsx';
 import MortgageCalc from './views/MortgageCalc.jsx';
@@ -28,6 +30,7 @@ import { loadUsersFromSupabase } from './data/users.js';
 import { loadLoansFromSupabase } from './lib/loansStore.js';
 import { loadPartnersFromSupabase } from './lib/partnersStore.js';
 import { loadWebhookSubscriptions } from './lib/webhooks.js';
+import { loadJobRoles } from './lib/jobRoles.js';
 
 const PAGE_META = {
   '/snapshot':      { title: 'Lending Snapshot' },
@@ -40,6 +43,7 @@ const PAGE_META = {
   '/tasks':         { title: 'Pipeline Tasks' },
   '/partners':      { title: 'Realtor Partners' },
   '/team':          { title: 'Team Members' },
+  '/roles':         { title: 'Roles & Responsibilities' },
   '/performance':   { title: 'Performance & Goals' },
   '/mortgagecalc':  { title: 'Mortgage Calculator' },
   '/closingcalc':   { title: 'Closing Costs Calculator' },
@@ -81,7 +85,7 @@ export default function App() {
 
   // Fetch real users + loans from Supabase on mount (same as legacy)
   useEffect(() => {
-    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase(), loadPartnersFromSupabase(), loadWebhookSubscriptions()])
+    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase(), loadPartnersFromSupabase(), loadWebhookSubscriptions(), loadJobRoles()])
       .finally(() => setUsersReady(true));
   }, []);
 
@@ -99,13 +103,14 @@ export default function App() {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  if (!usersReady) return <UpdateBanner />;
+  if (!usersReady) return (<><UpdateBanner /><ToasterStack /></>);
 
   if (!user) {
     return (
       <>
         <UpdateBanner />
         <Login onSuccess={() => setJustLoggedIn(true)} />
+        <ToasterStack />
       </>
     );
   }
@@ -115,6 +120,7 @@ export default function App() {
       <>
         <UpdateBanner />
         <Welcome user={user} onDismiss={() => setJustLoggedIn(false)} />
+        <ToasterStack />
       </>
     );
   }
@@ -143,12 +149,13 @@ export default function App() {
                 routes that have a tour registered. Fires an event the
                 page component listens for so we don't need a
                 global-tour registry / context wired here. */}
-            {['/workflows'].includes(location.pathname) && (
+            {['/workflows', '/pipeline', '/snapshot', '/loanmgmt', '/clientforlife', '/cfl', '/partners'].includes(location.pathname) && (
               <button
                 className="chip"
                 style={{ cursor: 'pointer', border: '1px solid #d0d0d0', background: '#fff', color: 'var(--brand-red, #c62828)', fontWeight: 700 }}
                 onClick={() => window.dispatchEvent(new Event('kdt-start-tour'))}
                 title="Guided walkthrough of every feature on this page"
+                aria-label="Start guided tour of this page"
               >📖 Take a tour</button>
             )}
             <span className="chip" id="todayChip">{todayString()}</span>
@@ -168,6 +175,7 @@ export default function App() {
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/partners" element={<Partners />} />
             <Route path="/team" element={<Team />} />
+            <Route path="/roles" element={<Roles />} />
             <Route path="/performance" element={<Performance />} />
             <Route path="/mortgagecalc" element={<MortgageCalc />} />
             <Route path="/closingcalc" element={<ClosingCalc />} />
@@ -181,6 +189,7 @@ export default function App() {
       </main>
       <div id="drawerRoot"></div>
       <div id="loginRoot"></div>
+      <ToasterStack />
     </div>
   );
 }
