@@ -409,11 +409,36 @@ export function composeMailto(task, clientName, loan) {
     s || ''
   );
   const subject = swap(task.email_subject);
-  const body = swap(task.email_body || '');
+  // Email body is now stored as HTML from the rich text editor. mailto:
+  // links can only carry plain text, so strip tags and decode entities
+  // before adding to the query string. The line breaks and bullet
+  // characters keep the layout roughly intact so the plain-text email
+  // still reads okay when the user opens it in Outlook or Mail.
+  const rawBody = swap(task.email_body || '');
+  const body = htmlToPlainText(rawBody);
   const qs = new URLSearchParams();
   if (subject) qs.set('subject', subject);
   if (body) qs.set('body', body);
   return `mailto:${to}?${qs.toString()}`;
+}
+
+function htmlToPlainText(html) {
+  if (!html) return '';
+  // If the string contains no HTML tags at all, treat it as plain text
+  // so pre-RTE templates still work unchanged.
+  if (!/<[a-z][\s\S]*>/i.test(html)) return html;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  // Convert bullet items to "• text" lines, then <br> and block ends to
+  // newlines. Everything else drops to its text content.
+  tmp.querySelectorAll('li').forEach((li) => {
+    li.textContent = '• ' + li.textContent + '\n';
+  });
+  tmp.querySelectorAll('br').forEach((br) => { br.replaceWith(document.createTextNode('\n')); });
+  tmp.querySelectorAll('p,div').forEach((el) => {
+    el.appendChild(document.createTextNode('\n'));
+  });
+  return tmp.textContent.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function toIsoDate(d) {

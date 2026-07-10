@@ -25,6 +25,7 @@ import {
 } from '../lib/keyDateTypes.js';
 import { showError } from '../lib/toaster.js';
 import Tour from '../components/Tour.jsx';
+import RichTextEditor from '../components/RichTextEditor.jsx';
 import { getRoleKeysForWorkflowDropdown, getRoleLabel } from '../lib/jobRoles.js';
 
 const DAY = 86400000;
@@ -71,20 +72,24 @@ export default function CFL() {
       body: 'The relationship engine. Every past client and every funded loan gets a rolling task list generated from your Workflows.\n\nHome anniversaries, birthdays, review requests, market check-ins — anything with a date anchor on a client turns into a task on the day it should be sent.\n\nNothing to enter manually — the entire list is derived live from client_dates and workflow_tasks.',
     },
     {
-      title: 'Buckets by urgency',
-      body: 'Tasks are grouped Overdue → Today → This Week → This Month → Later. This Month and Later start collapsed so 800 pending items don\'t drown you in noise.\n\nOverdue > 30 days is hidden by default (sending a card 4 years late is worse than not sending it). Toggle "Show ancient" if you want to prove they\'re there.',
-    },
-    {
+      target: '[data-tour="cfl-toolbar"]',
       title: 'Search + filters',
       body: 'Filter by role (LO / LOA / Admin / Automated), status (Open / Done), workflow, and free-text search across borrower + task title.\n\nLayer as many filters as you need — "just Kyle\'s LO tasks for the Birthday workflow due this week" is one dropdown per constraint. Reset clears everything at once.',
     },
     {
+      target: '[data-tour="cfl-birthdays"]',
       title: 'Birthdays this month',
       body: 'The Birthdays panel at the top shows every past client whose birthday falls in the current month — the single highest-value CFL touchpoint.\n\nComes straight from client_dates. Edit or delete via the client card. Add a new birthday via the past-client drawer or the Add a Date form.',
     },
     {
-      title: 'Client card drawer',
-      body: 'Click any client\'s name to open the client card. It shows every key date (birthday, home anniversary, wedding, closing, work anniversary, etc.), the client profile (identity corrections, review tracking), and every open task for this client in one place.\n\nEditing key dates here immediately reshuffles the task list.',
+      target: '[data-tour="cfl-buckets"]',
+      title: 'Buckets by urgency',
+      body: 'Tasks are grouped Overdue → Today → This Week → This Month → Later. This Month and Later start collapsed so 800 pending items don\'t drown you in noise.\n\nOverdue > 30 days is hidden by default (sending a card 4 years late is worse than not sending it). Toggle "Show ancient" if you want to prove they\'re there.',
+    },
+    {
+      target: '[data-tour="cfl-task-row"]',
+      title: 'Task rows',
+      body: 'Each row shows the task title, client name, workflow, role tag, due date, and (if applicable) an email or send-email-now button.\n\nCheck the checkbox to mark it complete. Click the client name to open the full client card with every key date and open task in one place.',
     },
     {
       title: 'Email tasks: Send Email Now',
@@ -95,8 +100,8 @@ export default function CFL() {
       body: 'Some tasks are decision points ("Did the borrower want a consultation?"). Instead of a checkbox they show a set of Answer buttons — the answer picked determines which downstream tasks appear.\n\nExample: answering "Yes, consultation" surfaces the Schedule Consultation task; answering "No" skips it entirely.',
     },
     {
-      title: 'Completing a task',
-      body: 'For plain tasks: check the box. The completion is recorded against the client + due date so the same task doesn\'t reappear next year.\n\nRecurring tasks (yearly anniversaries, quarterly reviews) re-emit for the next occurrence automatically — completing this year doesn\'t hide next year.',
+      title: 'Bulk complete',
+      body: 'Check the box in the section header to select every visible task in that bucket, then click "Complete selected" to mark them all done in one shot.\n\nGreat for catching up after a slow week — check all of "This Week", complete, done.',
     },
   ];
 
@@ -283,9 +288,11 @@ export default function CFL() {
         </div>
       </div>
 
-      <BirthdaysPanel rows={birthdaysThisMonth} onOpenDates={null} onOpenClient={setOpenClient} />
+      <div data-tour="cfl-birthdays">
+        <BirthdaysPanel rows={birthdaysThisMonth} onOpenDates={null} onOpenClient={setOpenClient} />
+      </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+      <div data-tour="cfl-toolbar" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <input
           type="text"
           value={search}
@@ -328,7 +335,7 @@ export default function CFL() {
       {generated.length === 0 ? (
         <EmptyState />
       ) : (
-        buckets.map((b) => b.items.length > 0 && (
+        <div data-tour="cfl-buckets">{buckets.map((b) => b.items.length > 0 && (
           <Section
             key={b.label}
             label={b.label}
@@ -338,7 +345,7 @@ export default function CFL() {
             collapsed={!!collapsed[b.label]}
             onToggle={() => setCollapsed((c) => ({ ...c, [b.label]: !c[b.label] }))}
           />
-        ))
+        ))}</div>
       )}
 
       {openClient && <ClientCardDrawer clientName={openClient} onClose={() => setOpenClient(null)} />}
@@ -403,25 +410,84 @@ function Section({ label, items, today, onOpenClient, collapsed, onToggle }) {
   const CAP = 50;
   const visible = !collapsed && (showAll || items.length <= CAP) ? items : items.slice(0, collapsed ? 0 : CAP);
   const hidden = items.length - visible.length;
+
+  // Per-bucket bulk selection. Selection stays local to the section so
+  // "select all" in Overdue doesn't accidentally sweep in Today too.
+  const [selected, setSelected] = useState(new Set());
+  const selectableItems = visible.filter((it) => !it.completed && !((it.task.decision_options || []).length > 0));
+  const selectableIds = selectableItems.map((it) => it.id);
+  const allChecked = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  const someChecked = selected.size > 0;
+  const toggleOne = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    setSelected(() => allChecked ? new Set() : new Set(selectableIds));
+  };
+  const bulkComplete = async () => {
+    const targets = selectableItems.filter((it) => selected.has(it.id));
+    if (targets.length === 0) return;
+    if (!window.confirm(`Mark ${targets.length} task${targets.length === 1 ? '' : 's'} complete in ${label}?`)) return;
+    await Promise.all(targets.map((it) => {
+      const dueIso = `${it.due_date.getFullYear()}-${String(it.due_date.getMonth() + 1).padStart(2, '0')}-${String(it.due_date.getDate()).padStart(2, '0')}`;
+      return markTaskCompleted(it.task.id, it.client_name, dueIso, null, null, it.loan_id);
+    }));
+    setSelected(new Set());
+  };
+
   return (
     <div style={{ marginBottom: 14 }}>
       <div
-        onClick={onToggle}
         style={{
           fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase',
           letterSpacing: 1, color: headerColor, margin: '6px 0 8px',
-          cursor: onToggle ? 'pointer' : 'default',
-          display: 'flex', alignItems: 'center', gap: 6,
+          display: 'flex', alignItems: 'center', gap: 8,
           userSelect: 'none',
         }}
       >
-        <span style={{ display: 'inline-block', width: 12, color: '#888' }}>{collapsed ? '▸' : '▾'}</span>
-        {label} ({items.length})
+        <span onClick={onToggle} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: onToggle ? 'pointer' : 'default' }}>
+          <span style={{ display: 'inline-block', width: 12, color: '#888' }}>{collapsed ? '▸' : '▾'}</span>
+          {label} ({items.length})
+        </span>
+        {!collapsed && selectableIds.length > 0 && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 12, cursor: 'pointer', fontSize: 10 }} title={`Select all ${selectableIds.length} in ${label}`}>
+            <input
+              type="checkbox"
+              checked={allChecked}
+              ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
+              onChange={toggleAll}
+              style={{ width: 13, height: 13, accentColor: 'var(--brand-red)' }}
+            />
+            Select all
+          </label>
+        )}
+        {someChecked && (
+          <button
+            onClick={bulkComplete}
+            style={{
+              marginLeft: 'auto', padding: '4px 10px', background: '#0A0A0A', color: '#fff',
+              border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 10,
+              cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
+            }}
+          >{'✓'} Complete {selected.size}</button>
+        )}
       </div>
       {!collapsed && (
         <div className="section-card">
           {visible.map((it, i) => (
-            <TaskRow key={it.id} item={it} today={today} first={i === 0} onOpenClient={onOpenClient} />
+            <TaskRow
+              key={it.id}
+              item={it}
+              today={today}
+              first={i === 0}
+              onOpenClient={onOpenClient}
+              selected={selected.has(it.id)}
+              onSelect={selectableIds.includes(it.id) ? () => toggleOne(it.id) : null}
+            />
           ))}
           {hidden > 0 && (
             <div
@@ -437,7 +503,7 @@ function Section({ label, items, today, onOpenClient, collapsed, onToggle }) {
   );
 }
 
-function TaskRow({ item, today, first, onOpenClient }) {
+function TaskRow({ item, today, first, onOpenClient, selected, onSelect }) {
   const role = item.task.role || 'lo';
   const roleColors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
   const days = Math.round((item.due_date - today) / DAY);
@@ -471,18 +537,30 @@ function TaskRow({ item, today, first, onOpenClient }) {
   // at a glance — you see "Due Jul 15 · Birthday Jul 22".
   const showAnchor = item.anchor_date && +item.anchor_date !== +item.due_date;
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: '30px 1fr 220px 90px 80px', gap: 10,
+    <div data-tour={first ? 'cfl-task-row' : undefined} style={{
+      display: 'grid', gridTemplateColumns: '60px 1fr 220px 90px 80px', gap: 10,
       padding: '12px 14px', borderTop: first ? 'none' : '1px solid #f1f1f1',
       alignItems: isDecision ? 'flex-start' : 'center',
-      background: item.completed ? '#fafafa' : isDecision ? '#f5f9ff' : '#fff',
+      background: item.completed ? '#fafafa' : selected ? '#fffce7' : isDecision ? '#f5f9ff' : '#fff',
     }}>
-      {isDecision ? (
-        <div style={{ fontSize: 20, textAlign: 'center', color: '#0d47a1' }} title="Decision Point">❓</div>
-      ) : (
-        <input type="checkbox" checked={item.completed} onChange={onToggle}
-          style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }} />
-      )}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {onSelect && !item.completed && (
+          <input
+            type="checkbox"
+            checked={!!selected}
+            onChange={onSelect}
+            style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#0A0A0A' }}
+            title="Select for bulk complete"
+            aria-label="Select"
+          />
+        )}
+        {isDecision ? (
+          <div style={{ fontSize: 20, textAlign: 'center', color: '#0d47a1' }} title="Decision Point">❓</div>
+        ) : (
+          <input type="checkbox" checked={item.completed} onChange={onToggle}
+            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }} />
+        )}
+      </div>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: item.completed ? '#aaa' : '#222', textDecoration: item.completed ? 'line-through' : 'none' }}>
           {isDecision && <span style={{ fontSize: 10, background: '#0d47a1', color: '#fff', padding: '2px 6px', borderRadius: 4, marginRight: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>Decision</span>}
@@ -1366,7 +1444,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
   return (
     <>
       <div className="drawer-overlay open" style={{ zIndex: 200 }} onClick={onClose} />
-      <aside className="drawer open" style={{ width: 560, maxWidth: '95vw', zIndex: 201 }}>
+      <aside className="drawer open" style={{ width: 820, maxWidth: '95vw', zIndex: 201 }}>
         <div className="drawer-head">
           <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Workflow Task</div>
@@ -1641,14 +1719,15 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
                 style={{ ...inputStyle, opacity: emailRecipient === 'none' ? 0.4 : 1 }}
               />
             </div>
-            <textarea
-              value={emailBody}
-              onChange={(e) => setEmailBody(e.target.value)}
-              disabled={emailRecipient === 'none'}
-              rows={6}
-              placeholder={'Body of the email. Use variables: {{first_name}}, {{last_name}}, {{property}}, {{close_date}}, {{agent_name}}'}
-              style={{ ...inputStyle, resize: 'vertical', minHeight: 100, opacity: emailRecipient === 'none' ? 0.4 : 1 }}
-            />
+            <div style={{ opacity: emailRecipient === 'none' ? 0.4 : 1, pointerEvents: emailRecipient === 'none' ? 'none' : 'auto' }}>
+              <RichTextEditor
+                value={emailBody}
+                onChange={setEmailBody}
+                placeholder={'Body of the email. Use variables: {{first_name}}, {{last_name}}, {{property}}, {{close_date}}, {{agent_name}}'}
+                minHeight={280}
+                ariaLabel="Email body"
+              />
+            </div>
             {emailRecipient !== 'none' && emailSubject && (
               <div style={{ marginTop: 6, fontSize: 11, color: '#666', fontStyle: 'italic' }}>
                 A blue 📧 Email button appears on every generated task in the list. Click it to open Outlook with the subject and body pre-filled and variables substituted from the client's loan record.

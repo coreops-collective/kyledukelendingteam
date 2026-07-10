@@ -165,12 +165,14 @@ export default function Partners() {
       body: 'Toggle between grid and list view. Each card shows total closings, total volume, YTD closings, YTD volume, and live pipeline volume in escrow with this agent right now. Click any card to open the drawer.',
     },
     {
-      title: 'Partner drawer',
-      body: 'The drawer edits every field on the partner — contact info, spouse + kids, birthday, favorite restaurant, notes. Every save is realtime-synced to teammates.\n\nA "Touches" log at the bottom lets you record when you last called, met, or sent a gift so nobody drops the ball.',
+      target: '.partner-card, .partner-row',
+      title: 'Click a partner for the drawer',
+      body: 'Clicking any partner card (or row in list view) opens the full drawer — edits every field on the partner: contact info, spouse + kids, birthday, favorite restaurant, notes. Every save is realtime-synced to teammates.\n\nA Touches log at the bottom lets you record when you last called, met, or sent a gift so nobody drops the ball.',
     },
     {
-      title: 'Merge duplicates',
-      body: 'When two rows exist for the same agent (usually a Realtor Referral typed differently), open the drawer and use the Merge action to fold source into target. Loans that referenced the source get re-tagged to the target automatically, safely.',
+      target: '.partner-card, .partner-row',
+      title: 'Merge duplicates from the drawer',
+      body: 'When two rows exist for the same agent (usually a Realtor Referral typed differently), open the drawer on the source row and use the Merge action to fold it into the target. Loans that referenced the source get re-tagged to the target automatically, safely.\n\nAdd Partner (top-right red button) is where new agents come in when you catch a referral you haven\'t worked with yet.',
     },
   ];
 

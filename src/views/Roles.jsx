@@ -85,22 +85,27 @@ export default function Roles() {
       body: 'This is the single source of truth for what every role on the team owns — LO, LOA, Admin, Automated, plus any custom role you add.\n\nThink of it as a living employee handbook: the job description writes itself from real workflow tasks, and every role gets a proper 30/60/90 plus accountability metrics.',
     },
     {
+      target: '[data-tour="role-list"]',
       title: 'Left rail: role picker',
       body: 'Click any role to open its page. The four built-in roles come pre-seeded and can\'t be deleted (workflow tasks reference them). Custom roles you add can be deleted.\n\n"+ Add role" at the bottom creates a new role — it appears immediately in the workflow task Owner picker so you can assign tasks to it.',
     },
     {
+      target: '[data-tour="reports-to"]',
       title: 'Reports To',
       body: 'Under the role name, pick who this role reports to. Choose another role or leave it as "Nobody / Top of chain" for the Branch Manager.\n\nThe AI Suggest uses this — if the LO reports to the Branch Manager, the JD says so. It also lands on the PDF header.',
     },
     {
+      target: '[data-tour="responsibilities"]',
       title: 'Responsibilities (auto-populated)',
       body: 'This panel lists every workflow task assigned to this role, grouped by workflow. No duplicate entry — assign a task to LO on the Workflows page and it shows up here on the next render.\n\nWithin each workflow the task is deduped, but the same responsibility can appear under multiple workflows if it truly recurs.',
     },
     {
+      target: '[data-tour="ai-suggest"]',
       title: 'AI Suggest',
       body: 'Every section has an ✨ AI Suggest button. Click it and Claude drafts:\n\n• Job Description — Kyle Duke team context + 3-5 synthesized responsibility themes (never a raw task dump)\n• 30/60/90 Day Plans — week-by-week ramp\n• Accountability — mortgage-specific KPIs\n\nEverything is editable after generation. Blur to save.',
     },
     {
+      target: '[data-tour="export-pdf"]',
       title: 'Export PDF',
       body: 'Export PDF opens a print-ready window with the brand crest, the role name, "Reports to" line, all sections, and the responsibilities grouped by workflow.\n\nBrowser print dialog → Save as PDF. Send it to a new hire, a candidate, or an accountability partner.',
     },
@@ -134,7 +139,7 @@ export default function Roles() {
 
 function RoleList({ roles, activeKey, onPick, onAdd }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, padding: 10 }}>
+    <div data-tour="role-list" style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, padding: 10 }}>
       <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#666', padding: '6px 8px 10px' }}>
         Roles
       </div>
@@ -288,7 +293,7 @@ function RoleEditor({ role, allRoles, onChange }) {
             style={{ width: '100%', fontSize: 13, border: 'none', background: 'transparent', color: '#666', padding: '4px 0' }}
             aria-label="Role summary"
           />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <div data-tour="reports-to" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '.6px' }}>
               Reports to
             </label>
@@ -307,6 +312,7 @@ function RoleEditor({ role, allRoles, onChange }) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
+            data-tour="export-pdf"
             onClick={exportPdf}
             style={{ padding: '8px 14px', fontSize: 12, fontWeight: 700, border: '1px solid #0A0A0A', background: '#0A0A0A', color: '#fff', borderRadius: 6, cursor: 'pointer' }}
           >Export PDF</button>
@@ -351,7 +357,7 @@ function RoleEditor({ role, allRoles, onChange }) {
 function ResponsibilitiesPanel({ role, responsibilities }) {
   const { groups, count } = responsibilities;
   return (
-    <div style={{ marginBottom: 18, padding: 16, background: '#fafafa', border: '1px solid #eee', borderRadius: 10 }}>
+    <div data-tour="responsibilities" style={{ marginBottom: 18, padding: 16, background: '#fafafa', border: '1px solid #eee', borderRadius: 10 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
         <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px' }}>
           Responsibilities · from workflow tasks
@@ -389,8 +395,12 @@ function ResponsibilitiesPanel({ role, responsibilities }) {
 
 function SectionEditor({ section, value, onChange, onCommit, onSuggest, suggesting }) {
   const meta = SECTION_META[section];
+  // Only mark the first section as the AI Suggest tour target so the
+  // tour lands on it deterministically instead of any of 5 identical
+  // buttons.
+  const isFirst = section === 'job_description';
   return (
-    <div style={{ marginBottom: 14, padding: 14, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10 }}>
+    <div data-tour={isFirst ? 'ai-suggest' : undefined} style={{ marginBottom: 14, padding: 14, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
         <div>
           <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px' }}>
