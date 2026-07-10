@@ -150,9 +150,19 @@ function DeadlinesPanel({ loans, onOpen }) {
 
 // ── Notes drawer ────────────────────────────────────────────────
 function NotesDrawer({ loan, onSave, onClose }) {
-  const [notes, setNotes] = useState(loan.notes || '');
+  const initialNotes = loan.notes || '';
+  const [notes, setNotes] = useState(initialNotes);
   const [history, setHistory] = useState(null); // null = not loaded, [] = empty, [...] = loaded
   const [showHistory, setShowHistory] = useState(false);
+
+  // Prevent accidental loss of a paragraph of notes: if the text has
+  // been changed since open and the user tries to close (overlay,
+  // ×, Cancel), confirm before dropping it on the floor.
+  const isDirty = notes !== initialNotes;
+  const safeClose = () => {
+    if (isDirty && !window.confirm('Discard unsaved notes changes?')) return;
+    onClose();
+  };
 
   // Drawer width is drag-resizable from the left edge and persists so the
   // team can keep it as wide as they like across sessions. Default 720px,
@@ -195,7 +205,7 @@ function NotesDrawer({ loan, onSave, onClose }) {
   if (!loan) return null;
   return (
     <>
-      <div className="drawer-overlay open" onClick={onClose} />
+      <div className="drawer-overlay open" onClick={safeClose} />
       <aside className="drawer open" style={{ width: drawerWidth, maxWidth: '95vw' }}>
         <span
           onMouseDown={startDrawerResize}
@@ -212,7 +222,7 @@ function NotesDrawer({ loan, onSave, onClose }) {
           }}
         />
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={safeClose}>×</button>
           <div className="drawer-stage">Notes</div>
           <div className="drawer-borrower">{loan.borrower}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{loan.property || ''}</div>
@@ -286,7 +296,7 @@ function NotesDrawer({ loan, onSave, onClose }) {
           </div>
         </div>
         <div className="drawer-actions">
-          <button className="drawer-btn" onClick={onClose}>Cancel</button>
+          <button className="drawer-btn" onClick={safeClose}>Cancel</button>
           <button className="drawer-btn primary" onClick={() => { onSave(notes); onClose(); }}>Save Notes</button>
         </div>
       </aside>

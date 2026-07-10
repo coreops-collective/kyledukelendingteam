@@ -25,6 +25,10 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
   // "Rendered more hooks than during the previous render" the moment
   // a loan was selected after the drawer mounted empty.
   const [, force] = useState(0);
+  // Visual feedback for save-on-blur — set to the field name that
+  // just committed and cleared after ~1.2s.
+  const [justSaved, setJustSaved] = useState(null);
+  const justSavedTimer = useRef(null);
 
   // Drawer width is drag-resizable from the left edge; width persists per
   // user via localStorage. Same UX as the dedicated Notes drawer so users
@@ -70,6 +74,12 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     }
     force((n) => n + 1);
     markLoansDirty(loan);
+    // Brief green flash on the field we just saved so the user gets
+    // a "yes it stuck" signal — previously blur-to-save had zero
+    // visible feedback and people didn't trust it.
+    setJustSaved(key);
+    if (justSavedTimer.current) clearTimeout(justSavedTimer.current);
+    justSavedTimer.current = setTimeout(() => setJustSaved(null), 1200);
     onSaved?.();
   };
 
@@ -159,6 +169,20 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
           </div>
         </div>
         <div className="drawer-body">
+          {justSaved && (
+            <div
+              role="status"
+              style={{
+                position: 'sticky', top: 0, zIndex: 1,
+                margin: '-10px -14px 12px',
+                padding: '6px 12px', background: '#e8f5e9', color: '#1b5e20',
+                borderBottom: '1px solid #a5d6a7', fontSize: 11, fontWeight: 700,
+                letterSpacing: '.5px', textTransform: 'uppercase',
+              }}
+            >
+              ✓ Saved · {justSaved}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Borrower" full>
               <I defaultValue={loan.borrower || ''} onBlur={(e) => set('borrower', e.target.value)} />
