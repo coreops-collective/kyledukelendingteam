@@ -3,6 +3,7 @@ import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
 import { STATE_NAMES } from '../data/states.js';
 import { parseLocalDate } from './clientDates.js';
+import { getAllFunded } from './fundedLoans.js';
 
 export const fmt$ = n => n==null ? '\u2014' : '$' + n.toLocaleString('en-US',{maximumFractionDigits:0});
 export const fmt$M = n => n==null ? '\u2014' : (n>=1e6 ? '$'+(n/1e6).toFixed(2)+'M' : '$'+(n/1e3).toFixed(0)+'K');
@@ -83,7 +84,10 @@ export const loansByType = () => {
 
 export { STATE_NAMES };
 
-// Rolling 12-month funded volume built from PAST_CLIENTS — ends at current month.
+// Rolling 12-month funded volume built from the canonical funded ledger
+// (PAST_CLIENTS + LOANS marked funded, deduped by name+closeDate).
+// Was PAST_CLIENTS-only, so loans funded through the app never showed
+// up in the monthly volume chart.
 export function buildMonthlyFunded(){
   const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const today = new Date();
@@ -95,7 +99,7 @@ export function buildMonthlyFunded(){
   const key = (y,m) => y + '-' + m;
   const bmap = {};
   buckets.forEach(b => { bmap[key(b.year, b.monthIdx)] = b; });
-  PAST_CLIENTS.forEach(c => {
+  getAllFunded().forEach(c => {
     if(!c.closeDate) return;
     const d = parseLocalDate(c.closeDate);
     if(!d) return;
@@ -107,12 +111,15 @@ export function buildMonthlyFunded(){
   return buckets;
 }
 
-// Year-over-year history from PAST_CLIENTS
+// Year-over-year history from the canonical funded ledger.
+// getAllFunded's loanToFundedRecord derives year from closeDate, so
+// LOANS-funded records participate correctly without needing the
+// legacy `year` sentinel field.
 export function buildYoyHistory(){
   const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const YOY = {};
-  PAST_CLIENTS.forEach(c=>{
-    if(!c.closeDate || !c.year) return;
+  getAllFunded().forEach(c=>{
+    if(!c.closeDate) return;
     const d = parseLocalDate(c.closeDate);
     if(!d) return;
     const y = d.getFullYear();

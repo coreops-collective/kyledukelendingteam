@@ -11,6 +11,7 @@ import {
   AGENT_MILESTONES, partnerLoc,
 } from '../lib/snapshotHelpers.js';
 import { parseLocalDate } from '../lib/clientDates.js';
+import { getAllFunded } from '../lib/fundedLoans.js';
 
 function renderAnniversariesBlock(){
   const today = new Date();
@@ -211,8 +212,12 @@ function buildSnapshotHTML(){
   }).length;
   const closingThisMo = closingInMonth(thisMoIdx, thisYr);
   const closingNextMo = closingInMonth(nextMoIdx, nextMoYr);
-  const lifetimeVolume = PAST_CLIENTS.reduce((a,c)=>a+(c.amount||0),0);
-  const lifetimeUnits = PAST_CLIENTS.length;
+  // Lifetime volume includes PAST_CLIENTS (historical seed) plus any loans
+  // the team has funded through the app since — getAllFunded dedupes them
+  // by name+closeDate so a record in both sources only counts once.
+  const funded = getAllFunded();
+  const lifetimeVolume = funded.reduce((a,c)=>a+(c.amount||0),0);
+  const lifetimeUnits = funded.length;
   const activeWithAmt = activeLoans.filter(l=>l.amount);
   const avgLoan = activeWithAmt.length ? activeWithAmt.reduce((a,l)=>a+l.amount,0) / activeWithAmt.length : 0;
   const kpis = [
