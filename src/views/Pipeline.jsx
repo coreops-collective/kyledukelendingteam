@@ -6,11 +6,59 @@ import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, subscribeLoans } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
 import Tour from '../components/Tour.jsx';
+import { parseLocalDate } from '../lib/clientDates.js';
 
 const fmt$ = (n) => '$' + Math.round(n).toLocaleString();
 const fmt$M = (n) => n >= 1_000_000 ? '$' + (n / 1_000_000).toFixed(1) + 'M' : '$' + Math.round(n / 1000) + 'k';
 
+// Resolve a loan card's attention state. The legend at the top of the
+// pipeline board advertises two colors — this is the code that actually
+// paints them:
+//   'action'     → red    (any of: lock expiring ≤ 7 days, appraisal
+//                          deadline past, ICD deadline past, status is
+//                          CTC Required)
+//   'needs-note' → yellow (no notes on the loan)
+//   null         → default card
+// Red beats yellow: a lock expiring on a note-less loan shows red, not
+// yellow. Both come from live loan fields, no DB change required.
+function cardAttentionState(loan) {
+  if (!loan) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const isPast = (dateStr) => {
+    const d = parseLocalDate(dateStr);
+    return !!d && d < today;
+  };
+  const daysUntil = (dateStr) => {
+    const d = parseLocalDate(dateStr);
+    if (!d) return null;
+    return Math.ceil((d - today) / 86400000);
+  };
+  // Red signals first.
+  if ((loan.status || '') === 'CTC Required') return 'action';
+  const dLock = daysUntil(loan.lockExp);
+  if (dLock !== null && dLock <= 7) return 'action';
+  // Appraisal deadline: past AND appraisal not yet received.
+  if (loan.apprDeadline && isPast(loan.apprDeadline) && !loan.apprReceived) return 'action';
+  // ICD deadline: past AND ICD not yet signed.
+  if (loan.icdDeadline && isPast(loan.icdDeadline) && !loan.icdSigned) return 'action';
+  // Yellow: no notes.
+  if (!(loan.notes || '').trim()) return 'needs-note';
+  return null;
+}
+
+const ATTENTION_STYLES = {
+  action:      { borderLeft: '4px solid #C8102E', background: '#fff5f6' },
+  'needs-note':{ borderLeft: '4px solid #f5c518', background: '#fffdf3' },
+};
+
 function LoanCard({ loan, onOpen, onDragStart, onDragEnd }) {
+  const attention = cardAttentionState(loan);
+  const style = { cursor: 'grab', ...(attention ? ATTENTION_STYLES[attention] : null) };
+  const attentionTitle = attention === 'action'
+    ? 'Action required — check lock, deadlines, or status'
+    : attention === 'needs-note'
+      ? 'No notes yet — add context so the team knows where this stands'
+      : undefined;
   return (
     <div
       className="loan-card"
@@ -22,7 +70,8 @@ function LoanCard({ loan, onOpen, onDragStart, onDragEnd }) {
       }}
       onDragEnd={onDragEnd}
       onClick={() => onOpen(loan.id)}
-      style={{ cursor: 'grab' }}
+      style={style}
+      title={attentionTitle}
     >
       <div className="loan-borrower">{loan.borrower}</div>
       {loan.amount ? <div className="loan-amount">{fmt$(loan.amount)}</div> : null}

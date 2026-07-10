@@ -82,7 +82,7 @@ export default function Roles() {
     <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 20, alignItems: 'flex-start' }}>
       <RoleList roles={roles} activeKey={active?.key} onPick={setActiveKey} onAdd={() => setShowAddRole(true)} />
       {active
-        ? <RoleEditor role={active} onChange={bump} />
+        ? <RoleEditor role={active} allRoles={roles} onChange={bump} />
         : <div style={{ padding: 24, color: '#888' }}>No roles yet — click Add role to create your first.</div>}
       {showAddRole && (
         <AddRoleDrawer
@@ -133,7 +133,7 @@ function RoleList({ roles, activeKey, onPick, onAdd }) {
   );
 }
 
-function RoleEditor({ role, onChange }) {
+function RoleEditor({ role, allRoles, onChange }) {
   // Local editing state so the user can type without every keystroke
   // pinging Supabase. Debounced save writes back on quiet.
   const [draft, setDraft] = useState({
@@ -144,6 +144,7 @@ function RoleEditor({ role, onChange }) {
     training_60: role.training_60 || '',
     training_90: role.training_90 || '',
     accountability: role.accountability || '',
+    reports_to_role_id: role.reports_to_role_id || '',
   });
   const [suggesting, setSuggesting] = useState({});
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -158,9 +159,17 @@ function RoleEditor({ role, onChange }) {
       training_60: role.training_60 || '',
       training_90: role.training_90 || '',
       accountability: role.accountability || '',
+      reports_to_role_id: role.reports_to_role_id || '',
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role.id]);
+
+  // Reports-to display + AI-context resolution. Excludes the current
+  // role from the picker so no one can accidentally set a role to
+  // report to itself.
+  const reportsToOptions = (allRoles || []).filter((r) => r.id !== role.id);
+  const reportsToRole = reportsToOptions.find((r) => r.id === draft.reports_to_role_id);
+  const reportsToLabel = reportsToRole ? reportsToRole.label : '';
 
   const responsibilities = useMemo(() => responsibilitiesFor(role.key), [role.key]);
   // Available for both display (grouped) and AI Suggest (flat list of titles).
@@ -188,6 +197,7 @@ function RoleEditor({ role, onChange }) {
           section,
           responsibilities: responsibilities.flat,
           existing_content: draft[section] || '',
+          reports_to: reportsToLabel,
         }),
       });
       const data = await res.json();
@@ -209,7 +219,17 @@ function RoleEditor({ role, onChange }) {
   const exportPdf = () => {
     // Render the role into a hidden print container, trigger the browser
     // print dialog, and let the user "Save as PDF". Native, no dep.
-    printRole({ role, draft, responsibilities });
+    printRole({ role, draft, responsibilities, reportsToLabel });
+  };
+
+  // Saves the Reports To selection immediately — a dropdown change is a
+  // committed action, not something the user backspaces mid-edit.
+  const saveReportsTo = (nextValue) => {
+    saveField('reports_to_role_id', nextValue);
+    // updateJobRole treats null/undefined as "clear" — the AI prompt then
+    // gets "(not specified)" as the reports_to line.
+    updateJobRole(role.id, { reports_to_role_id: nextValue || null });
+    onChange?.();
   };
 
   return (
@@ -233,6 +253,22 @@ function RoleEditor({ role, onChange }) {
             style={{ width: '100%', fontSize: 13, border: 'none', background: 'transparent', color: '#666', padding: '4px 0' }}
             aria-label="Role summary"
           />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '.6px' }}>
+              Reports to
+            </label>
+            <select
+              value={draft.reports_to_role_id}
+              onChange={(e) => saveReportsTo(e.target.value)}
+              style={{ padding: '4px 8px', fontSize: 13, borderRadius: 4, border: '1px solid #ccc' }}
+              aria-label="Reports to"
+            >
+              <option value="">— Nobody / Top of chain</option>
+              {reportsToOptions.map((r) => (
+                <option key={r.id} value={r.id}>{r.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -426,7 +462,7 @@ function ConfirmDeleteModal({ roleLabel, onCancel, onConfirm }) {
 // A4 layout, Kyle's brand crest in the header, and the role's content
 // laid out for print. Browser's print dialog → "Save as PDF" is what
 // downloads the file.
-function printRole({ role, draft, responsibilities }) {
+function printRole({ role, draft, responsibilities, reportsToLabel }) {
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const mdToHtml = (md) => {
@@ -503,6 +539,7 @@ function printRole({ role, draft, responsibilities }) {
       <h1>${esc(role.label)}</h1>
       <div class="sub">The Kyle Duke Home Loan Team · Role Description</div>
       ${role.summary ? `<div class="sub" style="text-transform:none;color:#444;margin-top:6px">${esc(role.summary)}</div>` : ''}
+      ${reportsToLabel ? `<div class="sub" style="text-transform:none;color:#444;margin-top:4px"><strong>Reports to:</strong> ${esc(reportsToLabel)}</div>` : ''}
     </div>
   </header>
 

@@ -5,6 +5,7 @@ import { LOANS } from '../data/loans.js';
 import { sbInsert } from '../lib/supabase.js';
 import { markLoansDirty } from '../lib/loansStore.js';
 import { upsertClientDate } from '../lib/clientDates.js';
+import Tour from '../components/Tour.jsx';
 
 const LO_OPTIONS = ['Kyle Duke', 'Missy'];
 
@@ -23,6 +24,7 @@ export default function NewLoan() {
     notes: '',
   });
   const [toast, setToast] = useState(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   // Auto-dismiss toasts after 3s.
   useEffect(() => {
@@ -30,6 +32,46 @@ export default function NewLoan() {
     const t = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+
+  const NEW_LOAN_TOUR_STEPS = [
+    {
+      title: 'New Loan Intake',
+      body: 'This is the single entry point for every new loan — pre-qual leads, HOT PAs, and signed New Contracts. The form adapts to whichever status you pick, so you\'re never asked for fields that don\'t apply yet.\n\nOn submit the loan lands in the LOANS store (visible immediately in Pipeline / Loan Management / All Loans) AND queues a Supabase write so nothing is lost on refresh.',
+    },
+    {
+      target: '.notify-chip',
+      title: 'Notification indicator',
+      body: 'The chip at the top tells you exactly what happens on submit for the current form. When status is set to New Contract, submitting also fires an email to the LOA per your notification rules. Any other status → save only, no email.',
+    },
+    {
+      target: '.form-card select',
+      title: 'Start with LO + new-or-existing',
+      body: 'Pick a Loan Officer first, then say whether this is a brand-new client or one already in the pipeline.\n\nIf existing: the "Existing Client" dropdown appears and you can copy every field from the current loan into the form — no double entry. Useful when a lead progresses from HOT PA to New Contract.',
+    },
+    {
+      target: '.notify-chip',
+      title: 'Status drives the form',
+      body: 'The Status dropdown controls which sections show:\n\n• New Lead / Applied / HOT PA / REFI Watch → simple contact + est-close fields\n• New Contract → adds the full contract detail block (property, lock, appraisal, title, HOI, close date, UW path, borrower story)\n\nPick the right status and the form adapts — no extra clicks.',
+    },
+    {
+      title: 'Co-borrower handling',
+      body: 'Answer "Is there a co-borrower?" — Yes pulls in a full set of co-borrower fields (name, phone, email, birthday). All co-borrower data writes to BOTH the legacy field names (c2first, c2last...) and the canonical names (coFirst, coLast...) so every downstream view sees it, no matter which naming convention it uses.\n\nBirthday, if provided, is auto-added to client_dates for the CFL birthday touchpoint.',
+    },
+    {
+      title: 'Realtor + Lead Source',
+      body: 'Real Estate Agent pulls from the Realtor Partners list — start typing and it filters. If the agent isn\'t in the list, pick "+ Add new agent" to open the partner intake next.\n\nLead Source tags where this loan came from — Realtor Referral, Past Client, Zillow, etc. Feeds the Partners page stats and the Snapshot volume-by-source chart.',
+    },
+    {
+      title: 'Submit + validation',
+      body: 'Required fields (first, last, phone, email, LO, type, co-borrower fields if hasCo=Yes) are validated on submit — missing anything and you get a toast listing what\'s empty.\n\nRapid submits get a unique loan ID (Date + 4 random hex digits) so no two intakes collide even inside the same millisecond.',
+    },
+  ];
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -401,6 +443,7 @@ export default function NewLoan() {
           <div>{toast.msg}</div>
         </div>
       )}
+      {tourOpen && <Tour steps={NEW_LOAN_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }
