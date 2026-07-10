@@ -505,8 +505,8 @@ function TaskRow({ item, today, first, onOpenClient }) {
                 key={opt}
                 onClick={(e) => { e.stopPropagation(); answerDecision(opt); }}
                 style={{
-                  padding: '6px 12px', borderRadius: 999, border: '1px solid #0d47a1',
-                  background: '#fff', color: '#0d47a1', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                  padding: '6px 12px', borderRadius: 999, border: '1px solid #0A0A0A',
+                  background: '#0A0A0A', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer',
                 }}
               >{opt}</button>
             ))}
