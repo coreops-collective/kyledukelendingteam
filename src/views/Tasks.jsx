@@ -145,6 +145,11 @@ export default function Tasks() {
   };
 
   const deleteTask = (id) => {
+    const target = tasks.find((t) => t.id === id);
+    // Prevent one-click accidental deletion — Task Delete used to fire
+    // immediately with no undo, so a misclick on the red button in
+    // TaskDrawer nuked the task.
+    if (!window.confirm(`Delete "${target?.title || 'this task'}"? This can't be undone.`)) return;
     setTasks(prev => prev.filter(t => t.id !== id));
     toast('Task deleted', 'Removed');
     console.log('[stub] sbDeleteTask', id);

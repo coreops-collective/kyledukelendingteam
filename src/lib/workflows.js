@@ -151,7 +151,32 @@ export async function createTask(workflowId, task) {
   return data;
 }
 
+// Cycle guard: refuse a depends_on_task_id patch that would create a
+// loop (A depends on B, B depends on A → both branches stay dormant
+// forever, no user-facing symptom). Walks the chain up from the
+// candidate parent until it hits the task being edited, a null, or
+// a step limit.
+function wouldCreateCycle(taskId, proposedParentId) {
+  if (!proposedParentId || proposedParentId === taskId) return proposedParentId === taskId;
+  let cursor = proposedParentId;
+  for (let steps = 0; steps < 32 && cursor; steps++) {
+    if (cursor === taskId) return true;
+    let parent = null;
+    for (const list of TASKS_BY_WORKFLOW.values()) {
+      const t = list.find((x) => x.id === cursor);
+      if (t) { parent = t.depends_on_task_id || null; break; }
+    }
+    cursor = parent;
+  }
+  return false;
+}
+
 export async function updateTask(id, patch) {
+  if ('depends_on_task_id' in patch && wouldCreateCycle(id, patch.depends_on_task_id)) {
+    console.warn('[workflows] updateTask: refusing to create decision cycle');
+    // Signal failure so the caller can toast, but don't touch the DB.
+    return { error: 'cycle' };
+  }
   const { error } = await supabase.from('workflow_tasks').update(patch).eq('id', id);
   if (error) { console.warn('[workflows] updateTask:', error.message); return; }
   for (const list of TASKS_BY_WORKFLOW.values()) {
@@ -172,6 +197,17 @@ export async function deleteTask(id) {
   for (const [wid, list] of TASKS_BY_WORKFLOW.entries()) {
     const idx = list.findIndex((x) => x.id === id);
     if (idx >= 0) list.splice(idx, 1);
+    // Mirror the DB's ON DELETE SET NULL in memory so any child
+    // task that used to hang off this decision point promotes to
+    // top-level and stays visible in the editor. Without this the
+    // children became neither top-level nor nested and effectively
+    // disappeared until page reload.
+    list.forEach((t) => {
+      if (t.depends_on_task_id === id) {
+        t.depends_on_task_id = null;
+        t.depends_on_outcome = null;
+      }
+    });
   }
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
@@ -375,10 +411,21 @@ export function generateTasksForClient(clientName, anchorDates) {
       let due;
       let anchorOccurrence;
       if (t.trigger_recurring) {
-        // Yearly recurrence — find next month/day occurrence AFTER
-        // the original anchor year. Preserves "first anniversary is
-        // next year, not this year" behavior.
-        const minYear = Math.max(today.getFullYear(), anchor.getFullYear() + 1);
+        // Yearly recurrence — next month/day occurrence relative to
+        // today. Two cases:
+        //   * Calendar-date triggers (t.trigger_calendar_date set)
+        //     represent a FIXED civil date like "12-25". The next
+        //     occurrence is this year's Dec 25 if it hasn't passed,
+        //     otherwise next year's. Skipping to next year always
+        //     (as the anniversary logic below does) would miss the
+        //     current Christmas by 12 months.
+        //   * Client-anchored recurrences (Closing Anniversary,
+        //     Birthday) skip the anchor's own year: the first
+        //     "anniversary" of a fresh close is next year, not now.
+        const isCalendarDate = !!t.trigger_calendar_date;
+        const minYear = isCalendarDate
+          ? today.getFullYear()
+          : Math.max(today.getFullYear(), anchor.getFullYear() + 1);
         const next = new Date(minYear, anchor.getMonth(), anchor.getDate());
         while (next < today) next.setFullYear(next.getFullYear() + 1);
         anchorOccurrence = new Date(next.getFullYear(), next.getMonth(), next.getDate());
