@@ -13,6 +13,7 @@ import {
   loadWorkflows, generateStatusTasks, markTaskCompleted, unmarkTaskCompleted, ROLE_LABELS,
 } from '../lib/workflows.js';
 import { loadClientProfiles } from '../lib/clientProfiles.js';
+import { parseLocalDate } from '../lib/clientDates.js';
 
 const TASKS_KEY = 'kdt-tasks-v1';
 const PROJECTS_KEY = 'kdt-projects-v1';
@@ -227,10 +228,10 @@ export default function Tasks() {
                   {list.length ? list.map(t => {
                     const proj = projects.find(p => p.id === t.projectId);
                     const pri = TASK_PRIORITIES.find(p => p.key === t.priority) || TASK_PRIORITIES[1];
-                    const dueObj = t.due ? new Date(t.due) : null;
+                    const dueObj = t.due ? parseLocalDate(t.due) : null;
                     const today = new Date(); today.setHours(0,0,0,0);
                     const overdue = dueObj && dueObj < today && t.status !== 'done';
-                    const dueLabel = dueObj && !isNaN(dueObj) ? dueObj.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+                    const dueLabel = dueObj ? dueObj.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
                     return (
                       <div key={t.id} className="tk-card" onClick={() => setOpenTaskId(t.id)}>
                         <div className="tk-card-title">{t.title}</div>

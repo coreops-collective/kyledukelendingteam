@@ -8,15 +8,14 @@ import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, saveLoansNow, subscribeLoans } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
 import { appendNotesHistory, loadNotesHistory } from '../lib/notesHistory.js';
+import { parseLocalDate } from '../lib/clientDates.js';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const fmt$ = (n) => (n ? '$' + Math.round(n).toLocaleString() : '—');
 
 function parseDate(s) {
-  if (!s) return null;
-  const d = new Date(s);
-  return isNaN(d) ? null : d;
+  return parseLocalDate(s);
 }
 function dateClass(s, done) {
   const d = parseDate(s);
@@ -935,11 +934,11 @@ export default function LoanManagement() {
       if (aMissing) return 1;   // empty values always sort to the bottom
       if (bMissing) return -1;
       if (isDate) {
-        const ad = new Date(av).getTime();
-        const bd = new Date(bv).getTime();
-        if (isNaN(ad)) return 1;
-        if (isNaN(bd)) return -1;
-        return sign * (ad - bd);
+        const ap = parseLocalDate(av);
+        const bp = parseLocalDate(bv);
+        if (!ap) return 1;
+        if (!bp) return -1;
+        return sign * (ap.getTime() - bp.getTime());
       }
       if (key === 'status') {
         const ai = statusOrder.indexOf(av);

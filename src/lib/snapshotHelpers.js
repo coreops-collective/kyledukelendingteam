@@ -2,6 +2,7 @@
 import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
 import { STATE_NAMES } from '../data/states.js';
+import { parseLocalDate } from './clientDates.js';
 
 export const fmt$ = n => n==null ? '\u2014' : '$' + n.toLocaleString('en-US',{maximumFractionDigits:0});
 export const fmt$M = n => n==null ? '\u2014' : (n>=1e6 ? '$'+(n/1e6).toFixed(2)+'M' : '$'+(n/1e3).toFixed(0)+'K');
@@ -96,8 +97,8 @@ export function buildMonthlyFunded(){
   buckets.forEach(b => { bmap[key(b.year, b.monthIdx)] = b; });
   PAST_CLIENTS.forEach(c => {
     if(!c.closeDate) return;
-    const d = new Date(c.closeDate);
-    if(isNaN(d)) return;
+    const d = parseLocalDate(c.closeDate);
+    if(!d) return;
     const b = bmap[key(d.getFullYear(), d.getMonth())];
     if(!b) return;
     b.v += (c.amount || 0);
@@ -112,8 +113,8 @@ export function buildYoyHistory(){
   const YOY = {};
   PAST_CLIENTS.forEach(c=>{
     if(!c.closeDate || !c.year) return;
-    const d = new Date(c.closeDate);
-    if(isNaN(d)) return;
+    const d = parseLocalDate(c.closeDate);
+    if(!d) return;
     const y = d.getFullYear();
     const m = MONTH_SHORT[d.getMonth()];
     if(!YOY[y]) YOY[y] = {};

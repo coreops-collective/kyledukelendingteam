@@ -10,11 +10,13 @@ import {
   STATE_NAMES, buildMonthlyFunded, buildYoyHistory,
   AGENT_MILESTONES, partnerLoc,
 } from '../lib/snapshotHelpers.js';
+import { parseLocalDate } from '../lib/clientDates.js';
 
 function renderAnniversariesBlock(){
   const today = new Date();
   const upcoming = PAST_CLIENTS.map(c=>{
-    const d = new Date(c.closeDate);
+    const d = parseLocalDate(c.closeDate);
+    if(!d) return { ...c, daysAway: 9999, yearsTogether: 0, annivDate: '' };
     const annivThisYear = new Date(today.getFullYear(), d.getMonth(), d.getDate());
     const daysAway = Math.ceil((annivThisYear - today) / 86400000);
     const yearsTogether = today.getFullYear() - d.getFullYear();
@@ -204,8 +206,8 @@ function buildSnapshotHTML(){
   const MONTH_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const closingInMonth = (mIdx, yr) => LOANS.filter(l=>{
     if(l.archived || l.status==='Adversed' || !l.closeDate || l.stage==='funded' || l.stage==='cold') return false;
-    const d = new Date(l.closeDate);
-    return !isNaN(d) && d.getMonth()===mIdx && d.getFullYear()===yr;
+    const d = parseLocalDate(l.closeDate);
+    return d && d.getMonth()===mIdx && d.getFullYear()===yr;
   }).length;
   const closingThisMo = closingInMonth(thisMoIdx, thisYr);
   const closingNextMo = closingInMonth(nextMoIdx, nextMoYr);

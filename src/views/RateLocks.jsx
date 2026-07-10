@@ -3,6 +3,7 @@ import { LOANS } from '../data/loans.js';
 import { fmt$ } from '../lib/snapshotHelpers.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import { subscribeLoans } from '../lib/loansStore.js';
+import { parseLocalDate } from '../lib/clientDates.js';
 
 export default function RateLocks() {
   const [, force] = useState(0);
@@ -14,8 +15,8 @@ export default function RateLocks() {
   const withDays = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     return LOANS
-      .filter((l) => !l.archived && l.status !== 'Adversed' && l.lockExp && l.lockExp !== 'Funded' && l.stage !== 'funded' && !isNaN(new Date(l.lockExp)))
-      .map((l) => ({ ...l, daysLeft: Math.ceil((new Date(l.lockExp) - today) / 86400000) }))
+      .filter((l) => !l.archived && l.status !== 'Adversed' && l.lockExp && l.lockExp !== 'Funded' && l.stage !== 'funded' && parseLocalDate(l.lockExp))
+      .map((l) => ({ ...l, daysLeft: Math.ceil((parseLocalDate(l.lockExp) - today) / 86400000) }))
       .sort((a, b) => a.daysLeft - b.daysLeft);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openId]);
