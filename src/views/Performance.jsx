@@ -42,7 +42,7 @@ export default function Performance() {
   const PERF_TOUR_STEPS = [
     {
       title: 'Performance & Goals',
-      body: 'Where each teammate\'s annual goals live — the Big Goal (target volume + units + income) plus quarterly checkpoints.\n\nThink of it as everyone\'s scoreboard. Open, honest, visible to the whole team so accountability doesn\'t need reminders.',
+      body: 'Where each teammate\'s annual goals live — the Big Goal (target volume + units + income) plus priorities and weekly activities.\n\nThink of it as everyone\'s scoreboard. Open, honest, visible to the whole team so accountability doesn\'t need reminders.',
     },
     {
       target: '.perf-tabs',
@@ -50,12 +50,24 @@ export default function Performance() {
       body: 'Tabs across the top switch between team members. Every user who\'s been added on the Team Members page shows up here automatically.\n\nUsers without goals set yet show an "Edit" prompt to configure them.',
     },
     {
+      target: '.goal-big',
       title: 'The Big Goal',
-      body: 'Each person has one Big Goal for the year: target volume, target units, target income. Progress bars show where they are today vs where they need to be to hit it.\n\nEdit lets you adjust the target mid-year if life happens.',
+      body: 'Each person has one Big Goal for the year: target volume, target units, target income. Progress bar shows where they are today vs where they need to be to hit it.\n\nEdit lets you adjust the target mid-year if life happens.',
     },
     {
-      title: 'Quarterly Checkpoints',
-      body: 'Below the Big Goal, four quarterly checkpoints track progress. Q1 through Q4 targets can be set independently — you might want a heavier Q2 for spring purchase season, for example.\n\nAll data persists per-user so the team can compare notes at quarterly reviews.',
+      target: '.goal-priorities',
+      title: 'Priorities',
+      body: 'Three priorities under the Big Goal — the specific outcomes they need to hit to make the big goal happen. Each priority has an actual vs target with a progress bar.\n\nExample for an LO: "Close 3 new realtor partnerships this quarter," "Book 2 lunches per week with active agents," etc.',
+    },
+    {
+      target: '.goal-activity',
+      title: 'Weekly activities',
+      body: 'The activities section tracks the weekly inputs that drive the priorities: calls made, agents met, applications taken.\n\nColor-coded: green ≥ 80% of target, yellow 50-79%, red < 50%. Fastest way to see if the numbers are on pace.',
+    },
+    {
+      target: '.goal-edit-btn',
+      title: 'Edit goals',
+      body: 'The Edit button in the top-right of the card opens a drawer to update the Big Goal, priorities, and activity targets. Blur-to-save so quick tweaks are one click.\n\nAll data persists per-user so the team can compare notes at quarterly reviews.',
     },
   ];
 

@@ -243,65 +243,67 @@ export default function Tasks() {
         }}
       />
 
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-        <div>
-          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:13,fontWeight:700,textTransform:'uppercase',letterSpacing:'.8px'}}>
-            {tasks.filter(t => t.status !== 'done').length} Open Tasks
+      <div className="section-card" style={{ marginBottom: 20 }}>
+        <div className="section-header">
+          <div>
+            <div className="section-title">
+              {tasks.filter(t => t.status !== 'done').length} Open Tasks
+            </div>
+            <div className="section-sub">
+              {projects.length} projects
+              {canUseSiri ? (
+                <>
+                  {' \u00b7 '}
+                  <a href="#" onClick={(e) => { e.preventDefault(); setShowSmsPanel(v => !v); }} style={{color:'#fbc02d',textDecoration:'none'}}>{'\u{1F399}\uFE0F Siri setup'}</a>
+                </>
+              ) : null}
+            </div>
           </div>
-          <div style={{fontSize:11,color:'#888',marginTop:2}}>
-            {projects.length} projects
-            {canUseSiri ? (
-              <>
-                {' \u00b7 '}
-                <a href="#" onClick={(e) => { e.preventDefault(); setShowSmsPanel(v => !v); }} style={{color:'#1976d2',textDecoration:'none'}}>{'\u{1F399}\uFE0F Siri setup'}</a>
-              </>
-            ) : null}
+          <div data-tour="tracker-tabs" style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,.12)', padding: 4, borderRadius: 8 }}>
+            <button
+              onClick={() => setActiveTab('tasks')}
+              style={{
+                padding: '6px 14px', fontSize: 12, fontWeight: 700,
+                background: activeTab === 'tasks' ? '#fff' : 'transparent',
+                color: activeTab === 'tasks' ? '#0A0A0A' : '#fff',
+                border: 'none', borderRadius: 6, cursor: 'pointer',
+                boxShadow: activeTab === 'tasks' ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+              }}
+            >Tasks</button>
+            <button
+              onClick={() => setActiveTab('projects')}
+              style={{
+                padding: '6px 14px', fontSize: 12, fontWeight: 700,
+                background: activeTab === 'projects' ? '#fff' : 'transparent',
+                color: activeTab === 'projects' ? '#0A0A0A' : '#fff',
+                border: 'none', borderRadius: 6, cursor: 'pointer',
+                boxShadow: activeTab === 'projects' ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+              }}
+            >Projects</button>
           </div>
         </div>
-        <div data-tour="tracker-tabs" style={{ display: 'flex', gap: 4, background: '#f4f4f6', padding: 4, borderRadius: 8 }}>
-          <button
-            onClick={() => setActiveTab('tasks')}
-            style={{
-              padding: '6px 14px', fontSize: 12, fontWeight: 700,
-              background: activeTab === 'tasks' ? '#fff' : 'transparent',
-              color: activeTab === 'tasks' ? '#0A0A0A' : '#666',
-              border: 'none', borderRadius: 6, cursor: 'pointer',
-              boxShadow: activeTab === 'tasks' ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-            }}
-          >Tasks</button>
-          <button
-            onClick={() => setActiveTab('projects')}
-            style={{
-              padding: '6px 14px', fontSize: 12, fontWeight: 700,
-              background: activeTab === 'projects' ? '#fff' : 'transparent',
-              color: activeTab === 'projects' ? '#0A0A0A' : '#666',
-              border: 'none', borderRadius: 6, cursor: 'pointer',
-              boxShadow: activeTab === 'projects' ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-            }}
-          >Projects</button>
-        </div>
-      </div>
 
-      {showSmsPanel && canUseSiri ? <SiriPanel onClose={() => setShowSmsPanel(false)} /> : null}
+        <div className="section-body" style={{ padding: 16 }}>
+          {showSmsPanel && canUseSiri ? <SiriPanel onClose={() => setShowSmsPanel(false)} /> : null}
 
-      {activeTab === 'projects' ? (
-        <ProjectsTab
-          projects={projects}
-          tasks={tasks}
-          onAdd={addProject}
-          onRename={(id, name) => setProjects((prev) => prev.map((p) => p.id === id ? { ...p, name } : p))}
-          onRecolor={(id, color) => setProjects((prev) => prev.map((p) => p.id === id ? { ...p, color } : p))}
-          onDelete={(id) => {
-            const p = projects.find((x) => x.id === id);
-            if (!window.confirm(`Delete project "${p?.name || 'this project'}"? Tasks inside it stay put but move to no project.`)) return;
-            setProjects((prev) => prev.filter((x) => x.id !== id));
-            setTasks((prev) => prev.map((t) => t.projectId === id ? { ...t, projectId: null } : t));
-          }}
-          onOpenProject={(id) => { setActiveProjectId(id); setActiveTab('tasks'); }}
-        />
-      ) : null}
+          {activeTab === 'projects' ? (
+            <ProjectsTab
+              projects={projects}
+              tasks={tasks}
+              onAdd={addProject}
+              onRename={(id, name) => setProjects((prev) => prev.map((p) => p.id === id ? { ...p, name } : p))}
+              onRecolor={(id, color) => setProjects((prev) => prev.map((p) => p.id === id ? { ...p, color } : p))}
+              onDelete={(id) => {
+                const p = projects.find((x) => x.id === id);
+                if (!window.confirm(`Delete project "${p?.name || 'this project'}"? Tasks inside it stay put but move to no project.`)) return;
+                setProjects((prev) => prev.filter((x) => x.id !== id));
+                setTasks((prev) => prev.map((t) => t.projectId === id ? { ...t, projectId: null } : t));
+              }}
+              onOpenProject={(id) => { setActiveProjectId(id); setActiveTab('tasks'); }}
+            />
+          ) : null}
 
-      <div className="tk-layout" style={{ display: activeTab === 'tasks' ? undefined : 'none' }}>
+          <div className="tk-layout" style={{ display: activeTab === 'tasks' ? undefined : 'none' }}>
         <div className="tk-sidebar">
           <h3>Projects</h3>
           <div className={`tk-project ${activeProjectId==='all'?'active':''}`} onClick={() => setActiveProjectId('all')}>
@@ -379,6 +381,8 @@ export default function Tasks() {
               );
             })}
           </div>
+        </div>
+      </div>
         </div>
       </div>
 
@@ -569,10 +573,12 @@ function PipelineTasksPanel({ items, totalCount, onToggle, filters }) {
   };
   return (
     <div className="section-card" data-tour="pipeline-panel" style={{ marginBottom: 20 }}>
-      <div className="section-header" style={{ background: '#0d47a1', color: '#fff' }}>
-        <div className="section-title" style={{ color: '#fff' }}>Pipeline Tasks · from your workflows</div>
-        <div className="section-sub" style={{ color: '#cfe4f5' }}>
-          Auto-generated for every loan in New Lead / Applied / HOT PA / REFI Watch. Under Contract onwards will move to Loan Management once that view lands.
+      <div className="section-header">
+        <div>
+          <div className="section-title">Pipeline Tasks · from your workflows</div>
+          <div className="section-sub">
+            Auto-generated for every loan in New Lead / Applied / HOT PA / REFI Watch.
+          </div>
         </div>
       </div>
 
@@ -629,7 +635,7 @@ function PipelineTasksPanel({ items, totalCount, onToggle, filters }) {
           </div>
         ) : items.length === 0 ? (
           <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 12 }}>
-            No pipeline tasks match the current filters. <button onClick={reset} style={{ background: 'none', border: 'none', color: '#0d47a1', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}>Reset filters</button>
+            No pipeline tasks match the current filters. <button onClick={reset} style={{ background: 'none', border: 'none', color: 'var(--brand-red)', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}>Reset filters</button>
           </div>
         ) : (
           items.map((it, i) => {
@@ -659,7 +665,7 @@ function PipelineTasksPanel({ items, totalCount, onToggle, filters }) {
                     {it.task.title}
                   </div>
                   <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
-                    <strong style={{ color: '#0d47a1' }}>{it.client_name}</strong>
+                    <strong style={{ color: 'var(--brand-red)' }}>{it.client_name}</strong>
                     {stageLabel ? ` · ${stageLabel}` : ''}
                     {' · '}{it.workflow.name}
                     {it.task.notes ? ` · ${it.task.notes}` : ''}
