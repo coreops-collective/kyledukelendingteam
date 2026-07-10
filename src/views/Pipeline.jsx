@@ -4,6 +4,7 @@ import { STAGES, REFI_WATCH_STAGE, STAGE_TO_STATUS, stageByKey } from '../data/s
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, subscribeLoans } from '../lib/loansStore.js';
+import { fireWebhooks } from '../lib/webhooks.js';
 
 const fmt$ = (n) => '$' + Math.round(n).toLocaleString();
 const fmt$M = (n) => n >= 1_000_000 ? '$' + (n / 1_000_000).toFixed(1) + 'M' : '$' + Math.round(n / 1000) + 'k';
@@ -115,12 +116,33 @@ export default function Pipeline() {
     const loan = LOANS.find((l) => l.id === loanId);
     if (!loan || loan.stage === newStageKey) return;
     const oldStageKey = loan.stage;
+    const prevStatus = loan.status || '';
     loan.stage = newStageKey;
     // Keep `status` in sync so Loan Management reflects the change.
     const mappedStatus = STAGE_TO_STATUS[newStageKey];
     if (mappedStatus) loan.status = mappedStatus;
     markLoansDirty(loan);
     bump();
+
+    // Mirror the GHL webhook LoanManagement fires on status transitions —
+    // a Kanban drag that promotes a card is a status change too.
+    const finalStatus = loan.status || '';
+    if (prevStatus !== finalStatus) {
+      fireWebhooks('loan.status_changed', {
+        loan_id: loan.id,
+        borrower: loan.borrower,
+        phone: loan.phone,
+        email: loan.email,
+        agent: loan.agent,
+        lo: loan.lo,
+        property: loan.property,
+        amount: loan.amount,
+        close_date: loan.closeDate,
+        old_status: prevStatus,
+        new_status: finalStatus,
+        status: finalStatus,
+      });
+    }
 
     // Fire loan.stage_changed event so notification rules (filtered by
     // stage, e.g. "New Contract") can email recipients. Context includes

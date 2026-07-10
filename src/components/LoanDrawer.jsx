@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import { markLoansDirty } from '../lib/loansStore.js';
+import { fireWebhooks } from '../lib/webhooks.js';
 
 // Every pipeline stage label so the Status dropdown works for both
 // pre-contract (New Lead, Applied, HOT PA, REFI Watch) and LOS stages.
@@ -66,6 +67,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     coFirst: 'c2first', coLast: 'c2last', coPhone: 'c2phone', coEmail: 'c2email',
   };
   const set = (key, value) => {
+    const prevStatus = loan.status || '';
     loan[key] = value;
     if (CO_ALIASES[key]) loan[CO_ALIASES[key]] = value;
     if (key === 'status') {
@@ -74,6 +76,24 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     }
     force((n) => n + 1);
     markLoansDirty(loan);
+    // Mirror the GHL webhook LoanManagement fires on status transitions so
+    // status flipped from the drawer stays in sync with GHL contact state.
+    if (key === 'status' && prevStatus !== value) {
+      fireWebhooks('loan.status_changed', {
+        loan_id: loan.id,
+        borrower: loan.borrower,
+        phone: loan.phone,
+        email: loan.email,
+        agent: loan.agent,
+        lo: loan.lo,
+        property: loan.property,
+        amount: loan.amount,
+        close_date: loan.closeDate,
+        old_status: prevStatus,
+        new_status: value,
+        status: value,
+      });
+    }
     // Brief green flash on the field we just saved so the user gets
     // a "yes it stuck" signal — previously blur-to-save had zero
     // visible feedback and people didn't trust it.
