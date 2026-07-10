@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { showError } from './toaster.js';
 
 // In-memory webhook subscription cache. Loaded once on boot; refreshed
 // after any admin edits + on the realtime change event. Firing hot
@@ -39,12 +40,21 @@ export async function createWebhookSubscription(row) {
         label: row.label || null,
       })
       .select().single();
-    if (error) { console.warn('[webhooks] create:', error.message); return null; }
+    if (error) {
+      console.warn('[webhooks] create:', error.message);
+      showError(`Couldn't create webhook subscription: ${error.message}`, {
+        retry: () => createWebhookSubscription(row),
+      });
+      return null;
+    }
     SUBSCRIPTIONS.push(data);
     window.dispatchEvent(new Event('kdt-webhooks-changed'));
     return data;
   } catch (e) {
     console.warn('[webhooks] create error:', e.message);
+    showError(`Couldn't create webhook subscription: ${e.message}`, {
+      retry: () => createWebhookSubscription(row),
+    });
     return null;
   }
 }
@@ -52,24 +62,42 @@ export async function createWebhookSubscription(row) {
 export async function updateWebhookSubscription(id, patch) {
   try {
     const { error } = await supabase.from('webhook_subscriptions').update(patch).eq('id', id);
-    if (error) { console.warn('[webhooks] update:', error.message); return; }
+    if (error) {
+      console.warn('[webhooks] update:', error.message);
+      showError(`Couldn't update webhook subscription: ${error.message}`, {
+        retry: () => updateWebhookSubscription(id, patch),
+      });
+      return;
+    }
     const row = SUBSCRIPTIONS.find((s) => s.id === id);
     if (row) Object.assign(row, patch);
     window.dispatchEvent(new Event('kdt-webhooks-changed'));
   } catch (e) {
     console.warn('[webhooks] update error:', e.message);
+    showError(`Couldn't update webhook subscription: ${e.message}`, {
+      retry: () => updateWebhookSubscription(id, patch),
+    });
   }
 }
 
 export async function deleteWebhookSubscription(id) {
   try {
     const { error } = await supabase.from('webhook_subscriptions').delete().eq('id', id);
-    if (error) { console.warn('[webhooks] delete:', error.message); return; }
+    if (error) {
+      console.warn('[webhooks] delete:', error.message);
+      showError(`Couldn't delete webhook subscription: ${error.message}`, {
+        retry: () => deleteWebhookSubscription(id),
+      });
+      return;
+    }
     const idx = SUBSCRIPTIONS.findIndex((s) => s.id === id);
     if (idx >= 0) SUBSCRIPTIONS.splice(idx, 1);
     window.dispatchEvent(new Event('kdt-webhooks-changed'));
   } catch (e) {
     console.warn('[webhooks] delete error:', e.message);
+    showError(`Couldn't delete webhook subscription: ${e.message}`, {
+      retry: () => deleteWebhookSubscription(id),
+    });
   }
 }
 

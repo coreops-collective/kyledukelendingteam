@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { LOANS } from '../data/loans.js';
+import { showError } from './toaster.js';
 
 // Persistence layer for LOANS. Strategy:
 // 1. On app load, fetch all rows from the `loans` table.
@@ -70,9 +71,13 @@ async function flushLoansToSupabase() {
       // Restore so we retry on next flush.
       ids.forEach((id) => dirtyIds.add(id));
       if (wasAllDirty) allDirty = true;
+      showError(`Couldn't save loan changes: ${error.message}`, { retry: () => saveLoansNow() });
     }
   } catch (e) {
     console.warn('[loans] save error:', e.message);
+    ids.forEach((id) => dirtyIds.add(id));
+    if (wasAllDirty) allDirty = true;
+    showError(`Couldn't save loan changes: ${e.message}`, { retry: () => saveLoansNow() });
   }
 }
 

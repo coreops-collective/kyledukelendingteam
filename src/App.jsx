@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
+import ToasterStack from './components/ToasterStack.jsx';
 import Pipeline from './views/Pipeline.jsx';
 import NewLoan from './views/NewLoan.jsx';
 import Placeholder from './views/Placeholder.jsx';
@@ -99,13 +100,14 @@ export default function App() {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  if (!usersReady) return <UpdateBanner />;
+  if (!usersReady) return (<><UpdateBanner /><ToasterStack /></>);
 
   if (!user) {
     return (
       <>
         <UpdateBanner />
         <Login onSuccess={() => setJustLoggedIn(true)} />
+        <ToasterStack />
       </>
     );
   }
@@ -115,6 +117,7 @@ export default function App() {
       <>
         <UpdateBanner />
         <Welcome user={user} onDismiss={() => setJustLoggedIn(false)} />
+        <ToasterStack />
       </>
     );
   }
@@ -181,6 +184,7 @@ export default function App() {
       </main>
       <div id="drawerRoot"></div>
       <div id="loginRoot"></div>
+      <ToasterStack />
     </div>
   );
 }

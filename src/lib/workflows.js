@@ -1,6 +1,7 @@
 import { supabase } from './supabase.js';
 import { getDate, parseLocalDate } from './clientDates.js';
 import { getProfile } from './clientProfiles.js';
+import { showError } from './toaster.js';
 
 // In-memory state for the Client for Life rebuild.
 //
@@ -93,7 +94,13 @@ export async function createWorkflow(name, description = '', category = 'Loan') 
     .from('workflow_templates')
     .insert({ name, description, category, position: WORKFLOWS.length })
     .select().single();
-  if (error) { console.warn('[workflows] createWorkflow:', error.message); return null; }
+  if (error) {
+    console.warn('[workflows] createWorkflow:', error.message);
+    showError(`Couldn't create workflow "${name}": ${error.message}`, {
+      retry: () => createWorkflow(name, description, category),
+    });
+    return null;
+  }
   WORKFLOWS.push(data);
   TASKS_BY_WORKFLOW.set(data.id, []);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
@@ -102,7 +109,13 @@ export async function createWorkflow(name, description = '', category = 'Loan') 
 
 export async function updateWorkflow(id, patch) {
   const { error } = await supabase.from('workflow_templates').update(patch).eq('id', id);
-  if (error) { console.warn('[workflows] updateWorkflow:', error.message); return; }
+  if (error) {
+    console.warn('[workflows] updateWorkflow:', error.message);
+    showError(`Couldn't update workflow: ${error.message}`, {
+      retry: () => updateWorkflow(id, patch),
+    });
+    return;
+  }
   const wf = WORKFLOWS.find((w) => w.id === id);
   if (wf) Object.assign(wf, patch);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
@@ -110,7 +123,13 @@ export async function updateWorkflow(id, patch) {
 
 export async function deleteWorkflow(id) {
   const { error } = await supabase.from('workflow_templates').delete().eq('id', id);
-  if (error) { console.warn('[workflows] deleteWorkflow:', error.message); return; }
+  if (error) {
+    console.warn('[workflows] deleteWorkflow:', error.message);
+    showError(`Couldn't delete workflow: ${error.message}`, {
+      retry: () => deleteWorkflow(id),
+    });
+    return;
+  }
   const idx = WORKFLOWS.findIndex((w) => w.id === id);
   if (idx >= 0) WORKFLOWS.splice(idx, 1);
   TASKS_BY_WORKFLOW.delete(id);
@@ -144,7 +163,13 @@ export async function createTask(workflowId, task) {
     position: list.length,
   };
   const { data, error } = await supabase.from('workflow_tasks').insert(row).select().single();
-  if (error) { console.warn('[workflows] createTask:', error.message); return null; }
+  if (error) {
+    console.warn('[workflows] createTask:', error.message);
+    showError(`Couldn't add task "${row.title}": ${error.message}`, {
+      retry: () => createTask(workflowId, task),
+    });
+    return null;
+  }
   if (!TASKS_BY_WORKFLOW.has(workflowId)) TASKS_BY_WORKFLOW.set(workflowId, []);
   TASKS_BY_WORKFLOW.get(workflowId).push(data);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
@@ -178,7 +203,13 @@ export async function updateTask(id, patch) {
     return { error: 'cycle' };
   }
   const { error } = await supabase.from('workflow_tasks').update(patch).eq('id', id);
-  if (error) { console.warn('[workflows] updateTask:', error.message); return; }
+  if (error) {
+    console.warn('[workflows] updateTask:', error.message);
+    showError(`Couldn't save task change: ${error.message}`, {
+      retry: () => updateTask(id, patch),
+    });
+    return;
+  }
   for (const list of TASKS_BY_WORKFLOW.values()) {
     const t = list.find((x) => x.id === id);
     if (t) Object.assign(t, patch);
@@ -193,7 +224,13 @@ export async function updateTask(id, patch) {
 
 export async function deleteTask(id) {
   const { error } = await supabase.from('workflow_tasks').delete().eq('id', id);
-  if (error) { console.warn('[workflows] deleteTask:', error.message); return; }
+  if (error) {
+    console.warn('[workflows] deleteTask:', error.message);
+    showError(`Couldn't delete task: ${error.message}`, {
+      retry: () => deleteTask(id),
+    });
+    return;
+  }
   for (const [wid, list] of TASKS_BY_WORKFLOW.entries()) {
     const idx = list.findIndex((x) => x.id === id);
     if (idx >= 0) list.splice(idx, 1);
@@ -222,7 +259,13 @@ export async function markTaskCompleted(taskId, clientName, dueDate, completedBy
     completed_by: completedBy || null,
     outcome: outcome || null,
   }).select().single();
-  if (error) { console.warn('[workflows] markCompleted:', error.message); return; }
+  if (error) {
+    console.warn('[workflows] markCompleted:', error.message);
+    showError(`Couldn't mark task complete: ${error.message}`, {
+      retry: () => markTaskCompleted(taskId, clientName, dueDate, completedBy, outcome),
+    });
+    return;
+  }
   COMPLETIONS.set(k, data);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
@@ -232,7 +275,12 @@ export async function unmarkTaskCompleted(taskId, clientName, dueDate) {
   const completion = COMPLETIONS.get(k);
   if (!completion) return;
   const { error } = await supabase.from('task_completions').delete().eq('id', completion.id);
-  if (error) console.warn('[workflows] unmark:', error.message);
+  if (error) {
+    console.warn('[workflows] unmark:', error.message);
+    showError(`Couldn't unmark task: ${error.message}`, {
+      retry: () => unmarkTaskCompleted(taskId, clientName, dueDate),
+    });
+  }
   COMPLETIONS.delete(k);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }

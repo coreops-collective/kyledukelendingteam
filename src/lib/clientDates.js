@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { showError } from './toaster.js';
 
 // In-memory client_dates store. Keyed by lowercased
 // "name||label" so lookups don't care about whitespace / case
@@ -48,7 +49,13 @@ export async function upsertClientDate(clientName, dateLabel, dateValue, opts = 
         .eq('id', existing.id)
         .select()
         .single();
-      if (error) { console.warn('[clientDates] update:', error.message); return null; }
+      if (error) {
+        console.warn('[clientDates] update:', error.message);
+        showError(`Couldn't save "${label}" for ${name}: ${error.message}`, {
+          retry: () => upsertClientDate(clientName, dateLabel, dateValue, opts),
+        });
+        return null;
+      }
       DATES.set(key(name, label), data);
       window.dispatchEvent(new Event('kdt-client-dates-changed'));
       return data;
@@ -58,12 +65,21 @@ export async function upsertClientDate(clientName, dateLabel, dateValue, opts = 
       .insert({ client_name: name, date_label: label, date_value: bday, recurring, notes })
       .select()
       .single();
-    if (error) { console.warn('[clientDates] insert:', error.message); return null; }
+    if (error) {
+      console.warn('[clientDates] insert:', error.message);
+      showError(`Couldn't save "${label}" for ${name}: ${error.message}`, {
+        retry: () => upsertClientDate(clientName, dateLabel, dateValue, opts),
+      });
+      return null;
+    }
     DATES.set(key(name, label), data);
     window.dispatchEvent(new Event('kdt-client-dates-changed'));
     return data;
   } catch (e) {
     console.warn('[clientDates] upsert error:', e.message);
+    showError(`Couldn't save "${label}" for ${name}: ${e.message}`, {
+      retry: () => upsertClientDate(clientName, dateLabel, dateValue, opts),
+    });
     return null;
   }
 }
@@ -75,12 +91,21 @@ export async function deleteClientDate(clientName, dateLabel) {
   if (!existing) { DATES.delete(key(name, label)); return true; }
   try {
     const { error } = await supabase.from('client_dates').delete().eq('id', existing.id);
-    if (error) console.warn('[clientDates] delete:', error.message);
+    if (error) {
+      console.warn('[clientDates] delete:', error.message);
+      showError(`Couldn't delete "${label}" for ${name}: ${error.message}`, {
+        retry: () => deleteClientDate(clientName, dateLabel),
+      });
+      return false;
+    }
     DATES.delete(key(name, label));
     window.dispatchEvent(new Event('kdt-client-dates-changed'));
     return true;
   } catch (e) {
     console.warn('[clientDates] delete error:', e.message);
+    showError(`Couldn't delete "${label}" for ${name}: ${e.message}`, {
+      retry: () => deleteClientDate(clientName, dateLabel),
+    });
     return false;
   }
 }

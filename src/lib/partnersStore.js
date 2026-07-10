@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { PARTNERS } from '../data/partners.js';
+import { showError } from './toaster.js';
 
 // Persistence layer for PARTNERS.
 //
@@ -157,6 +158,11 @@ function reportSaveError(prefix, error) {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('partners:save-error', { detail: { message, error } }));
   }
+  // Also surface through the session-wide toaster so partners save errors
+  // are visible from any view (mid-navigation merge failures aren't tied
+  // to the local Partners.jsx listener being mounted). Retry re-triggers
+  // a flush of anything still marked dirty.
+  showError(`Partners: ${message}`, { retry: () => savePartnersNow() });
 }
 function reportSaveSuccess(action, count) {
   if (typeof window !== 'undefined') {
@@ -363,10 +369,16 @@ export async function deletePartner(partner) {
       if (error) {
         console.warn('[partnersStore] delete failed:', error.message);
         window.dispatchEvent(new CustomEvent('partners:save-error', { detail: { message: error.message } }));
+        showError(`Couldn't delete ${partner.name || 'partner'}: ${error.message}`, {
+          retry: () => deletePartner(partner),
+        });
         return false;
       }
     } catch (e) {
       console.warn('[partnersStore] delete error:', e.message);
+      showError(`Couldn't delete ${partner.name || 'partner'}: ${e.message}`, {
+        retry: () => deletePartner(partner),
+      });
       return false;
     }
   }
