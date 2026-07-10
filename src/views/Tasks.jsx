@@ -14,6 +14,7 @@ import {
 } from '../lib/workflows.js';
 import { loadClientProfiles } from '../lib/clientProfiles.js';
 import { parseLocalDate } from '../lib/clientDates.js';
+import { getRoleLabel } from '../lib/jobRoles.js';
 
 const TASKS_KEY = 'kdt-tasks-v1';
 const PROJECTS_KEY = 'kdt-projects-v1';
@@ -398,7 +399,7 @@ function PipelineTasksPanel({ items, onToggle }) {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: roleColors[role] || '#555', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                    {ROLE_LABELS[role] || role}
+                    {getRoleLabel(role)}
                   </span>
                 </div>
               </div>

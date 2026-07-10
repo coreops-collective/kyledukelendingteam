@@ -25,6 +25,7 @@ import {
 } from '../lib/keyDateTypes.js';
 import { showError } from '../lib/toaster.js';
 import Tour from '../components/Tour.jsx';
+import { getRoleKeysForWorkflowDropdown, getRoleLabel } from '../lib/jobRoles.js';
 
 const DAY = 86400000;
 const fmtDate = (d) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
@@ -515,7 +516,7 @@ function TaskRow({ item, today, first, onOpenClient }) {
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: roleColors[role] || '#555', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-          {ROLE_LABELS[role] || role}
+          {getRoleLabel(role)}
         </span>
         {mailto && (
           <a
@@ -1222,7 +1223,7 @@ export function TaskCard({ task, isDragging, onDragStart, onDragOver, onDrop, on
             background: roleColors[role] || '#555',
             padding: '3px 8px', borderRadius: 4,
             textTransform: 'uppercase', letterSpacing: '.5px',
-          }}>{ROLE_LABELS[role] || role}</span>
+          }}>{getRoleLabel(role)}</span>
           <span style={{ fontSize: 11, color: '#888' }}>{triggerSummary(task)}</span>
         </div>
         <div
@@ -1376,18 +1377,22 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
           <div style={sectionStyle}>
             <label style={labelStyle}>Owner</label>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {ROLES.map((r) => {
-                const active = role === r;
+              {getRoleKeysForWorkflowDropdown().map((r) => {
+                const active = role === r.key;
+                // Built-in role colors preserved for continuity; custom
+                // roles fall back to a neutral slate so the picker stays
+                // readable no matter what the team names them.
                 const colors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
+                const activeColor = colors[r.key] || '#0A0A0A';
                 return (
-                  <button key={r} type="button" onClick={() => setRole(r)} style={{
+                  <button key={r.key} type="button" onClick={() => setRole(r.key)} style={{
                     padding: '8px 14px', borderRadius: 999,
-                    border: `1px solid ${active ? colors[r] : '#d0d0d0'}`,
-                    background: active ? colors[r] : '#fff',
+                    border: `1px solid ${active ? activeColor : '#d0d0d0'}`,
+                    background: active ? activeColor : '#fff',
                     color: active ? '#fff' : '#333',
                     fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.5px',
                     cursor: 'pointer',
-                  }}>{ROLE_LABELS[r]}</button>
+                  }}>{r.label}</button>
                 );
               })}
             </div>

@@ -11,6 +11,7 @@ import LoanManagement from './views/LoanManagement.jsx';
 import AllLoans from './views/AllLoans.jsx';
 import Partners from './views/Partners.jsx';
 import Team from './views/Team.jsx';
+import Roles from './views/Roles.jsx';
 import Workflows from './views/Workflows.jsx';
 import Tasks from './views/Tasks.jsx';
 import MortgageCalc from './views/MortgageCalc.jsx';
@@ -29,6 +30,7 @@ import { loadUsersFromSupabase } from './data/users.js';
 import { loadLoansFromSupabase } from './lib/loansStore.js';
 import { loadPartnersFromSupabase } from './lib/partnersStore.js';
 import { loadWebhookSubscriptions } from './lib/webhooks.js';
+import { loadJobRoles } from './lib/jobRoles.js';
 
 const PAGE_META = {
   '/snapshot':      { title: 'Lending Snapshot' },
@@ -41,6 +43,7 @@ const PAGE_META = {
   '/tasks':         { title: 'Pipeline Tasks' },
   '/partners':      { title: 'Realtor Partners' },
   '/team':          { title: 'Team Members' },
+  '/roles':         { title: 'Roles & Responsibilities' },
   '/performance':   { title: 'Performance & Goals' },
   '/mortgagecalc':  { title: 'Mortgage Calculator' },
   '/closingcalc':   { title: 'Closing Costs Calculator' },
@@ -82,7 +85,7 @@ export default function App() {
 
   // Fetch real users + loans from Supabase on mount (same as legacy)
   useEffect(() => {
-    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase(), loadPartnersFromSupabase(), loadWebhookSubscriptions()])
+    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase(), loadPartnersFromSupabase(), loadWebhookSubscriptions(), loadJobRoles()])
       .finally(() => setUsersReady(true));
   }, []);
 
@@ -172,6 +175,7 @@ export default function App() {
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/partners" element={<Partners />} />
             <Route path="/team" element={<Team />} />
+            <Route path="/roles" element={<Roles />} />
             <Route path="/performance" element={<Performance />} />
             <Route path="/mortgagecalc" element={<MortgageCalc />} />
             <Route path="/closingcalc" element={<ClosingCalc />} />
