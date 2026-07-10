@@ -4,13 +4,40 @@ import { fmt$ } from '../lib/snapshotHelpers.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import { subscribeLoans } from '../lib/loansStore.js';
 import { parseLocalDate } from '../lib/clientDates.js';
+import Tour from '../components/Tour.jsx';
 
 export default function RateLocks() {
   const [, force] = useState(0);
   const bump = useCallback(() => force((n) => n + 1), []);
   const [openId, setOpenId] = useState(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   useEffect(() => subscribeLoans(bump), [bump]);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const RATE_LOCKS_TOUR_STEPS = [
+    {
+      title: 'Rate Locks',
+      body: 'Every loan currently in escrow with a locked rate. The list is auto-sourced from Loan Management — any loan with a Lock Expires date that\'s not Funded shows up here.\n\nSorted by days left so the most urgent locks are always at the top.',
+    },
+    {
+      target: '.kpi-grid',
+      title: 'The 4 KPIs',
+      body: '• Expired (past due) — locks that have already lapsed. Urgent.\n• Expiring ≤ 7 days — the fire drill window.\n• 8–14 days — watch list.\n• Total Active Locks — everything you\'re actively tracking.\n\nExpired turns bright red when > 0.',
+    },
+    {
+      target: '.loans-table',
+      title: 'The lock table',
+      body: 'Each row shows the borrower, property, loan amount, rate, type, lock date, days left, and the LO. Click any row to open the full Loan Drawer and adjust the lock date, request an extension, or update status.\n\nDays Left color-codes automatically: red ≤ 7 or overdue · orange 8-14 · green 15+.',
+    },
+    {
+      title: 'How locks appear here',
+      body: 'When you set a Lock Expires date on any loan (Loan Management drawer, spreadsheet cell, or the Pipeline drawer), it appears on this page instantly. No manual entry needed.\n\nWhen a loan funds or moves to Adversed / Archived, it drops off this page automatically.',
+    },
+  ];
 
   const withDays = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -110,6 +137,7 @@ export default function RateLocks() {
           onClose={() => setOpenId(null)}
         />
       )}
+      {tourOpen && <Tour steps={RATE_LOCKS_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }

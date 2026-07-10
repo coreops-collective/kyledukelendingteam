@@ -147,23 +147,30 @@ export default function Partners() {
   const PARTNERS_TOUR_STEPS = [
     {
       title: 'Realtor Partners',
-      body: 'Every agent + brokerage the team has closed with, plus VIPs you\'re actively cultivating.\n\nLifetime deal counts, YTD stats, and current pipeline volume are computed live from LOANS — no double-entry needed.',
+      body: 'Every agent + brokerage the team has closed with, plus VIPs you\'re actively cultivating. Lifetime deal counts, YTD stats, and current pipeline volume are all computed live from LOANS — no double-entry.',
     },
     {
+      target: '.touchpoint-grid',
+      title: 'Standard vs VIP touchpoints',
+      body: 'The top card breaks down what a Standard agent gets vs. what a VIP agent gets — cadence of gifts, calls, and closing gifts. Click the header to collapse it once you know the rules.',
+    },
+    {
+      target: '.income-filters',
       title: 'Filters + grouping',
-      body: 'Filter by state, VIP tier, deal count, or LO. Group by brokerage or state to see who\'s carrying the biggest share.',
+      body: 'Filter by state, VIP tier, deal count, or LO. Group by brokerage or state to see who is carrying the biggest share of the book. Reset (dark red chip) clears everything at once.',
     },
     {
-      title: 'Click a partner card',
-      body: 'The drawer edits every field on the partner — contact info, spouse + kids, birthday, favorite restaurant, notes. Every save is realtime-synced to teammates.',
+      target: '.partner-grid, .partner-list',
+      title: 'Partner cards + list',
+      body: 'Toggle between grid and list view. Each card shows total closings, total volume, YTD closings, YTD volume, and live pipeline volume in escrow with this agent right now. Click any card to open the drawer.',
+    },
+    {
+      title: 'Partner drawer',
+      body: 'The drawer edits every field on the partner — contact info, spouse + kids, birthday, favorite restaurant, notes. Every save is realtime-synced to teammates.\n\nA "Touches" log at the bottom lets you record when you last called, met, or sent a gift so nobody drops the ball.',
     },
     {
       title: 'Merge duplicates',
-      body: 'When the seed accidentally created two rows for the same agent, use the Merge action inside a partner drawer to fold source into target. Loans that referenced the source get automatically re-tagged to the target — with the fix in Round 9 those updates now flush before the source is deleted, so no records are lost mid-merge.',
-    },
-    {
-      title: 'Touches log',
-      body: 'Every partner drawer has a Touches log — quick way to record a call, meeting, or gift so the team knows when they last connected.',
+      body: 'When two rows exist for the same agent (usually a Realtor Referral typed differently), open the drawer and use the Merge action to fold source into target. Loans that referenced the source get re-tagged to the target automatically, safely.',
     },
   ];
 

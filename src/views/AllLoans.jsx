@@ -10,6 +10,7 @@ import {
 import {
   loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
 } from '../lib/clientProfiles.js';
+import Tour from '../components/Tour.jsx';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -26,6 +27,35 @@ export default function AllLoans() {
   const bump = useCallback(() => force((n) => n + 1), []);
   // Re-fetch the merged funded list whenever a teammate marks a loan funded.
   useEffect(() => subscribeLoans(bump), [bump]);
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const ALL_LOANS_TOUR_STEPS = [
+    {
+      title: 'All Loans',
+      body: 'Every funded loan the team has ever closed — historical PAST_CLIENTS from the original book plus every loan the app has marked Funded since.\n\nDeduped by borrower + close date so nothing appears twice. Sortable, filterable, and searchable.',
+    },
+    {
+      target: '.income-filters',
+      title: 'Filters + search',
+      body: 'Filter by year, month, LO, loan type, sale type, and referring agent. The search bar covers borrower name and property address at once.\n\nReset (dark red chip) clears everything in one click.',
+    },
+    {
+      title: 'Refi Watch mode',
+      body: 'Enter Today\'s Rate and a minimum drop (default 0.5%). The list re-sorts to show every past client whose original rate is high enough that today\'s rate would save them the minimum — instant refi opportunity list.\n\nZero manual work, always live.',
+    },
+    {
+      title: 'Cards vs Table',
+      body: 'Cards view is the browsable read — one card per client with amount, close date, type, and property. Table view is denser for bulk scanning.',
+    },
+    {
+      title: 'Click a client for the drawer',
+      body: 'The drawer shows every field on the past client + client dates (birthday, home anniversary, wedding anniversary) + a review section for tracking Google / Zillow / Facebook reviews.\n\nIdentity edits (spelling, phone, email) persist through client_profiles so the corrections stick even if the seed file changes.',
+    },
+  ];
   // Load the client_dates store (used for client birthdays inside the
   // past-client drawer) and the client_profiles store (review tracking)
   // and re-render when either changes.
@@ -274,6 +304,7 @@ export default function AllLoans() {
       {openClient && (
         <PastClientDrawer client={openClient} refiRate={refiMode ? parseFloat(todaysRate) : null} onClose={() => setOpenClient(null)} />
       )}
+      {tourOpen && <Tour steps={ALL_LOANS_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   WEBHOOK_EVENTS, getWebhookSubscriptions, loadWebhookSubscriptions,
   createWebhookSubscription, updateWebhookSubscription, deleteWebhookSubscription,
 } from '../lib/webhooks.js';
+import Tour from '../components/Tour.jsx';
 
 function roleOptions(me, currentRole) {
   if (me?.role === 'branch_manager') {
@@ -226,7 +227,32 @@ function SetupInner() {
   const [add, setAdd] = useState(false);
   const [edit, setEdit] = useState(null);
   const [toast, setToast] = useState(null);
+  const [tourOpen, setTourOpen] = useState(false);
   const rerender = () => tick(n => n + 1);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const SETUP_TOUR_STEPS = [
+    {
+      title: 'User Setup',
+      body: 'This is the admin-only page for managing team logins. Only Branch Manager and Admin users can see it — it\'s hidden from the sidebar for everyone else.\n\nAny user you add here can log in immediately with the credentials you set.',
+    },
+    {
+      title: 'Roles hierarchy',
+      body: 'Three built-in roles:\n\n• Branch Manager — full access, sees Income & Comp, can create any role\n• Admin — this page, can create Admin or Loan Officer\n• Loan Officer — everything except restricted views\n\nA Branch Manager can promote or demote anyone; an Admin can only add other Admins or LOs.',
+    },
+    {
+      target: '.section-card',
+      title: 'Users list',
+      body: 'Every current user — name, email, role, and password (visible only to Branch Manager).\n\nClick the pencil to edit a user, X to remove them. Removing a user does NOT delete anything they created (loans, tasks, notes stay put) — it just prevents future logins.',
+    },
+    {
+      title: 'Notification Rules + Webhooks',
+      body: 'Below the user list, two admin panels:\n\n• Notification Rules — email routing when loan events happen (new contract, funded, etc.)\n• GHL Webhook Subscriptions — outbound webhooks that fire when loan status changes, so your CRM stays in sync\n\nBoth can be added, edited, and toggled here.',
+    },
+  ];
 
   return (
     <>
@@ -290,6 +316,7 @@ function SetupInner() {
       {add && <AddUserDrawer me={me} onClose={() => setAdd(false)} onSaved={rerender} toast={setToast} />}
       {edit && <EditUserDrawer me={me} user={edit} onClose={() => setEdit(null)} onSaved={rerender} toast={setToast} />}
       <Toast toast={toast} onClose={() => setToast(null)} />
+      {tourOpen && <Tour steps={SETUP_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </>
   );
 }
