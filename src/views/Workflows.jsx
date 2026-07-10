@@ -121,40 +121,67 @@ If the LO answers "Denied" on the Credit Review, only the Denied-branch tasks ge
   },
   {
     action: 'openEditor',
-    target: '[data-tour="editor-trigger"]',
-    title: 'Task editor: trigger types',
+    title: 'The Task Editor — every field, one drawer',
     body:
 `I just opened the task editor for you so you can see this live.
 
-📅 Date-based — anchored to a specific date. Loan dates (Closing, Appraisal Deadline, Loan Intake Submitted, ICD Signed, all 11 of them) plus any Key Date Type you defined. Add an offset like "3 days before" or "1 week after".
+Every task has:
+• Title / Question (what needs to happen or what you're asking)
+• Owner (which role does it)
+• Trigger (when it fires)
+• Notes (context for whoever picks it up)
+• Optional: Conditional generation, Email template, Depends-on dependency
+
+Let's walk through each — the highlight will move to it.`,
+  },
+  {
+    action: 'openEditor',
+    target: '[data-tour="editor-trigger"]',
+    title: 'Trigger types + timing',
+    body:
+`📅 Date-based — anchored to a specific date. Loan dates (Closing, Appraisal Deadline, Loan Intake Submitted, ICD Signed, all 11 of them) plus any Key Date Type you defined. Add an offset like "3 days before" or "1 week after". Units are days / weeks / months / quarters / years.
 
 🔄 Loan status — fires while the loan is in a specific status like "New Lead" or "Underwriting". Can repeat daily, weekly, or monthly for as long as the loan sits in that status.
 
-Which one you pick depends on whether the trigger is a moment in time (date) or a state the loan lives in for a while (status).`,
+The "Recurring" toggle on date-based triggers turns "Send a card on the 1st Closing Anniversary" into "Send a card every year on the Closing Anniversary" — client-for-life gold.`,
+  },
+  {
+    action: 'openEditor',
+    title: 'Owner: role picker',
+    body:
+`The Owner section lets you pick which role owns this task — LO, LOA, Admin, Automated, or any custom role you added on the Roles & Responsibilities page.
+
+Role tags show up on every task in the Client for Life and Pipeline Tasks lists, so anyone scanning knows if it's their responsibility at a glance.
+
+Assigning a task to a role automatically adds it to that role's Job Description on the Roles page — no double entry.`,
   },
   {
     action: 'openEditor',
     target: '[data-tour="editor-email"]',
-    title: 'Email templates + Send Email Now',
+    title: 'Email templates: full rich text editor',
     body:
-`Any task can have an email template attached: pick recipient (client, co-borrower, or agent), fill in a subject and a body.
+`Attach an email template to any task. Pick a recipient:
+• Client, Co-borrower, or Agent — pulls the address from the loan
+• Send to Other… — enter any address (title company, HOA, insurance broker)
 
-Use merge tags like {{first_name}}, {{property}}, {{close_date}}, {{agent_name}} — they get swapped for the actual client data at compose time.
+Subject + body use merge tags: {{first_name}}, {{last_name}}, {{property}}, {{close_date}}, {{agent_name}}. Swapped at send time from the loan record.
 
-On the Client for Life task list, tasks with a template show a bright blue "📧 Send Email Now" button that opens Outlook with everything filled in.`,
+The body has a full rich text editor — bold, italic, underline, bulleted / numbered lists, hyperlinks. On the CFL task list, tasks with a template show a bright "📧 Send Email Now" button that opens Outlook / Mail with everything filled in.`,
   },
   {
     action: 'openEditor',
     target: '[data-tour="editor-condition"]',
     title: 'Conditional generation',
     body:
-`You can gate a task on two things:
+`Gate a task on either or both:
 
 1. A client-profile field. Example: "Only generate if Review Left is NO" — so the "Ask again in 2 weeks" task only fires for clients who still haven't left a review.
 
 2. A Decision Point answer. Example: "Only generate after Credit Review answered Denied" — the picker lists every Decision Point in the current workflow, and their answers.
 
-Layer both if you need — client condition AND decision dependency.`,
+For non-decision tasks that should follow a specific Decision Point outcome, use "Depends on" further down in the editor to wire the dependency.
+
+Notes field at the top holds any context whoever picks this task up should know.`,
   },
   {
     action: 'closeEditor',
@@ -451,7 +478,7 @@ export default function Workflows() {
                   Tasks ({tasks.length})
                 </div>
                 <div data-tour="add-buttons" style={{ display: 'flex', gap: 6 }}>
-                  <button className="form-btn" style={{ background: '#0d47a1', color: '#fff', border: 'none' }} onClick={handleAddDecisionPoint}>
+                  <button className="form-btn" style={{ background: '#0A0A0A', color: '#fff', border: 'none' }} onClick={handleAddDecisionPoint}>
                     ❓ + Add Decision Point
                   </button>
                   <button className="form-btn primary" onClick={handleAddTask}>
@@ -465,7 +492,7 @@ export default function Workflows() {
                   <div style={{ fontSize: 12, marginBottom: 12 }}>No tasks in this workflow yet.</div>
                   <div style={{ display: 'inline-flex', gap: 6 }}>
                     <button className="form-btn primary" onClick={handleAddTask}>✅ + Add Task</button>
-                    <button className="form-btn" style={{ background: '#0d47a1', color: '#fff', border: 'none' }} onClick={handleAddDecisionPoint}>❓ + Add Decision Point</button>
+                    <button className="form-btn" style={{ background: '#0A0A0A', color: '#fff', border: 'none' }} onClick={handleAddDecisionPoint}>❓ + Add Decision Point</button>
                   </div>
                 </div>
               ) : (
