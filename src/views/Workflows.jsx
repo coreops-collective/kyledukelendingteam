@@ -10,6 +10,7 @@ import {
   ManageKeyDateTypesDrawer, TaskEditDrawer, TaskCard, WorkflowHeader, triggerSummary,
 } from './CFL.jsx';
 import Tour from '../components/Tour.jsx';
+import { showError } from '../lib/toaster.js';
 
 // Ordered walk-through of every Workflows & SOPs feature. Each step
 // spotlights the DOM element matching `target` (a querySelector) and
@@ -334,9 +335,20 @@ export default function Workflows() {
     if (from < 0 || to < 0) return;
     const [moved] = list.splice(from, 1);
     list.splice(to, 0, moved);
-    await Promise.all(list.map((t, i) =>
-      t.position !== i ? updateTask(t.id, { position: i }) : null
+    // Aggregate any partial failures so users get ONE actionable toast
+    // instead of up to N. Passing quiet:true suppresses updateTask's
+    // per-row toast — Round 8 wired one — so the batch surface owns
+    // the messaging.
+    const results = await Promise.all(list.map((t, i) =>
+      t.position !== i ? updateTask(t.id, { position: i }, { quiet: true }) : Promise.resolve(null)
     ));
+    const failed = results.filter((r) => r && r.error);
+    if (failed.length) {
+      showError(
+        `Reorder partly failed — ${failed.length} row${failed.length === 1 ? '' : 's'} didn't save. Retry to re-apply the intended order.`,
+        { retry: () => handleDrop(targetTask) }
+      );
+    }
     setDraggingTaskId(null);
     bump();
   };

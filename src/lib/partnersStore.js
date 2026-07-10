@@ -332,12 +332,13 @@ export async function mergePartners(source, target, loans) {
   // Reassign loans whose agent field referenced the source by name to
   // the target's name, so the live-pipeline lookup keeps working.
   let loansUpdated = 0;
+  let loansStore = null;
   if (Array.isArray(loans) && source.name && target.name && source.name !== target.name) {
-    const { markLoansDirty } = await import('./loansStore.js');
+    loansStore = await import('./loansStore.js');
     loans.forEach((l) => {
       if (l.agent === source.name) {
         l.agent = target.name;
-        markLoansDirty(l);
+        loansStore.markLoansDirty(l);
         loansUpdated += 1;
       }
     });
@@ -346,6 +347,16 @@ export async function mergePartners(source, target, loans) {
   // Persist target's new state.
   markPartnerDirty(target);
   await savePartnersNow();
+
+  // Flush the debounced loan-rename writes NOW so a crash / refresh in
+  // the ~1500ms debounce window can't leave loans pointing at a partner
+  // name that's about to be deleted. Without this, the source partner
+  // could be deleted before the loan rename ever hits Supabase, and the
+  // loans would be stuck referencing a nonexistent partner until the
+  // user edited them again.
+  if (loansUpdated > 0 && loansStore) {
+    await loansStore.saveLoansNow();
+  }
 
   // Delete source last so realtime echoes don't try to recreate it.
   await deletePartner(source);

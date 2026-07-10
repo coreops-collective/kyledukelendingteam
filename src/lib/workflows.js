@@ -196,7 +196,10 @@ function wouldCreateCycle(taskId, proposedParentId) {
   return false;
 }
 
-export async function updateTask(id, patch) {
+// `opts.quiet` skips the per-row error toast so batch callers (e.g. the
+// drag-reorder that fires N updates in parallel) can aggregate failures
+// into a single toast instead of spamming N of them.
+export async function updateTask(id, patch, opts = {}) {
   if ('depends_on_task_id' in patch && wouldCreateCycle(id, patch.depends_on_task_id)) {
     console.warn('[workflows] updateTask: refusing to create decision cycle');
     // Signal failure so the caller can toast, but don't touch the DB.
@@ -205,10 +208,12 @@ export async function updateTask(id, patch) {
   const { error } = await supabase.from('workflow_tasks').update(patch).eq('id', id);
   if (error) {
     console.warn('[workflows] updateTask:', error.message);
-    showError(`Couldn't save task change: ${error.message}`, {
-      retry: () => updateTask(id, patch),
-    });
-    return;
+    if (!opts.quiet) {
+      showError(`Couldn't save task change: ${error.message}`, {
+        retry: () => updateTask(id, patch),
+      });
+    }
+    return { error: error.message || 'update failed' };
   }
   for (const list of TASKS_BY_WORKFLOW.values()) {
     const t = list.find((x) => x.id === id);
@@ -220,6 +225,7 @@ export async function updateTask(id, patch) {
     if ('position' in patch) list.sort((a, b) => (a.position || 0) - (b.position || 0));
   }
   window.dispatchEvent(new Event('kdt-workflows-changed'));
+  return { ok: true };
 }
 
 export async function deleteTask(id) {

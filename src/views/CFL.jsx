@@ -23,6 +23,7 @@ import {
   loadKeyDateTypes, getKeyDateTypes, getKeyDateTypeLabels,
   createKeyDateType, updateKeyDateType, deleteKeyDateType,
 } from '../lib/keyDateTypes.js';
+import { showError } from '../lib/toaster.js';
 
 const DAY = 86400000;
 const fmtDate = (d) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
@@ -941,9 +942,18 @@ export function WorkflowEditorDrawer({ onClose }) {
     if (fromIdx < 0 || toIdx < 0) return;
     const [moved] = list.splice(fromIdx, 1);
     list.splice(toIdx, 0, moved);
-    await Promise.all(list.map((t, i) =>
-      t.position !== i ? updateTask(t.id, { position: i }) : null
+    // See Workflows.handleDrop for the same aggregation strategy —
+    // one toast per batch on partial failure, not N per row.
+    const results = await Promise.all(list.map((t, i) =>
+      t.position !== i ? updateTask(t.id, { position: i }, { quiet: true }) : Promise.resolve(null)
     ));
+    const failed = results.filter((r) => r && r.error);
+    if (failed.length) {
+      showError(
+        `Reorder partly failed — ${failed.length} row${failed.length === 1 ? '' : 's'} didn't save. Retry to re-apply the intended order.`,
+        { retry: () => handleDrop(targetTask) }
+      );
+    }
     setDraggingTaskId(null);
     bump();
   };
