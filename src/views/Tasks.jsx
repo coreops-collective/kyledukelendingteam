@@ -85,6 +85,20 @@ export default function Tasks() {
     bumpWorkflow();
   };
 
+  // Bulk completion of workflow-generated pipeline tasks. Marks each
+  // selected item complete in parallel, then bumps the workflow version
+  // so the panel re-renders with them checked off.
+  const bulkCompleteWorkflowTasks = async (items) => {
+    const iso = fmtIsoToday();
+    const targets = items.filter((it) => !it.completed);
+    if (targets.length === 0) return;
+    if (!window.confirm(`Mark ${targets.length} task${targets.length === 1 ? '' : 's'} complete?`)) return;
+    await Promise.all(targets.map((it) =>
+      markTaskCompleted(it.task.id, it.client_name, iso, null, null, it.loan_id)
+    ));
+    bumpWorkflow();
+  };
+
   // Persist on every change. JSON-stringifying ~200 small task objects
   // is cheap; not worth debouncing.
   useEffect(() => {
@@ -94,16 +108,13 @@ export default function Tasks() {
     try { localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects)); } catch {}
   }, [projects]);
   const [activeProjectId, setActiveProjectId] = useState('all');
-  const [showSmsPanel, setShowSmsPanel] = useState(false);
   const [quickTitle, setQuickTitle] = useState('');
   const [quickProject, setQuickProject] = useState(() => activeProjectId === 'all' ? 'proj5' : activeProjectId);
   const [openTaskId, setOpenTaskId] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
 
-  // Legacy's getCurrentUser(). Without auth wired up, default to Kyle so Siri
-  // setup link matches legacy behavior for the primary user.
+  // Legacy's getCurrentUser(). Without auth wired up, default to Kyle.
   const me = USERS[0];
-  const canUseSiri = me && (me.name === 'Kyle Duke' || me.name === 'Missy');
 
   const toast = (body, title) => {
     setToastMsg({ title, body });
@@ -176,6 +187,21 @@ export default function Tasks() {
   // or drill into just-one-project.
   const [activeTab, setActiveTab] = useState('tasks');
   const [tourOpen, setTourOpen] = useState(false);
+  const [trackerSelected, setTrackerSelected] = useState(new Set());
+  const toggleTrackerSelected = (id) => {
+    setTrackerSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const trackerBulkComplete = () => {
+    if (trackerSelected.size === 0) return;
+    if (!window.confirm(`Mark ${trackerSelected.size} task${trackerSelected.size === 1 ? '' : 's'} done?`)) return;
+    setTasks((prev) => prev.map((t) => trackerSelected.has(t.id) ? { ...t, status: 'done' } : t));
+    setTrackerSelected(new Set());
+    toast(`${trackerSelected.size} task${trackerSelected.size === 1 ? '' : 's'} completed`, 'Bulk update');
+  };
 
   useEffect(() => {
     const startTour = () => setTourOpen(true);
@@ -235,6 +261,7 @@ export default function Tasks() {
         items={filteredPipelineTasks}
         totalCount={pipelineTasks.length}
         onToggle={toggleWorkflowTask}
+        onBulkComplete={bulkCompleteWorkflowTasks}
         filters={{
           role: pfRole, setRole: setPfRole,
           stage: pfStage, setStage: setPfStage,
@@ -251,12 +278,6 @@ export default function Tasks() {
             </div>
             <div className="section-sub">
               {projects.length} projects
-              {canUseSiri ? (
-                <>
-                  {' \u00b7 '}
-                  <a href="#" onClick={(e) => { e.preventDefault(); setShowSmsPanel(v => !v); }} style={{color:'#fbc02d',textDecoration:'none'}}>{'\u{1F399}\uFE0F Siri setup'}</a>
-                </>
-              ) : null}
             </div>
           </div>
           <div data-tour="tracker-tabs" style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,.12)', padding: 4, borderRadius: 8 }}>
@@ -284,8 +305,6 @@ export default function Tasks() {
         </div>
 
         <div className="section-body" style={{ padding: 16 }}>
-          {showSmsPanel && canUseSiri ? <SiriPanel onClose={() => setShowSmsPanel(false)} /> : null}
-
           {activeTab === 'projects' ? (
             <ProjectsTab
               projects={projects}
@@ -337,6 +356,27 @@ export default function Tasks() {
             </select>
             <button onClick={addTrackerTaskQuick}>Add Task</button>
           </div>
+          {trackerSelected.size > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '8px 14px', background: '#fff3cd', border: '1px solid #f5c518', borderRadius: 8,
+              fontSize: 12, marginBottom: 8,
+            }}>
+              <span style={{ color: '#666', fontWeight: 600 }}>{trackerSelected.size} selected</span>
+              <button
+                onClick={trackerBulkComplete}
+                style={{
+                  padding: '5px 14px', background: '#0A0A0A', color: '#fff',
+                  border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 11,
+                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
+                }}
+              >{'\u2713'} Complete {trackerSelected.size}</button>
+              <button
+                onClick={() => setTrackerSelected(new Set())}
+                style={{ padding: '5px 10px', background: '#fff', color: '#666', border: '1px solid #ccc', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
+              >Clear</button>
+            </div>
+          )}
           <div className="tk-columns">
             {TASK_STATUSES.map(st => {
               const list = visibleTasks.filter(t => t.status === st.key);
@@ -353,24 +393,43 @@ export default function Tasks() {
                     const today = new Date(); today.setHours(0,0,0,0);
                     const overdue = dueObj && dueObj < today && t.status !== 'done';
                     const dueLabel = dueObj ? dueObj.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+                    const selected = trackerSelected.has(t.id);
                     return (
-                      <div key={t.id} className="tk-card" onClick={() => setOpenTaskId(t.id)}>
-                        <div className="tk-card-title">{t.title}</div>
-                        <div className="tk-card-meta">
-                          <span className="tk-card-pri" style={{background:pri.color+'20',color:pri.color}}>{pri.label}</span>
-                          {proj ? (
-                            <span style={{display:'inline-flex',alignItems:'center',gap:4}}>
-                              <span style={{width:7,height:7,borderRadius:'50%',background:proj.color}} />
-                              {proj.name}
-                            </span>
-                          ) : null}
-                          {dueLabel ? (
-                            <span style={{color:overdue?'#c8102e':'#888',fontWeight:overdue?700:500}}>
-                              {overdue ? '\u26A0 ' : ''}Due {dueLabel}
-                            </span>
-                          ) : null}
-                          {t.createdVia === 'siri' ? <span className="tk-card-via-sms" title="Dictated to Siri">{'\u{1F399}\uFE0F Siri'}</span> : null}
-                          {t.assignee ? <span>{'\u00b7 '}{t.assignee}</span> : null}
+                      <div
+                        key={t.id}
+                        className="tk-card"
+                        onClick={() => setOpenTaskId(t.id)}
+                        style={selected ? { background: '#fffce7', borderColor: '#f5c518' } : undefined}
+                      >
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                          {t.status !== 'done' && (
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={() => toggleTrackerSelected(t.id)}
+                              style={{ width: 14, height: 14, marginTop: 2, cursor: 'pointer', accentColor: '#0A0A0A' }}
+                              aria-label="Select for bulk complete"
+                            />
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div className="tk-card-title">{t.title}</div>
+                            <div className="tk-card-meta">
+                              <span className="tk-card-pri" style={{background:pri.color+'20',color:pri.color}}>{pri.label}</span>
+                              {proj ? (
+                                <span style={{display:'inline-flex',alignItems:'center',gap:4}}>
+                                  <span style={{width:7,height:7,borderRadius:'50%',background:proj.color}} />
+                                  {proj.name}
+                                </span>
+                              ) : null}
+                              {dueLabel ? (
+                                <span style={{color:overdue?'#c8102e':'#888',fontWeight:overdue?700:500}}>
+                                  {overdue ? '\u26A0 ' : ''}Due {dueLabel}
+                                </span>
+                              ) : null}
+                              {t.assignee ? <span>{'\u00b7 '}{t.assignee}</span> : null}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
@@ -557,7 +616,37 @@ function TaskDrawer({ task, projects, onClose, onSave, onDelete }) {
 //
 // Filter bar lets the user narrow by role, stage, client, and
 // whether to include already-completed items.
-function PipelineTasksPanel({ items, totalCount, onToggle, filters }) {
+function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filters }) {
+  // Selection state for bulk completion. Only tracks IDs currently in
+  // the filtered list — resetting filters clears selections that would
+  // no longer be visible.
+  const [selected, setSelected] = useState(new Set());
+  const visibleIds = new Set(items.filter((it) => !it.completed).map((it) => it.id));
+  // Prune any stale selections when the visible list changes.
+  useEffect(() => {
+    setSelected((prev) => {
+      const next = new Set([...prev].filter((id) => visibleIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+  const allChecked = visibleIds.size > 0 && [...visibleIds].every((id) => selected.has(id));
+  const someChecked = selected.size > 0;
+  const toggleOne = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    setSelected(() => allChecked ? new Set() : new Set(visibleIds));
+  };
+  const doBulk = async () => {
+    const targets = items.filter((it) => selected.has(it.id));
+    await onBulkComplete(targets);
+    setSelected(new Set());
+  };
   const roleColors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
   const roles = getRoleKeysForWorkflowDropdown();
   const stages = [
@@ -628,6 +717,37 @@ function PipelineTasksPanel({ items, totalCount, onToggle, filters }) {
         </div>
       </div>
 
+      {visibleIds.size > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '8px 14px', background: someChecked ? '#fff3cd' : '#f7f9fc',
+          borderBottom: '1px solid #e5e5e5', fontSize: 12,
+        }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={allChecked}
+              ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
+              onChange={toggleAll}
+              style={{ width: 16, height: 16, accentColor: 'var(--brand-red)' }}
+            />
+            <span style={{ color: '#666', fontWeight: 600 }}>
+              {someChecked ? `${selected.size} selected` : 'Select all'}
+            </span>
+          </label>
+          {someChecked && (
+            <button
+              onClick={doBulk}
+              style={{
+                padding: '5px 14px', background: '#0A0A0A', color: '#fff',
+                border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 11,
+                cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
+              }}
+            >✓ Complete {selected.size}</button>
+          )}
+        </div>
+      )}
+
       <div className="section-body" style={{ padding: 0 }}>
         {totalCount === 0 ? (
           <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 12 }}>
@@ -652,14 +772,34 @@ function PipelineTasksPanel({ items, totalCount, onToggle, filters }) {
               : '';
             const today = new Date(); today.setHours(0, 0, 0, 0);
             const overdue = it.due_date && it.due_date < today && !it.completed;
+            const isSelected = selected.has(it.id);
             return (
               <div key={it.id} style={{
-                display: 'grid', gridTemplateColumns: '30px 1fr 100px 90px', gap: 10,
+                display: 'grid', gridTemplateColumns: '60px 1fr 100px 90px', gap: 10,
                 padding: '10px 18px', borderTop: i === 0 ? 'none' : '1px solid #f1f1f1',
-                alignItems: 'center', background: it.completed ? '#fafafa' : (overdue ? '#fff5f5' : '#fff'),
+                alignItems: 'center',
+                background: it.completed ? '#fafafa' : isSelected ? '#fffce7' : (overdue ? '#fff5f5' : '#fff'),
               }}>
-                <input type="checkbox" checked={it.completed} onChange={() => onToggle(it)}
-                  style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }} />
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {!it.completed && (
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleOne(it.id)}
+                      style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#0A0A0A' }}
+                      title="Select for bulk complete"
+                      aria-label="Select"
+                    />
+                  )}
+                  <input
+                    type="checkbox"
+                    checked={it.completed}
+                    onChange={() => onToggle(it)}
+                    style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }}
+                    title="Mark complete"
+                    aria-label="Complete"
+                  />
+                </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: it.completed ? '#aaa' : '#222', textDecoration: it.completed ? 'line-through' : 'none' }}>
                     {it.task.title}
@@ -698,106 +838,3 @@ function PipelineTasksPanel({ items, totalCount, onToggle, filters }) {
   );
 }
 
-function SiriPanel({ onClose }) {
-  return (
-    <div className="tk-sms-panel">
-      <h3>{'\u{1F399}\uFE0F "Hey Siri, New Task" \u2192 Claude API'}</h3>
-      <div style={{fontSize:12,color:'#aaa',marginBottom:14,lineHeight:1.5}}>
-        Siri grabs what you say, sends it to the Kyle Duke Home Loan Team's Claude endpoint, Claude parses it into a structured task, and it lands on this board. Only enabled for Kyle + Missy.
-      </div>
-      <div className="tk-sms-step">
-        <div className="tk-sms-num">1</div>
-        <div className="tk-sms-step-text">
-          <strong>On your iPhone, open the Shortcuts app</strong> and tap + to create a new shortcut. Name it <code>New Task</code> (this is what you'll say to Siri).
-        </div>
-      </div>
-      <div className="tk-sms-step">
-        <div className="tk-sms-num">2</div>
-        <div className="tk-sms-step-text">
-          <strong>Add these 3 actions</strong> (tap Add Action for each):
-          <ul style={{margin:'8px 0 0 0',paddingLeft:18,color:'#ccc',lineHeight:1.7}}>
-            <li><strong>Dictate Text</strong> {'\u2014'} language English. <em>This is what Siri will listen to.</em></li>
-            <li>
-              <strong>Get Contents of URL</strong> {'\u2014'} Method: POST, Request Body: JSON, Headers: <code>Content-Type: application/json</code> and <code>X-KDT-Auth: &lt;your secret&gt;</code>, URL:
-              <div className="tk-sms-code">https://thekyleduketeam.netlify.app/.netlify/functions/task-intake</div>
-              JSON body:
-              <div className="tk-sms-code">{`{
-  "text": [Dictated Text],
-  "user": "Kyle"
-}`}</div>
-            </li>
-            <li><strong>Speak Text</strong> {'\u2014'} "Got it." (optional, so Siri confirms.)</li>
-          </ul>
-        </div>
-      </div>
-      <div className="tk-sms-step">
-        <div className="tk-sms-num">3</div>
-        <div className="tk-sms-step-text">
-          <strong>Deploy the Netlify function</strong> (<code>task-intake.js</code>). It takes the dictated text, asks Claude to extract a structured task, and writes it to Supabase:
-          <div className="tk-sms-code">{`// netlify/functions/task-intake.js
-import Anthropic from '@anthropic-ai/sdk';
-import { createClient } from '@supabase/supabase-js';
-
-const claude = new Anthropic();
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
-
-export default async (req) => {
-  // Only Kyle + Missy can post tasks
-  if(req.headers.get('x-kdt-auth') !== process.env.KDT_SHORTCUT_SECRET){
-    return new Response('unauthorized', {status:401});
-  }
-  const { text, user } = await req.json();
-  if(user !== 'Kyle' && user !== 'Missy'){
-    return new Response('forbidden', {status:403});
-  }
-
-  // Ask Claude to parse the dictated text into a task
-  const msg = await claude.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 400,
-    messages: [{
-      role: 'user',
-      content: \`Extract a task from this dictation. Return ONLY JSON:
-{"title":"...","priority":"high|medium|low","due":"YYYY-MM-DD or null",
- "project":"Q2 Marketing Push|Recruit New LOs|Tech Stack Upgrades|Personal Development|Inbox",
- "notes":"..."}
-Dictation: "\${text}"\`
-    }]
-  });
-  const task = JSON.parse(msg.content[0].text);
-
-  await supabase.from('tasks').insert({
-    ...task, assignee: user, created_via: 'siri',
-    created_at: new Date().toISOString()
-  });
-
-  return new Response(JSON.stringify({ok:true, task}));
-};`}</div>
-        </div>
-      </div>
-      <div className="tk-sms-step">
-        <div className="tk-sms-num">4</div>
-        <div className="tk-sms-step-text">
-          <strong>Set environment variables</strong> in Netlify:
-          <ul style={{margin:'6px 0 0 0',paddingLeft:18,color:'#ccc',lineHeight:1.7}}>
-            <li><code>ANTHROPIC_API_KEY</code> {'\u2014'} from console.anthropic.com</li>
-            <li><code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_KEY</code></li>
-            <li><code>KDT_SHORTCUT_SECRET</code> {'\u2014'} any random string. Put the same value in the <code>X-KDT-Auth</code> header in the Shortcut.</li>
-          </ul>
-        </div>
-      </div>
-      <div className="tk-sms-step">
-        <div className="tk-sms-num">5</div>
-        <div className="tk-sms-step-text">
-          <strong>Use it.</strong> Say <em>"Hey Siri, new task."</em> Siri prompts you. Say <em>"Call Dave at Veterans United tomorrow at 9am, high priority, marketing project."</em> Claude turns it into a task that appears right here. ~$0.0003 per dictation {'\u2014'} essentially free.
-        </div>
-      </div>
-      <div style={{marginTop:14,textAlign:'right'}}>
-        <button className="form-btn secondary" onClick={onClose} style={{background:'#2a2a2a',color:'#fff',border:'1px solid #444'}}>Close</button>
-      </div>
-    </div>
-  );
-}
