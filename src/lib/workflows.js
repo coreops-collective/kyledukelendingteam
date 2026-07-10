@@ -172,7 +172,8 @@ export async function createTask(workflowId, task) {
     repeat_interval: ['daily', 'weekly', 'monthly'].includes(task.repeat_interval) ? task.repeat_interval : null,
     condition_field: task.condition_field || null,
     condition_op: task.condition_op || null,
-    email_recipient: ['client', 'co_borrower', 'agent'].includes(task.email_recipient) ? task.email_recipient : null,
+    email_recipient: ['client', 'co_borrower', 'agent', 'other'].includes(task.email_recipient) ? task.email_recipient : null,
+    email_other_recipient: task.email_recipient === 'other' ? (task.email_other_recipient || null) : null,
     email_subject: task.email_subject || null,
     email_body: task.email_body || null,
     depends_on_task_id: task.depends_on_task_id || null,
@@ -181,7 +182,15 @@ export async function createTask(workflowId, task) {
     notes: task.notes || null,
     position: list.length,
   };
-  const { data, error } = await supabase.from('workflow_tasks').insert(row).select().single();
+  let { data, error } = await supabase.from('workflow_tasks').insert(row).select().single();
+  // Same graceful downgrade as updateTask — strip email_other_recipient
+  // and retry on the column-missing error so createTask lands even if
+  // migration 027 hasn't run yet.
+  if (error && /column\s+.*email_other_recipient.*does not exist/i.test(error.message || '')) {
+    console.warn('[workflows] email_other_recipient column missing on insert — retrying without.');
+    const { email_other_recipient: _, ...safeRow } = row;
+    ({ data, error } = await supabase.from('workflow_tasks').insert(safeRow).select().single());
+  }
   if (error) {
     console.warn('[workflows] createTask:', error.message);
     showError(`Couldn't add task "${row.title}": ${error.message}`, {
@@ -224,7 +233,16 @@ export async function updateTask(id, patch, opts = {}) {
     // Signal failure so the caller can toast, but don't touch the DB.
     return { error: 'cycle' };
   }
-  const { error } = await supabase.from('workflow_tasks').update(patch).eq('id', id);
+  let { error } = await supabase.from('workflow_tasks').update(patch).eq('id', id);
+  // Graceful downgrade: migration 027_workflow_task_email_other adds an
+  // email_other_recipient column. Before it runs, sending the field in
+  // an update fails with "column does not exist". Detect that specific
+  // error, strip the field, and retry so the rest of the save lands.
+  if (error && 'email_other_recipient' in patch && /column\s+.*email_other_recipient.*does not exist/i.test(error.message || '')) {
+    console.warn('[workflows] email_other_recipient column missing — retrying without. Run migration 027_workflow_task_email_other.');
+    const { email_other_recipient: _, ...safe } = patch;
+    ({ error } = await supabase.from('workflow_tasks').update(safe).eq('id', id));
+  }
   if (error) {
     console.warn('[workflows] updateTask:', error.message);
     if (!opts.quiet) {
@@ -395,6 +413,12 @@ export function composeMailto(task, clientName, loan) {
     // wire that in yet — for now fall through to blank so the user
     // fills it in themselves.
     to = '';
+  }
+  else if (recipient === 'other') {
+    // Custom recipient — a title company, HOA, insurance broker, etc.
+    // The literal email address is stored on the task itself so it
+    // routes the same way every time the template fires.
+    to = (task.email_other_recipient || '').trim();
   }
   const substitutions = {
     '{{first_name}}': firstName,

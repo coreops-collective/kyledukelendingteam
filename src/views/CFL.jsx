@@ -555,7 +555,7 @@ function TaskRow({ item, today, first, onOpenClient, selected, onSelect }) {
           />
         )}
         {isDecision ? (
-          <div style={{ fontSize: 20, textAlign: 'center', color: '#0d47a1' }} title="Decision Point">❓</div>
+          <div style={{ fontSize: 20, textAlign: 'center', color: '#0A0A0A' }} title="Decision Point">❓</div>
         ) : (
           <input type="checkbox" checked={item.completed} onChange={onToggle}
             style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }} />
@@ -563,7 +563,7 @@ function TaskRow({ item, today, first, onOpenClient, selected, onSelect }) {
       </div>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: item.completed ? '#aaa' : '#222', textDecoration: item.completed ? 'line-through' : 'none' }}>
-          {isDecision && <span style={{ fontSize: 10, background: '#0d47a1', color: '#fff', padding: '2px 6px', borderRadius: 4, marginRight: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>Decision</span>}
+          {isDecision && <span style={{ fontSize: 10, background: '#0A0A0A', color: '#fff', padding: '2px 6px', borderRadius: 4, marginRight: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>Decision</span>}
           {item.task.title}
         </div>
         <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
@@ -1379,6 +1379,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
   const [conditionField, setConditionField] = useState(task.condition_field || 'none');
   const [conditionOp, setConditionOp] = useState(task.condition_op || '');
   const [emailRecipient, setEmailRecipient] = useState(task.email_recipient || 'none');
+  const [emailOtherRecipient, setEmailOtherRecipient] = useState(task.email_other_recipient || '');
   const [emailSubject, setEmailSubject] = useState(task.email_subject || '');
   const [emailBody, setEmailBody] = useState(task.email_body || '');
   const [triggerUnit, setTriggerUnit] = useState(task.trigger_unit || 'days');
@@ -1416,6 +1417,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
       condition_field: conditionField === 'none' ? null : conditionField,
       condition_op: conditionField === 'none' ? null : conditionOp,
       email_recipient: emailRecipient === 'none' ? null : emailRecipient,
+      email_other_recipient: emailRecipient === 'other' ? (emailOtherRecipient.trim() || null) : null,
       email_subject: emailSubject.trim() || null,
       email_body: emailBody.trim() || null,
       depends_on_task_id: taskType === 'task' && dependsOnTaskId ? dependsOnTaskId : null,
@@ -1710,6 +1712,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
                 <option value="client">Send to client</option>
                 <option value="co_borrower">Send to co-borrower</option>
                 <option value="agent">Send to agent</option>
+                <option value="other">Send to other…</option>
               </select>
               <input
                 value={emailSubject}
@@ -1719,6 +1722,22 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
                 style={{ ...inputStyle, opacity: emailRecipient === 'none' ? 0.4 : 1 }}
               />
             </div>
+            {emailRecipient === 'other' && (
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ ...labelStyle, marginBottom: 4 }}>Other recipient email</label>
+                <input
+                  type="email"
+                  value={emailOtherRecipient}
+                  onChange={(e) => setEmailOtherRecipient(e.target.value)}
+                  placeholder="e.g. title@company.com"
+                  style={inputStyle}
+                  aria-label="Other recipient email address"
+                />
+                <div style={{ fontSize: 11, color: '#888', marginTop: 4, fontStyle: 'italic' }}>
+                  Useful for title companies, HOAs, insurance brokers, escrow officers — any recipient outside client / co-borrower / agent.
+                </div>
+              </div>
+            )}
             <div style={{ opacity: emailRecipient === 'none' ? 0.4 : 1, pointerEvents: emailRecipient === 'none' ? 'none' : 'auto' }}>
               <RichTextEditor
                 value={emailBody}
