@@ -15,23 +15,44 @@ const SECTION_META = {
 };
 const SECTION_ORDER = ['job_description', 'training_30', 'training_60', 'training_90', 'accountability'];
 
-// Aggregate every workflow_task assigned to this role's key. This is
-// where the "auto-populated responsibilities" feature actually happens
-// — no duplicate storage, always live.
+// Aggregate every workflow_task assigned to this role's key, grouped by
+// workflow. This is where the "auto-populated responsibilities" feature
+// actually happens — no duplicate storage, always live.
+//
+// Grouping (rather than one flat alphabetized list) makes each workflow
+// read like a section of the JD — "In the New Purchase workflow you own
+// X, Y, Z" — which mirrors how the team actually thinks about the work.
+// Dedup is per-workflow (same title twice in one workflow collapses)
+// but NOT across workflows, since the same responsibility may
+// legitimately show up in multiple workflows.
+//
+// Returns:
+//   groups: [{ workflow_id, workflow_name, category, tasks: [{title}] }]
+//   count:  total task count across groups (used by the panel header)
+//   flat:   flat list of unique titles (used by the AI Suggest payload)
 function responsibilitiesFor(roleKey) {
-  const out = [];
-  const seen = new Set();
+  const groups = [];
+  const flat = [];
+  const seenFlat = new Set();
+  let count = 0;
   for (const wf of getWorkflows()) {
     const tasks = getTasksFor(wf.id);
+    const group = { workflow_id: wf.id, workflow_name: wf.name, category: wf.category, tasks: [] };
+    const seenInGroup = new Set();
     for (const t of tasks) {
       if ((t.role || '') !== roleKey) continue;
-      const dedupKey = (t.title || '').trim().toLowerCase();
-      if (seen.has(dedupKey)) continue;
-      seen.add(dedupKey);
-      out.push({ title: t.title, workflow: wf.name, category: wf.category });
+      const title = (t.title || '').trim();
+      if (!title) continue;
+      const key = title.toLowerCase();
+      if (seenInGroup.has(key)) continue;
+      seenInGroup.add(key);
+      group.tasks.push({ title });
+      count += 1;
+      if (!seenFlat.has(key)) { seenFlat.add(key); flat.push(title); }
     }
+    if (group.tasks.length) groups.push(group);
   }
-  return out.sort((a, b) => a.title.localeCompare(b.title));
+  return { groups, count, flat };
 }
 
 export default function Roles() {
@@ -142,6 +163,7 @@ function RoleEditor({ role, onChange }) {
   }, [role.id]);
 
   const responsibilities = useMemo(() => responsibilitiesFor(role.key), [role.key]);
+  // Available for both display (grouped) and AI Suggest (flat list of titles).
 
   const saveField = (field, value) => {
     setDraft((d) => ({ ...d, [field]: value }));
@@ -164,7 +186,7 @@ function RoleEditor({ role, onChange }) {
         body: JSON.stringify({
           role_label: role.label,
           section,
-          responsibilities: responsibilities.map((r) => r.title),
+          responsibilities: responsibilities.flat,
           existing_content: draft[section] || '',
         }),
       });
@@ -256,28 +278,39 @@ function RoleEditor({ role, onChange }) {
 }
 
 function ResponsibilitiesPanel({ role, responsibilities }) {
+  const { groups, count } = responsibilities;
   return (
     <div style={{ marginBottom: 18, padding: 16, background: '#fafafa', border: '1px solid #eee', borderRadius: 10 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
         <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px' }}>
           Responsibilities · from workflow tasks
         </div>
-        <span style={{ fontSize: 11, color: '#888' }}>{responsibilities.length} total · live</span>
+        <span style={{ fontSize: 11, color: '#888' }}>{count} across {groups.length} workflow{groups.length === 1 ? '' : 's'} · live</span>
       </div>
-      {responsibilities.length === 0 ? (
+      {groups.length === 0 ? (
         <div style={{ fontSize: 12, color: '#888', padding: '8px 0' }}>
           No workflow tasks are assigned to <strong>{role.label}</strong> yet. Assign a task to this role
           on the Workflows page and it will appear here automatically.
         </div>
       ) : (
-        <ul style={{ margin: 0, padding: '0 0 0 18px', fontSize: 13, color: '#222' }}>
-          {responsibilities.map((r, i) => (
-            <li key={i} style={{ marginBottom: 4 }}>
-              {r.title}
-              <span style={{ marginLeft: 8, color: '#999', fontSize: 11 }}>· {r.workflow}</span>
-            </li>
-          ))}
-        </ul>
+        groups.map((g) => (
+          <div key={g.workflow_id} style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#0A0A0A' }}>{g.workflow_name}</div>
+              {g.category && (
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#666', background: '#eee', padding: '2px 6px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                  {g.category}
+                </span>
+              )}
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: '#999' }}>{g.tasks.length} task{g.tasks.length === 1 ? '' : 's'}</span>
+            </div>
+            <ul style={{ margin: 0, padding: '0 0 0 18px', fontSize: 13, color: '#222' }}>
+              {g.tasks.map((t, i) => (
+                <li key={i} style={{ marginBottom: 3 }}>{t.title}</li>
+              ))}
+            </ul>
+          </div>
+        ))
       )}
     </div>
   );
@@ -422,8 +455,17 @@ function printRole({ role, draft, responsibilities }) {
     return out.join('\n');
   };
 
-  const respBlock = responsibilities.length
-    ? `<ul>${responsibilities.map((r) => `<li>${esc(r.title)} <span class="wf">${esc(r.workflow)}</span></li>`).join('')}</ul>`
+  // Grouped-by-workflow rendering so the PDF reads categorically —
+  // matches what the user sees on the page. Each workflow becomes a
+  // subsection header with a bulleted list of the tasks that role owns
+  // within that workflow.
+  const { groups } = responsibilities;
+  const respBlock = groups.length
+    ? groups.map((g) => `
+        <div class="wf-group">
+          <div class="wf-name">${esc(g.workflow_name)}${g.category ? ` <span class="wf-cat">${esc(g.category)}</span>` : ''}</div>
+          <ul>${g.tasks.map((t) => `<li>${esc(t.title)}</li>`).join('')}</ul>
+        </div>`).join('')
     : '<p class="muted">No workflow tasks assigned yet.</p>';
 
   const section = (title, body) => body?.trim()
@@ -444,9 +486,11 @@ function printRole({ role, draft, responsibilities }) {
   .sub { font-size: 12px; color: #666; margin-top: 4px; letter-spacing: 0.4px; text-transform: uppercase; }
   h2 { font-family: 'Oswald', sans-serif; font-size: 15px; text-transform: uppercase; letter-spacing: 0.6px; color: #c62828; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #eee; }
   p { margin: 6px 0 10px; font-size: 12.5px; }
-  ul { margin: 4px 0 12px; padding-left: 22px; font-size: 12.5px; }
+  ul { margin: 4px 0 10px; padding-left: 22px; font-size: 12.5px; }
   li { margin-bottom: 3px; }
-  .wf { color: #888; font-size: 10.5px; margin-left: 6px; }
+  .wf-group { margin: 10px 0 12px; break-inside: avoid; }
+  .wf-name { font-size: 12px; font-weight: 700; color: #0A0A0A; margin-bottom: 3px; }
+  .wf-cat { display: inline-block; margin-left: 6px; font-size: 9.5px; font-weight: 700; color: #666; background: #eee; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: .4px; }
   .muted { color: #888; }
   .footer { position: fixed; bottom: 12px; left: 0; right: 0; text-align: center; font-size: 10px; color: #888; }
   section { break-inside: avoid; }
