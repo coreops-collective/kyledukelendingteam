@@ -241,7 +241,7 @@ function buildSnapshotHTML(){
   const pPct = prTotal ? Math.round(pr.purchase/prTotal*100) : 0;
   const circ = 2*Math.PI*55;
   return `
-    <div class="kpi-grid">${kpis.map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div><div class="kpi-sub ${k.cls||''}">${k.sub}</div></div>`).join('')}</div>
+    <div class="kpi-grid kpi-grid-single-row">${kpis.map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div><div class="kpi-sub ${k.cls||''}">${k.sub}</div></div>`).join('')}</div>
     <div class="two-col">
       <div class="section-card">
         <div class="section-header"><div class="section-title">12-Month Funded Volume</div><div class="section-sub">${fmt$M(totalFunded12)} \u00b7 ${totalUnits12} units \u00b7 from real closings</div></div>

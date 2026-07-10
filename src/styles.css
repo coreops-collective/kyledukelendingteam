@@ -49,6 +49,18 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
 .chip.red{background:var(--brand-red);color:#fff;border-color:var(--brand-red)}
 .hub-content{padding:28px 32px;flex:1}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
+/* Force the Snapshot top-row KPIs onto ONE line on wide screens. Below
+   1100px the base .kpi-grid auto-fit takes over so mobile can wrap
+   naturally — trying to cram 7 tiles into 400px of phone width would
+   be unreadable. Values, labels, and subs get truncated with an
+   ellipsis if a specific loan amount is unusually long. */
+@media (min-width:1100px){
+  .kpi-grid.kpi-grid-single-row{grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
+  .kpi-grid.kpi-grid-single-row .kpi{padding:12px 14px;min-width:0}
+  .kpi-grid.kpi-grid-single-row .kpi-value{font-size:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kpi-grid.kpi-grid-single-row .kpi-label{font-size:9px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kpi-grid.kpi-grid-single-row .kpi-sub{font-size:10px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
 .kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:16px;border-top:3px solid var(--brand-red);box-shadow:var(--shadow-sm)}
 .kpi-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#888;margin-bottom:8px}
 .kpi-value{font-family:'Oswald',sans-serif;font-size:26px;font-weight:700;color:var(--text-primary);line-height:1}
