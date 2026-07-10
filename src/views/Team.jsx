@@ -270,7 +270,7 @@ function NewTeamMemberModal({ onClose, onSubmit }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 680, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">New Team Member</div>
           <div className="drawer-borrower">Add Team Member</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>On submit → saved + welcome email sent</div>
@@ -490,7 +490,7 @@ function TeamDatesDrawer({ user, onClose, onSaved }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 560, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Team Member · Important Dates</div>
           <div className="drawer-borrower">{target.name}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{target.email}</div>

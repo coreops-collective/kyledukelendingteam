@@ -1,7 +1,8 @@
 // Ported 1:1 from legacy/index.html renderSnapshot (+ supporting render blocks).
 // Uses dangerouslySetInnerHTML to preserve every class name, inline style,
 // and copy string verbatim from the legacy template literal.
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import Tour from '../components/Tour.jsx';
 import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
 import { PARTNERS } from '../data/partners.js';
@@ -417,12 +418,45 @@ function TargetsEditor({ targets, monthLabel, onSave, onClose }) {
   );
 }
 
+const SNAPSHOT_TOUR_STEPS = [
+  {
+    title: 'Welcome to the Lending Snapshot',
+    body: 'This is the dashboard: KPIs, funded volume, YoY history, purchase vs refi, home anniversaries, and monthly targets.\n\nEverything is live — Active Files, Pipeline Volume, and Closing counts all pull from LOANS in real time.',
+  },
+  {
+    target: '.kpi-grid',
+    title: 'Top KPIs',
+    body: 'Active files by LO, pipeline volume, REFI Watch, closings this and next month, average loan size, and lifetime volume.\n\nLifetime Volume covers PAST_CLIENTS plus every loan the app has marked Funded — deduped by borrower + close date so nothing is double-counted.',
+  },
+  {
+    target: '.bar-chart',
+    title: '12-Month Funded Volume',
+    body: 'Rolling 12-month view of funded volume from the canonical funded ledger (historical + app-funded).\n\nHover a bar to see the exact units + month/year.',
+  },
+  {
+    target: '.donut-wrap',
+    title: 'Purchase vs Refi',
+    body: 'Split of the active pipeline (pre-funded) by purpose. Refi Watch loans count here too.',
+  },
+  {
+    title: 'Monthly Targets',
+    body: 'Scroll to the bottom to set volume, units, and new-apps targets per month. Progress vs target is computed live from the funded ledger and current pipeline.\n\nEach month\'s target is saved in your browser so different months can carry different goals.',
+  },
+];
+
 export default function Snapshot(){
   const html = useMemo(buildSnapshotHTML, []);
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
   return (
     <div>
       <div dangerouslySetInnerHTML={{ __html: html }} />
       <MonthlyTargets />
+      {tourOpen && <Tour steps={SNAPSHOT_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }

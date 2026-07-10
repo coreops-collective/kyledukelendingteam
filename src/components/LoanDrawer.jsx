@@ -181,7 +181,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
           }}
         />
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">{loan.status || STAGE_TO_STATUS[loan.stage] || loan.stage || 'Loan'}</div>
           <div className="drawer-borrower">{loan.borrower}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>

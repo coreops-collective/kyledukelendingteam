@@ -81,7 +81,7 @@ function AddUserDrawer({ me, onClose, onSaved, toast }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 520, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">New User</div>
           <div className="drawer-borrower">Add User</div>
         </div>
@@ -163,7 +163,7 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 520, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Edit User</div>
           <div className="drawer-borrower">{user.name}</div>
         </div>

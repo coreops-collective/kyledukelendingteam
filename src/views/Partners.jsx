@@ -5,6 +5,7 @@ import { LOS_STAGES } from '../data/stages.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import { markPartnerDirty, markPartnerNew, savePartnersNow, subscribePartners, deletePartner, mergePartners } from '../lib/partnersStore.js';
+import Tour from '../components/Tour.jsx';
 
 // Format helpers — mirror legacy fmt$M / fmt$
 const fmt$ = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -136,6 +137,35 @@ export default function Partners() {
     const unsubscribe = subscribePartners(() => setPartnersVersion((v) => v + 1));
     return unsubscribe;
   }, []);
+
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const PARTNERS_TOUR_STEPS = [
+    {
+      title: 'Realtor Partners',
+      body: 'Every agent + brokerage the team has closed with, plus VIPs you\'re actively cultivating.\n\nLifetime deal counts, YTD stats, and current pipeline volume are computed live from LOANS — no double-entry needed.',
+    },
+    {
+      title: 'Filters + grouping',
+      body: 'Filter by state, VIP tier, deal count, or LO. Group by brokerage or state to see who\'s carrying the biggest share.',
+    },
+    {
+      title: 'Click a partner card',
+      body: 'The drawer edits every field on the partner — contact info, spouse + kids, birthday, favorite restaurant, notes. Every save is realtime-synced to teammates.',
+    },
+    {
+      title: 'Merge duplicates',
+      body: 'When the seed accidentally created two rows for the same agent, use the Merge action inside a partner drawer to fold source into target. Loans that referenced the source get automatically re-tagged to the target — with the fix in Round 9 those updates now flush before the source is deleted, so no records are lost mid-merge.',
+    },
+    {
+      title: 'Touches log',
+      body: 'Every partner drawer has a Touches log — quick way to record a call, meeting, or gift so the team knows when they last connected.',
+    },
+  ];
 
   // Compute per-agent live pipeline counts from LOANS. "Live" means
   // actually in escrow / LOS — signed contract through approved. Earlier
@@ -427,6 +457,7 @@ export default function Partners() {
           <div style={{ wordBreak: 'break-word' }}>{toast.msg}</div>
         </div>
       )}
+      {tourOpen && <Tour steps={PARTNERS_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }
@@ -453,7 +484,7 @@ function NewPartnerDrawer({ onClose, onSubmit }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 640, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">New Partner</div>
           <div className="drawer-borrower">Add Realtor Partner</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>On submit → saved + welcome touch sequence begins</div>
@@ -564,7 +595,7 @@ function PartnerDrawer({ partner, onClose }) {
       <div className="drawer-overlay open" onClick={handleClose} />
       <aside className="drawer open" style={{ width: 640, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={handleClose}>×</button>
+          <button className="drawer-close" onClick={handleClose} aria-label="Close">×</button>
           <div className="drawer-stage">{p.vip ? 'VIP Partner' : 'Partner'}</div>
           <div className="drawer-borrower">{p.name}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{[p.city, p.state].filter(Boolean).join(', ') || '—'}</div>

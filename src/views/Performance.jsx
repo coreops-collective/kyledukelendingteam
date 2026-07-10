@@ -235,7 +235,7 @@ function EditGoalsDrawer({ name, goal, onClose, onSave }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 640, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Edit Goals · {goal.period}</div>
           <div className="drawer-borrower">{name}</div>
         </div>

@@ -301,7 +301,7 @@ function TaskDrawer({ task, projects, onClose, onSave, onDelete }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" id="drawer" style={{width:520,maxWidth:'95vw'}}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>{'\u00d7'}</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">{'\u00d7'}</button>
           <div className="drawer-stage">
             {proj ? proj.name : 'Task'}{task.createdVia === 'siri' ? ' \u00b7 \u{1F399}\uFE0F Siri' : ''}
           </div>

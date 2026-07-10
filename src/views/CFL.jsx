@@ -24,6 +24,7 @@ import {
   createKeyDateType, updateKeyDateType, deleteKeyDateType,
 } from '../lib/keyDateTypes.js';
 import { showError } from '../lib/toaster.js';
+import Tour from '../components/Tour.jsx';
 
 const DAY = 86400000;
 const fmtDate = (d) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
@@ -57,6 +58,34 @@ export default function CFL() {
   // Kimberly ever wants to prove they're there.
   const [showAncient, setShowAncient] = useState(false);
   const ANCIENT_DAYS = 30;
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const CFL_TOUR_STEPS = [
+    {
+      title: 'Client for Life',
+      body: 'Every past client and every funded loan gets a rolling task list generated from your Workflows.\n\nHome anniversaries, birthdays, review requests, market-check-ins — anything with a date anchor on a client turns into a task on the day it\'s due.',
+    },
+    {
+      title: 'Buckets by urgency',
+      body: 'Tasks are grouped Overdue → Today → This Week → This Month → Later. This Month and Later start collapsed so 800 pending items don\'t overwhelm the view.\n\nOverdue > 30 days stays hidden by default — toggle "Show ancient" if you want to see them.',
+    },
+    {
+      title: 'Filters + search',
+      body: 'Filter by role (LO / LOA / Admin / Automated), status (Open / Done), workflow, and free-text search across borrower + task title. Layer as many as you need to zero in.',
+    },
+    {
+      title: 'Birthdays this month',
+      body: 'The Birthdays panel at the top shows every client whose birthday falls in the current month — the number-one CFL touch point.',
+    },
+    {
+      title: 'Completing a task',
+      body: 'Check the box on any task to mark it done — it drops out of the Open filter and is recorded against the client + due date so the same task doesn\'t reappear next year.\n\nEmail tasks have a "Send Email Now" button that opens your mail client pre-filled from the template.',
+    },
+  ];
 
   useEffect(() => {
     const bumpAll = () => {
@@ -300,6 +329,7 @@ export default function CFL() {
       )}
 
       {openClient && <ClientCardDrawer clientName={openClient} onClose={() => setOpenClient(null)} />}
+      {tourOpen && <Tour steps={CFL_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }
@@ -550,7 +580,7 @@ export function ManageKeyDateTypesDrawer({ onClose }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 600, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Client for Life</div>
           <div className="drawer-borrower">Key Date Types</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
@@ -748,7 +778,7 @@ function ClientCardDrawer({ clientName, onClose }) {
       <div className="drawer-overlay open" style={{ zIndex: 200 }} onClick={onClose} />
       <aside className="drawer open" style={{ width: 620, maxWidth: '95vw', zIndex: 201 }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Client Card</div>
           <div className="drawer-borrower">{clientName}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
@@ -979,7 +1009,7 @@ export function WorkflowEditorDrawer({ onClose }) {
       <div className="drawer-overlay open" onClick={onClose} />
       <aside className="drawer open" style={{ width: 980, maxWidth: '95vw' }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Client for Life</div>
           <div className="drawer-borrower">Workflows</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>Build templates · drag to reorder · click a task to edit</div>
@@ -1325,7 +1355,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
       <div className="drawer-overlay open" style={{ zIndex: 200 }} onClick={onClose} />
       <aside className="drawer open" style={{ width: 560, maxWidth: '95vw', zIndex: 201 }}>
         <div className="drawer-head">
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
           <div className="drawer-stage">Workflow Task</div>
           <div className="drawer-borrower">{title || 'Untitled task'}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{triggerSummary({ trigger_label: triggerLabel, trigger_days: effectiveDays, trigger_recurring: recurring })}</div>
