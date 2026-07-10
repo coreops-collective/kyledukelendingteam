@@ -149,7 +149,7 @@ export default function App() {
                 routes that have a tour registered. Fires an event the
                 page component listens for so we don't need a
                 global-tour registry / context wired here. */}
-            {['/workflows', '/pipeline', '/snapshot', '/loanmgmt', '/clientforlife', '/cfl', '/partners'].includes(location.pathname) && (
+            {['/workflows', '/pipeline', '/snapshot', '/loanmgmt', '/clientforlife', '/cfl', '/partners', '/newloan'].includes(location.pathname) && (
               <button
                 className="chip"
                 style={{ cursor: 'pointer', border: '1px solid #d0d0d0', background: '#fff', color: 'var(--brand-red, #c62828)', fontWeight: 700 }}
