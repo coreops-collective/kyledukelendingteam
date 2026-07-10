@@ -12,6 +12,7 @@ import AllLoans from './views/AllLoans.jsx';
 import Partners from './views/Partners.jsx';
 import Team from './views/Team.jsx';
 import Roles from './views/Roles.jsx';
+import LeadSources from './views/LeadSources.jsx';
 import Workflows from './views/Workflows.jsx';
 import Tasks from './views/Tasks.jsx';
 import MortgageCalc from './views/MortgageCalc.jsx';
@@ -31,6 +32,7 @@ import { loadLoansFromSupabase } from './lib/loansStore.js';
 import { loadPartnersFromSupabase } from './lib/partnersStore.js';
 import { loadWebhookSubscriptions } from './lib/webhooks.js';
 import { loadJobRoles } from './lib/jobRoles.js';
+import { loadLeadSources } from './lib/leadSources.js';
 
 const PAGE_META = {
   '/snapshot':      { title: 'Lending Snapshot' },
@@ -44,6 +46,7 @@ const PAGE_META = {
   '/partners':      { title: 'Realtor Partners' },
   '/team':          { title: 'Team Members' },
   '/roles':         { title: 'Roles & Responsibilities' },
+  '/leadsources':   { title: 'Lead Sources' },
   '/performance':   { title: 'Performance & Goals' },
   '/mortgagecalc':  { title: 'Mortgage Calculator' },
   '/closingcalc':   { title: 'Closing Costs Calculator' },
@@ -85,7 +88,7 @@ export default function App() {
 
   // Fetch real users + loans from Supabase on mount (same as legacy)
   useEffect(() => {
-    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase(), loadPartnersFromSupabase(), loadWebhookSubscriptions(), loadJobRoles()])
+    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase(), loadPartnersFromSupabase(), loadWebhookSubscriptions(), loadJobRoles(), loadLeadSources()])
       .finally(() => setUsersReady(true));
   }, []);
 
@@ -149,7 +152,7 @@ export default function App() {
                 routes that have a tour registered. Fires an event the
                 page component listens for so we don't need a
                 global-tour registry / context wired here. */}
-            {['/workflows', '/pipeline', '/snapshot', '/loanmgmt', '/clientforlife', '/cfl', '/partners', '/newloan'].includes(location.pathname) && (
+            {['/workflows', '/pipeline', '/snapshot', '/loanmgmt', '/clientforlife', '/cfl', '/partners', '/newloan', '/roles', '/loans', '/ratelocks', '/tasks', '/performance', '/setup', '/income', '/netincome', '/leadsources'].includes(location.pathname) && (
               <button
                 className="chip"
                 style={{ cursor: 'pointer', border: '1px solid #d0d0d0', background: '#fff', color: 'var(--brand-red, #c62828)', fontWeight: 700 }}
@@ -176,6 +179,7 @@ export default function App() {
             <Route path="/partners" element={<Partners />} />
             <Route path="/team" element={<Team />} />
             <Route path="/roles" element={<Roles />} />
+            <Route path="/leadsources" element={<LeadSources />} />
             <Route path="/performance" element={<Performance />} />
             <Route path="/mortgagecalc" element={<MortgageCalc />} />
             <Route path="/closingcalc" element={<ClosingCalc />} />

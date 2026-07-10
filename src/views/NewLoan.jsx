@@ -6,6 +6,9 @@ import { sbInsert } from '../lib/supabase.js';
 import { markLoansDirty } from '../lib/loansStore.js';
 import { upsertClientDate } from '../lib/clientDates.js';
 import Tour from '../components/Tour.jsx';
+import {
+  loadLeadSources, getLeadSourceLabels, createLeadSource,
+} from '../lib/leadSources.js';
 
 const LO_OPTIONS = ['Kyle Duke', 'Missy'];
 
@@ -16,7 +19,7 @@ export default function NewLoan() {
     hasCo: 'No',
     coFirst: '', coLast: '', coPhone: '', coEmail: '', coBday: '',
     type: 'VA', purpose: 'Purchase', amt: '', fico: '', preapp: '',
-    agent: '', src: 'Realtor Referral',
+    agent: '', src: '',
     estClose: '',
     addr: '', locked: '', apprNow: '', apprContact: '', apprNotes: '',
     titleCo: '', titleContact: '', hoi: '', closeDate: '', uwPath: '', story: '',
@@ -38,6 +41,19 @@ export default function NewLoan() {
     window.addEventListener('kdt-start-tour', startTour);
     return () => window.removeEventListener('kdt-start-tour', startTour);
   }, []);
+
+  // Load the lead_sources store so the dropdown reflects any team-added
+  // sources without a page reload. Force re-render when the store fires
+  // its change events.
+  const [, forceSources] = useState(0);
+  const bumpSources = () => forceSources((n) => n + 1);
+  useEffect(() => {
+    loadLeadSources().then(bumpSources);
+    const on = () => bumpSources();
+    ['kdt-lead-sources-changed', 'kdt-lead-sources-loaded'].forEach((e) => window.addEventListener(e, on));
+    return () => ['kdt-lead-sources-changed', 'kdt-lead-sources-loaded'].forEach((e) => window.removeEventListener(e, on));
+  }, []);
+  const leadSourceLabels = getLeadSourceLabels();
 
   const NEW_LOAN_TOUR_STEPS = [
     {
@@ -388,8 +404,24 @@ export default function NewLoan() {
             </select>
           </div>
           <div className="form-field"><label>Lead Source</label>
-            <select value={form.src} onChange={set('src')}>
-              <option>Realtor Referral</option><option>Past Client</option><option>Self-Generated</option><option>Zillow</option><option>Veteran Network</option><option>Open House</option><option>Other</option>
+            <select
+              value={form.src}
+              onChange={async (e) => {
+                if (e.target.value === '__new_source__') {
+                  const label = window.prompt('New lead source name:');
+                  if (!label) return;
+                  const created = await createLeadSource(label);
+                  if (created) setForm((f) => ({ ...f, src: created.label }));
+                  return;
+                }
+                setForm((f) => ({ ...f, src: e.target.value }));
+              }}
+            >
+              <option value="">— Select a source —</option>
+              {leadSourceLabels.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+              <option value="__new_source__" style={{ fontStyle: 'italic', color: '#c62828' }}>+ Add new source…</option>
             </select>
           </div>
 

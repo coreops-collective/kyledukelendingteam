@@ -130,7 +130,7 @@ function DeadlinesPanel({ loans, onOpen }) {
   );
 
   return (
-    <div className="card" style={{ marginBottom: 18 }}>
+    <div className="card" data-tour="deadlines-panel" style={{ marginBottom: 18 }}>
       <div className="section-header">
         <div className="section-title">Deadlines</div>
         <div className="section-sub">
@@ -864,25 +864,30 @@ export default function LoanManagement() {
   const LM_TOUR_STEPS = [
     {
       title: 'Loan Management',
-      body: 'Every active loan currently in LOS — New Contract through Approved / Funded. This view is where you track deadlines, appraisal + title status, ICD workflow, and lock expiration.',
+      body: 'Every active loan in LOS — New Contract through Approved / Funded. This is where the team lives day to day: deadlines, appraisal + title status, ICD workflow, lock expiration, and notes all in one place.',
+    },
+    {
+      target: '[data-tour="deadlines-panel"]',
+      title: 'Deadlines panel',
+      body: 'The Deadlines panel highlights every Appraisal Deadline, Lock Expiration, and ICD Deadline in the next 30 days.\n\nOverdue = red · This Week = orange · Later = green. Click any row to jump straight to the loan.',
     },
     {
       target: '.lm-view-toggle',
       title: 'Cards vs Spreadsheet',
-      body: 'Toggle between the card view (skim overview) and the spreadsheet (every field in a scrollable table with per-column resize).\n\nSpreadsheet is the fastest way to edit multiple loans at once — every cell is inline-editable.',
+      body: 'Cards view is the quick, skimmable read — one card per loan with the key fields. Spreadsheet view is the workhorse: every field in a scrollable table with per-column resize.\n\nSpreadsheet is the fastest way to edit multiple loans in a row — every cell is inline-editable and saves on blur.',
     },
     {
       target: '.income-filters',
       title: 'Filters',
-      body: 'Filter by year, month, status, LO, loan type, and sale type. Reset (dark red chip) blows all filters back to All in one click.',
+      body: 'Filter by year, month, status, LO, loan type, and sale type. Layer as many as you need to drill into a specific slice — "all of Missy\'s CTC files closing this month," etc.\n\nReset (dark red chip) blows all filters back to All in one click.',
     },
     {
-      title: 'Deadlines panel',
-      body: 'The Deadlines panel above the loan list highlights any Appraisal Deadline, Lock Expiration, or ICD Deadline in the next 30 days. Overdue items are red; the next 7 days are orange.\n\nClick any row to jump straight to the loan.',
+      title: 'Save Now + reset columns',
+      body: 'Edits auto-save on blur, but Save Now flushes any pending edits to Supabase immediately if you want to force it before closing the tab.\n\nIf you ever break the column widths in Spreadsheet view, Reset Columns puts them all back to the default in one click.',
     },
     {
-      title: 'Save + webhooks',
-      body: 'Edits auto-save on blur (debounced to Supabase). Status changes fire GHL webhook subscriptions listening for loan.status_changed, so external systems stay in sync.\n\n"Save Now" flushes any pending edits immediately if you want to force it.',
+      title: 'Click any loan for the drawer',
+      body: 'Click a card or a row to open the full Loan Drawer — every field editable, notes history preserved, archive/unarchive available.\n\nStatus changes made anywhere (drawer, spreadsheet, Pipeline drag) sync in real time across the app.',
     },
   ];
 

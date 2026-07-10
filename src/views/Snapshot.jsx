@@ -421,28 +421,129 @@ function TargetsEditor({ targets, monthLabel, onSave, onClose }) {
 const SNAPSHOT_TOUR_STEPS = [
   {
     title: 'Welcome to the Lending Snapshot',
-    body: 'This is the dashboard: KPIs, funded volume, YoY history, purchase vs refi, home anniversaries, and monthly targets.\n\nEverything is live — Active Files, Pipeline Volume, and Closing counts all pull from LOANS in real time.',
+    body: 'This is the home base. Every number on this page is live — nothing here is manually entered.\n\nWhen a loan moves in the pipeline or gets marked funded, every KPI, chart, and count on this page updates within seconds — for you and everyone else on the team.',
   },
   {
     target: '.kpi-grid',
-    title: 'Top KPIs',
-    body: 'Active files by LO, pipeline volume, REFI Watch, closings this and next month, average loan size, and lifetime volume.\n\nLifetime Volume covers PAST_CLIENTS plus every loan the app has marked Funded — deduped by borrower + close date so nothing is double-counted.',
+    title: 'The 7 top KPIs',
+    body: '• Active Files — every loan currently in the pipeline (any pre-funded stage)\n• Pipeline Volume — total dollar amount of active files\n• REFI Watch — loans in the refinance-opportunity bucket\n• Closing This Month & Next Month — expected closings in each\n• Avg Loan Amount — mean size across active files\n• Lifetime Volume — every loan ever funded (historical + app-funded, deduped)\n\nAll pull from LOANS + the funded ledger in real time.',
   },
   {
     target: '.bar-chart',
     title: '12-Month Funded Volume',
-    body: 'Rolling 12-month view of funded volume from the canonical funded ledger (historical + app-funded).\n\nHover a bar to see the exact units + month/year.',
+    body: 'Rolling 12-month bar chart of funded volume from the canonical funded ledger — historical PAST_CLIENTS + every loan the app has marked Funded.\n\nHover a bar for exact month + units. Bars are scaled so the tallest month is 100% height; smaller months read relative to it.',
   },
   {
     target: '.donut-wrap',
     title: 'Purchase vs Refi',
-    body: 'Split of the active pipeline (pre-funded) by purpose. Refi Watch loans count here too.',
+    body: 'Split of the ACTIVE pipeline (pre-funded) by purpose. Refi Watch loans count as refi here.\n\nHigh purchase % is the team\'s traditional shape. A creeping refi % is either interest-rate movement or a bunch of borrowers due for their annual review.',
+  },
+  {
+    title: 'Year-over-Year History',
+    body: 'Below the chart: multi-year table showing volume by month by year. Compare this year\'s June against last year\'s June at a glance.\n\nQ1-Q4 subtotals appear on the right. Grand totals at the far right show lifetime totals per year.',
+  },
+  {
+    title: 'Home Anniversaries + Agent Milestones',
+    body: 'Home Anniversaries: every past client whose home-anniversary is coming up in the next 60 days. Perfect trigger for a card + gift touch. Days-away color-coded (today = red, ≤7d = yellow).\n\nAgent Milestones: partners approaching their next 3/5/10/25/50/100 deal milestone. Trigger a gift + recognition touch when they hit it.',
   },
   {
     title: 'Monthly Targets',
-    body: 'Scroll to the bottom to set volume, units, and new-apps targets per month. Progress vs target is computed live from the funded ledger and current pipeline.\n\nEach month\'s target is saved in your browser so different months can carry different goals.',
+    body: 'Scroll to the bottom. Set volume, units, and new-apps targets per month. Progress vs target is computed live from the funded ledger and current pipeline.\n\nEach month\'s target is saved in your browser so different months can carry different goals. Click Edit targets to change the numbers for the current month.',
+  },
+  {
+    title: 'Snapshot is a mirror',
+    body: 'The best thing about this page: nothing here needs updating. Every number reflects the current state of LOANS, PAST_CLIENTS, and PARTNERS.\n\nWhen the numbers look off, the source data is off — go edit the loan or partner, not the Snapshot.',
   },
 ];
+
+// Announcement banner state — dismiss forever (clears next time you clear
+// storage) or snooze for a week. Keyed by campaign id so we can retire
+// this message and roll a new one without unhiding it from users who
+// dismissed the old one.
+const ANNOUNCEMENT_ID = 'tours-2026-07';
+const ANNOUNCEMENT_KEY = 'kdt-announcement-state-v1';
+
+function loadAnnouncementState() {
+  try {
+    const raw = localStorage.getItem(ANNOUNCEMENT_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch { return {}; }
+}
+function saveAnnouncementState(state) {
+  try { localStorage.setItem(ANNOUNCEMENT_KEY, JSON.stringify(state || {})); } catch { /* ignore */ }
+}
+function isAnnouncementHidden(id) {
+  const state = loadAnnouncementState()[id];
+  if (!state) return false;
+  if (state.dismissed) return true;
+  if (state.snoozedUntil && state.snoozedUntil > Date.now()) return true;
+  return false;
+}
+function dismissAnnouncement(id) {
+  const all = loadAnnouncementState();
+  all[id] = { dismissed: true, at: Date.now() };
+  saveAnnouncementState(all);
+}
+function snoozeAnnouncement(id, ms) {
+  const all = loadAnnouncementState();
+  all[id] = { dismissed: false, snoozedUntil: Date.now() + ms };
+  saveAnnouncementState(all);
+}
+
+function AnnouncementBanner({ onStartTour }) {
+  const [hidden, setHidden] = useState(() => isAnnouncementHidden(ANNOUNCEMENT_ID));
+  if (hidden) return null;
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '14px 18px',
+        marginBottom: 18,
+        background: 'linear-gradient(135deg,#0A0A0A,#3a0e17)',
+        border: '1px solid #c62828',
+        borderRadius: 10,
+        color: '#fff',
+        boxShadow: '0 4px 18px rgba(200,16,46,.18)',
+      }}
+    >
+      <div style={{
+        fontSize: 22, flexShrink: 0, background: '#fbc02d', color: '#0A0A0A',
+        width: 38, height: 38, borderRadius: '50%', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', fontWeight: 900,
+      }}>
+        📣
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#fbc02d', marginBottom: 3 }}>
+          Hey Team
+        </div>
+        <div style={{ fontSize: 13, lineHeight: 1.45 }}>
+          Lauren made some really great changes you are going to want to check out — hit the <strong>📖 Take a Tour</strong> button at the top of each tab to walk through what’s new.
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+        <button
+          onClick={onStartTour}
+          style={{ padding: '6px 12px', fontSize: 11, fontWeight: 700, background: '#fbc02d', color: '#0A0A0A', border: 'none', borderRadius: 5, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px' }}
+        >Start here</button>
+        <button
+          onClick={() => { snoozeAnnouncement(ANNOUNCEMENT_ID, 7 * 24 * 60 * 60 * 1000); setHidden(true); }}
+          style={{ padding: '5px 10px', fontSize: 10, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,.4)', borderRadius: 5, cursor: 'pointer' }}
+          title="Show again in a week"
+        >Remind later</button>
+        <button
+          onClick={() => { dismissAnnouncement(ANNOUNCEMENT_ID); setHidden(true); }}
+          style={{ padding: '5px 10px', fontSize: 10, background: 'transparent', color: '#aaa', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+        >Dismiss</button>
+      </div>
+    </div>
+  );
+}
 
 export default function Snapshot(){
   const html = useMemo(buildSnapshotHTML, []);
@@ -454,6 +555,7 @@ export default function Snapshot(){
   }, []);
   return (
     <div>
+      <AnnouncementBanner onStartTour={() => setTourOpen(true)} />
       <div dangerouslySetInnerHTML={{ __html: html }} />
       <MonthlyTargets />
       {tourOpen && <Tour steps={SNAPSHOT_TOUR_STEPS} onClose={() => setTourOpen(false)} />}

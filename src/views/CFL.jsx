@@ -68,23 +68,35 @@ export default function CFL() {
   const CFL_TOUR_STEPS = [
     {
       title: 'Client for Life',
-      body: 'Every past client and every funded loan gets a rolling task list generated from your Workflows.\n\nHome anniversaries, birthdays, review requests, market-check-ins — anything with a date anchor on a client turns into a task on the day it\'s due.',
+      body: 'The relationship engine. Every past client and every funded loan gets a rolling task list generated from your Workflows.\n\nHome anniversaries, birthdays, review requests, market check-ins — anything with a date anchor on a client turns into a task on the day it should be sent.\n\nNothing to enter manually — the entire list is derived live from client_dates and workflow_tasks.',
     },
     {
       title: 'Buckets by urgency',
-      body: 'Tasks are grouped Overdue → Today → This Week → This Month → Later. This Month and Later start collapsed so 800 pending items don\'t overwhelm the view.\n\nOverdue > 30 days stays hidden by default — toggle "Show ancient" if you want to see them.',
+      body: 'Tasks are grouped Overdue → Today → This Week → This Month → Later. This Month and Later start collapsed so 800 pending items don\'t drown you in noise.\n\nOverdue > 30 days is hidden by default (sending a card 4 years late is worse than not sending it). Toggle "Show ancient" if you want to prove they\'re there.',
     },
     {
-      title: 'Filters + search',
-      body: 'Filter by role (LO / LOA / Admin / Automated), status (Open / Done), workflow, and free-text search across borrower + task title. Layer as many as you need to zero in.',
+      title: 'Search + filters',
+      body: 'Filter by role (LO / LOA / Admin / Automated), status (Open / Done), workflow, and free-text search across borrower + task title.\n\nLayer as many filters as you need — "just Kyle\'s LO tasks for the Birthday workflow due this week" is one dropdown per constraint. Reset clears everything at once.',
     },
     {
       title: 'Birthdays this month',
-      body: 'The Birthdays panel at the top shows every client whose birthday falls in the current month — the number-one CFL touch point.',
+      body: 'The Birthdays panel at the top shows every past client whose birthday falls in the current month — the single highest-value CFL touchpoint.\n\nComes straight from client_dates. Edit or delete via the client card. Add a new birthday via the past-client drawer or the Add a Date form.',
+    },
+    {
+      title: 'Client card drawer',
+      body: 'Click any client\'s name to open the client card. It shows every key date (birthday, home anniversary, wedding, closing, work anniversary, etc.), the client profile (identity corrections, review tracking), and every open task for this client in one place.\n\nEditing key dates here immediately reshuffles the task list.',
+    },
+    {
+      title: 'Email tasks: Send Email Now',
+      body: 'Any task with an email template attached has a Send Email Now button. Click it and your mail client opens with To, Subject, and Body pre-filled from the template — swap in the client\'s name, close date, etc. via merge tags.\n\nCommitting the email in your mail client is what marks the task complete — no double-click on the checkbox.',
+    },
+    {
+      title: 'Decision-point tasks',
+      body: 'Some tasks are decision points ("Did the borrower want a consultation?"). Instead of a checkbox they show a set of Answer buttons — the answer picked determines which downstream tasks appear.\n\nExample: answering "Yes, consultation" surfaces the Schedule Consultation task; answering "No" skips it entirely.',
     },
     {
       title: 'Completing a task',
-      body: 'Check the box on any task to mark it done — it drops out of the Open filter and is recorded against the client + due date so the same task doesn\'t reappear next year.\n\nEmail tasks have a "Send Email Now" button that opens your mail client pre-filled from the template.',
+      body: 'For plain tasks: check the box. The completion is recorded against the client + due date so the same task doesn\'t reappear next year.\n\nRecurring tasks (yearly anniversaries, quarterly reviews) re-emit for the next occurrence automatically — completing this year doesn\'t hide next year.',
     },
   ];
 

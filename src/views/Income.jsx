@@ -5,6 +5,7 @@ import { isBranchManager } from '../lib/auth.js';
 import { getAllFunded } from '../lib/fundedLoans.js';
 import { subscribeLoans } from '../lib/loansStore.js';
 import { parseLocalDate } from '../lib/clientDates.js';
+import Tour from '../components/Tour.jsx';
 
 // ---- helpers (ported from legacy) ----
 const fmt$ = (n) =>
@@ -129,6 +130,34 @@ function IncomeInner() {
   const [rows, setRows] = useState(buildIncome);
   const rebuildRows = useCallback(() => setRows(buildIncome()), []);
   useEffect(() => subscribeLoans(rebuildRows), [rebuildRows]);
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const INCOME_TOUR_STEPS = [
+    {
+      title: 'Income & Comp — Branch Manager only',
+      body: 'This is the compensation ledger. Every funded loan shows LO gross, LOA fee, concessions, LO net, and (for Kyle only) the branch-manager override on Missy\'s loans.\n\nRestricted to Branch Manager — Admin and LO can\'t see this page.',
+    },
+    {
+      title: 'How the numbers are computed',
+      body: 'LO Gross = loan amount × BPS (130 for Kyle, 120 for Missy).\n\nBranch Gross is scaled by close date:\n  • Before Jun 2025 → 0 bps\n  • Jun 2025 to Mar 2026 → 10 bps\n  • Apr 2026 onward → 30 bps\n\nKyle\'s override on Missy\'s loans is a flat 10 bps.',
+    },
+    {
+      title: 'This month + next month + pipeline',
+      body: 'The tiles at the top compare this month, last month, next month, and pipeline gross for both LOs — so you know at a glance whether the desk is on pace or not.',
+    },
+    {
+      title: 'Per-row editing',
+      body: 'You can override LO gross, LOA fee, and concessions on any row (useful when a real check comes in different from what BPS predicts). These edits are ephemeral — they reset when the ledger rebuilds. For lasting comp adjustments, edit the loan directly.',
+    },
+    {
+      title: 'Pair with Net Income Calculator',
+      body: 'For after-tax paycheck math (federal + FICA + state, YTD progression by month), open the Net Income Calculator from the sidebar. Same source data, projected paycheck by paycheck through year end.',
+    },
+  ];
   const allTimeTotals = useMemo(() => computeAllTimeTotals(rows), [rows]);
 
   const [filters, setFilters] = useState({
@@ -548,6 +577,7 @@ function IncomeInner() {
           </table>
         </div>
       </div>
+      {tourOpen && <Tour steps={INCOME_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }

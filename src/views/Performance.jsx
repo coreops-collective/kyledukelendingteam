@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { USERS, ROLE_LABELS } from '../data/users.js';
 import { GOALS, defaultGoalSkeleton } from '../data/goals.js';
+import Tour from '../components/Tour.jsx';
 
 const fmt$M = (n) => {
   if (n == null) return '—';
@@ -32,6 +33,31 @@ export default function Performance() {
   const [activeMember, setActiveMember] = useState(team[0]?.name || 'Kyle Duke');
   const [editingName, setEditingName] = useState(null);
   const [goalsState, setGoalsState] = useState(allGoals);
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const PERF_TOUR_STEPS = [
+    {
+      title: 'Performance & Goals',
+      body: 'Where each teammate\'s annual goals live — the Big Goal (target volume + units + income) plus quarterly checkpoints.\n\nThink of it as everyone\'s scoreboard. Open, honest, visible to the whole team so accountability doesn\'t need reminders.',
+    },
+    {
+      target: '.perf-tabs',
+      title: 'Pick a teammate',
+      body: 'Tabs across the top switch between team members. Every user who\'s been added on the Team Members page shows up here automatically.\n\nUsers without goals set yet show an "Edit" prompt to configure them.',
+    },
+    {
+      title: 'The Big Goal',
+      body: 'Each person has one Big Goal for the year: target volume, target units, target income. Progress bars show where they are today vs where they need to be to hit it.\n\nEdit lets you adjust the target mid-year if life happens.',
+    },
+    {
+      title: 'Quarterly Checkpoints',
+      body: 'Below the Big Goal, four quarterly checkpoints track progress. Q1 through Q4 targets can be set independently — you might want a heavier Q2 for spring purchase season, for example.\n\nAll data persists per-user so the team can compare notes at quarterly reviews.',
+    },
+  ];
 
   const goal = goalsState[activeMember];
   const tabs = team.map((t, i) => (
@@ -188,6 +214,7 @@ export default function Performance() {
           }}
         />
       )}
+      {tourOpen && <Tour steps={PERF_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { getAllFunded } from '../lib/fundedLoans.js';
 import { LOANS } from '../data/loans.js';
 import { subscribeLoans } from '../lib/loansStore.js';
 import { parseLocalDate } from '../lib/clientDates.js';
+import Tour from '../components/Tour.jsx';
 
 // Mirror of the Income tab's per-LO comp formulas. Kyle's personal earnings
 // = LO gross on his own loans + branch-manager override on Missy's loans.
@@ -242,6 +243,34 @@ function Inner() {
   // Re-render when the loan store fires (new fundings, edits, realtime).
   const [, setTick] = useState(0);
   useEffect(() => subscribeLoans(() => setTick((t) => t + 1)), []);
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => window.removeEventListener('kdt-start-tour', startTour);
+  }, []);
+  const NET_INCOME_TOUR_STEPS = [
+    {
+      title: 'Net Income Calculator — Branch Manager only',
+      body: 'The take-home paycheck projector. Runs Kyle\'s YTD funded gross + rest-of-year pipeline through federal brackets, FICA, and state to project every paycheck through year end.\n\nRestricted to Branch Manager. Same guard as Income & Comp.',
+    },
+    {
+      title: 'How the projection works',
+      body: 'Loans are bucketed by close month. Each month\'s LO gross + branch override becomes a paycheck on the 15th of the following month (Apr closings → May 15 check).\n\nTax is applied MARGINALLY: each paycheck\'s tax uses the bracket you\'re actually in when it hits, not a flat annual rate.',
+    },
+    {
+      title: 'Filing status + std deduction',
+      body: 'Pick your filing status — Single, Married Joint, Head of Household. Standard deduction auto-updates to the 2026 default for that status, but you can override.\n\nAdd pre-tax deductions (401k, HSA, health), other income, and state rate if you\'ve moved out of Florida (default 0%).',
+    },
+    {
+      title: 'FICA + Child Tax Credit',
+      body: 'FICA mode: W2 (7.65%) or Self-Employed (15.3%). Additional Medicare (0.9%) kicks in above the threshold for your filing status.\n\nChild Tax Credit + Other Dependents credit are applied at filing time — the per-paycheck net matches what actually hits the bank.',
+    },
+    {
+      title: 'Paycheck-by-paycheck table',
+      body: 'The main table shows every projected paycheck through Dec 31 — gross, federal, FICA, state, net, and YTD net. Compare against Taxes Withheld YTD to see if you\'re under- or over-withholding.\n\nSame source data as Income & Comp — edit a loan there and the projection updates here.',
+    },
+  ];
 
   // Anchor "today" once per mount so date math is stable across re-renders.
   const [today] = useState(() => new Date());
@@ -607,6 +636,7 @@ function Inner() {
           </div>
         </div>
       </div>
+      {tourOpen && <Tour steps={NET_INCOME_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }

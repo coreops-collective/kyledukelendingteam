@@ -4,6 +4,7 @@ import {
 } from '../lib/jobRoles.js';
 import { loadWorkflows, getWorkflows, getTasksFor } from '../lib/workflows.js';
 import { showError } from '../lib/toaster.js';
+import Tour from '../components/Tour.jsx';
 
 // One-line hint for each section so the empty state doesn't feel blank.
 const SECTION_META = {
@@ -60,6 +61,7 @@ export default function Roles() {
   const bump = () => force((n) => n + 1);
   const [activeKey, setActiveKey] = useState(null);
   const [showAddRole, setShowAddRole] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([loadJobRoles(), loadWorkflows()]).finally(bump);
@@ -69,8 +71,40 @@ export default function Roles() {
     ];
     const on = () => bump();
     events.forEach((e) => window.addEventListener(e, on));
-    return () => events.forEach((e) => window.removeEventListener(e, on));
+    const startTour = () => setTourOpen(true);
+    window.addEventListener('kdt-start-tour', startTour);
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, on));
+      window.removeEventListener('kdt-start-tour', startTour);
+    };
   }, []);
+
+  const ROLES_TOUR_STEPS = [
+    {
+      title: 'Roles & Responsibilities',
+      body: 'This is the single source of truth for what every role on the team owns — LO, LOA, Admin, Automated, plus any custom role you add.\n\nThink of it as a living employee handbook: the job description writes itself from real workflow tasks, and every role gets a proper 30/60/90 plus accountability metrics.',
+    },
+    {
+      title: 'Left rail: role picker',
+      body: 'Click any role to open its page. The four built-in roles come pre-seeded and can\'t be deleted (workflow tasks reference them). Custom roles you add can be deleted.\n\n"+ Add role" at the bottom creates a new role — it appears immediately in the workflow task Owner picker so you can assign tasks to it.',
+    },
+    {
+      title: 'Reports To',
+      body: 'Under the role name, pick who this role reports to. Choose another role or leave it as "Nobody / Top of chain" for the Branch Manager.\n\nThe AI Suggest uses this — if the LO reports to the Branch Manager, the JD says so. It also lands on the PDF header.',
+    },
+    {
+      title: 'Responsibilities (auto-populated)',
+      body: 'This panel lists every workflow task assigned to this role, grouped by workflow. No duplicate entry — assign a task to LO on the Workflows page and it shows up here on the next render.\n\nWithin each workflow the task is deduped, but the same responsibility can appear under multiple workflows if it truly recurs.',
+    },
+    {
+      title: 'AI Suggest',
+      body: 'Every section has an ✨ AI Suggest button. Click it and Claude drafts:\n\n• Job Description — Kyle Duke team context + 3-5 synthesized responsibility themes (never a raw task dump)\n• 30/60/90 Day Plans — week-by-week ramp\n• Accountability — mortgage-specific KPIs\n\nEverything is editable after generation. Blur to save.',
+    },
+    {
+      title: 'Export PDF',
+      body: 'Export PDF opens a print-ready window with the brand crest, the role name, "Reports to" line, all sections, and the responsibilities grouped by workflow.\n\nBrowser print dialog → Save as PDF. Send it to a new hire, a candidate, or an accountability partner.',
+    },
+  ];
 
   const roles = getJobRoles();
   const active = roles.find((r) => r.key === activeKey) || roles[0] || null;
@@ -93,6 +127,7 @@ export default function Roles() {
           }}
         />
       )}
+      {tourOpen && <Tour steps={ROLES_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
   );
 }
