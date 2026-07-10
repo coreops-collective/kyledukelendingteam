@@ -75,8 +75,11 @@ export default function Tasks() {
 
   const toggleWorkflowTask = (item) => {
     const iso = fmtIsoToday();
-    if (item.completed) unmarkTaskCompleted(item.task.id, item.client_name, iso);
-    else markTaskCompleted(item.task.id, item.client_name, iso);
+    // item.loan_id is populated by generateStatusTasks when the task is
+    // tied to a specific loan — passing it scopes the completion to that
+    // loan so two loans sharing a borrower name don't double-complete.
+    if (item.completed) unmarkTaskCompleted(item.task.id, item.client_name, iso, item.loan_id);
+    else markTaskCompleted(item.task.id, item.client_name, iso, null, null, item.loan_id);
     bumpWorkflow();
   };
 

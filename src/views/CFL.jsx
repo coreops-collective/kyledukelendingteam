@@ -437,17 +437,17 @@ function TaskRow({ item, today, first, onOpenClient }) {
   })();
   const onToggle = () => {
     if (item.completed) {
-      unmarkTaskCompleted(item.task.id, item.client_name, dueIso);
+      unmarkTaskCompleted(item.task.id, item.client_name, dueIso, item.loan_id);
       return;
     }
     // Decision points don't get a plain checkbox — the answer buttons
     // handle completion. Show a helpful nudge if someone still tries
     // to check the checkbox.
     if (isDecision) return;
-    markTaskCompleted(item.task.id, item.client_name, dueIso);
+    markTaskCompleted(item.task.id, item.client_name, dueIso, null, null, item.loan_id);
   };
   const answerDecision = (outcome) => {
-    markTaskCompleted(item.task.id, item.client_name, dueIso, null, outcome);
+    markTaskCompleted(item.task.id, item.client_name, dueIso, null, outcome, item.loan_id);
   };
   const loan = LOANS.find((l) => (l.borrower || '').trim().toLowerCase() === (item.client_name || '').trim().toLowerCase());
   const mailto = item.task.email_subject ? composeMailto(item.task, item.client_name, loan) : null;

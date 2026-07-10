@@ -13,13 +13,32 @@ const WORKFLOWS = [];
 const TASKS_BY_WORKFLOW = new Map();
 const COMPLETIONS = new Map();
 
-const cKey = (taskId, name, dueDate) =>
-  `${taskId}||${(name || '').trim().toLowerCase()}||${dueDate || ''}`;
+// Two key shapes so completions can be scoped either to a specific loan
+// (new — added with migration 022_task_completion_loan_id) OR to a
+// client name (legacy — completions written before loan_id existed).
+// The dual scheme prevents the shared-name double-complete bug: two
+// active loans for "Jane Smith" on the same task/due date now get
+// separate keys.
+const cKeyByLoan = (taskId, loanId, dueDate) =>
+  `${taskId}||loan:${loanId}||${dueDate || ''}`;
+const cKeyByName = (taskId, name, dueDate) =>
+  `${taskId}||name:${(name || '').trim().toLowerCase()}||${dueDate || ''}`;
+
+// Historical rows written before 022 landed had no loan_id, so they get
+// indexed under the name key. New rows get indexed under BOTH keys so a
+// later read that only knows the name (e.g. CFL past-client tasks with
+// no live loan) can still hit them.
+function indexCompletion(row) {
+  const dueIso = row.due_date || '';
+  COMPLETIONS.set(cKeyByName(row.task_id, row.client_name, dueIso), row);
+  if (row.loan_id) COMPLETIONS.set(cKeyByLoan(row.task_id, row.loan_id, dueIso), row);
+}
 
 export function getWorkflows() { return WORKFLOWS; }
 export function getTasksFor(workflowId) { return TASKS_BY_WORKFLOW.get(workflowId) || []; }
-export function isCompleted(taskId, clientName, dueDate) {
-  return COMPLETIONS.has(cKey(taskId, clientName, dueDate));
+export function isCompleted(taskId, clientName, dueDate, loanId) {
+  if (loanId && COMPLETIONS.has(cKeyByLoan(taskId, loanId, dueDate))) return true;
+  return COMPLETIONS.has(cKeyByName(taskId, clientName, dueDate));
 }
 
 export const TRIGGER_BUILTIN_CLOSING = 'Closing';
@@ -82,7 +101,7 @@ export async function loadWorkflows() {
       TASKS_BY_WORKFLOW.get(t.workflow_id).push(t);
     });
     COMPLETIONS.clear();
-    (cs || []).forEach((c) => COMPLETIONS.set(cKey(c.task_id, c.client_name, c.due_date), c));
+    (cs || []).forEach((c) => indexCompletion(c));
     window.dispatchEvent(new Event('kdt-workflows-loaded'));
   } catch (e) {
     console.warn('[workflows] load:', e.message);
@@ -255,39 +274,59 @@ export async function deleteTask(id) {
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
 
-export async function markTaskCompleted(taskId, clientName, dueDate, completedBy, outcome) {
-  const k = cKey(taskId, clientName, dueDate);
+export async function markTaskCompleted(taskId, clientName, dueDate, completedBy, outcome, loanId) {
   const dueIso = dueDate ? toIsoDate(dueDate) : null;
-  const { data, error } = await supabase.from('task_completions').insert({
+  const baseRow = {
     task_id: taskId,
     client_name: clientName,
     due_date: dueIso,
     completed_by: completedBy || null,
     outcome: outcome || null,
-  }).select().single();
+  };
+  // Include loan_id when the caller has one — after 022_task_completion_loan_id
+  // this scopes the completion to a specific loan so two loans sharing a
+  // borrower name don't double-complete.
+  //
+  // Graceful downgrade: if the migration hasn't run yet, Postgres rejects
+  // the insert with "column loan_id does not exist". Detect that specific
+  // error, log once, and retry without loan_id so the completion still
+  // lands (falling back to name-scoped keying, which was the pre-022
+  // behavior). Any other error propagates to the toaster.
+  const withLoan = loanId ? { ...baseRow, loan_id: loanId } : baseRow;
+  let { data, error } = await supabase.from('task_completions').insert(withLoan).select().single();
+  if (error && loanId && /column\s+.*loan_id.*does not exist/i.test(error.message || '')) {
+    console.warn('[workflows] loan_id column missing — falling back. Run migration 022_task_completion_loan_id.');
+    ({ data, error } = await supabase.from('task_completions').insert(baseRow).select().single());
+  }
   if (error) {
     console.warn('[workflows] markCompleted:', error.message);
     showError(`Couldn't mark task complete: ${error.message}`, {
-      retry: () => markTaskCompleted(taskId, clientName, dueDate, completedBy, outcome),
+      retry: () => markTaskCompleted(taskId, clientName, dueDate, completedBy, outcome, loanId),
     });
     return;
   }
-  COMPLETIONS.set(k, data);
+  indexCompletion(data);
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
 
-export async function unmarkTaskCompleted(taskId, clientName, dueDate) {
-  const k = cKey(taskId, clientName, dueDate);
-  const completion = COMPLETIONS.get(k);
+export async function unmarkTaskCompleted(taskId, clientName, dueDate, loanId) {
+  const dueIso = dueDate ? (typeof dueDate === 'string' ? dueDate : toIsoDate(dueDate)) : '';
+  // Prefer the loan-scoped completion when we have a loan_id — that's the
+  // one that got clicked. Fall back to the name-scoped key so historical
+  // rows (no loan_id) still delete correctly.
+  const completion = (loanId && COMPLETIONS.get(cKeyByLoan(taskId, loanId, dueIso)))
+    || COMPLETIONS.get(cKeyByName(taskId, clientName, dueIso));
   if (!completion) return;
   const { error } = await supabase.from('task_completions').delete().eq('id', completion.id);
   if (error) {
     console.warn('[workflows] unmark:', error.message);
     showError(`Couldn't unmark task: ${error.message}`, {
-      retry: () => unmarkTaskCompleted(taskId, clientName, dueDate),
+      retry: () => unmarkTaskCompleted(taskId, clientName, dueDate, loanId),
     });
   }
-  COMPLETIONS.delete(k);
+  // Clear BOTH key shapes so a stale entry can't linger under the other one.
+  COMPLETIONS.delete(cKeyByName(taskId, clientName, dueIso));
+  if (completion.loan_id) COMPLETIONS.delete(cKeyByLoan(taskId, completion.loan_id, dueIso));
   window.dispatchEvent(new Event('kdt-workflows-changed'));
 }
 
@@ -553,10 +592,11 @@ export function generateStatusTasks(loans) {
         // appears. That's the intended behavior.
         const dueDate = today;
         const iso = todayIso;
-        const completed = isCompleted(t.id, l.borrower, iso);
+        const completed = isCompleted(t.id, l.borrower, iso, l.id);
         out.push({
           id: `status||${t.id}||${l.id}||${iso}`,
           task: t,
+          loan_id: l.id,
           workflow: wf,
           client_name: l.borrower,
           due_date: dueDate,
