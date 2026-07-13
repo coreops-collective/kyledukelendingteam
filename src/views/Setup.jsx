@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { USERS, ROLE_LABELS, sbInsertUser, sbUpdateUser, sbDeleteUser } from '../data/users.js';
+import { USERS, ROLE_LABELS, sbInsertUser, sbUpdateUser, sbDeleteUser, sbSetUserPassword } from '../data/users.js';
 import { getCurrentUser, isAdmin } from '../lib/auth.js';
 import EmailDeliverySettings from './EmailDeliverySettings.jsx';
 import NotificationRules from './NotificationRules.jsx';
@@ -126,24 +126,27 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
   // Can't change a BM's password unless I'm a BM too (self-edit allowed).
   const canChangePassword = iAmBM || (me?.id === user.id) || !targetIsBM;
 
-  function save() {
+  async function save() {
     const u = USERS.find(x => x.id === user.id);
     if (!u) return;
+    // Password changes go through their own bcrypt-hashing RPC. Everything
+    // else goes through update_user_profile / set_user_role.
+    if (pass && !canChangePassword) {
+      toast({ title: 'Not allowed', msg: "Only a Branch Manager can change a Branch Manager's password" });
+      return;
+    }
     u.name = name.trim();
     u.email = email.trim();
-    if (pass) {
-      if (!canChangePassword) {
-        toast({ title: 'Not allowed', msg: "Only a Branch Manager can change a Branch Manager's password" });
-        return;
-      }
-      u.password = pass;
-    }
     u.role = role;
     u.initials = u.name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
     onSaved();
     onClose();
     toast({ title: 'User Saved', msg: `${u.name} updated` });
-    sbUpdateUser(u.id, { name: u.name, email: u.email, password: u.password, role: u.role, initials: u.initials, nmls: u.nmls || '' });
+    sbUpdateUser(u.id, { name: u.name, email: u.email, role: u.role, initials: u.initials, nmls: u.nmls || '' });
+    if (pass) {
+      const ok = await sbSetUserPassword(u.id, pass);
+      if (ok) toast({ title: 'Password reset', msg: `${u.name}'s password updated` });
+    }
   }
 
   function del() {
@@ -246,7 +249,7 @@ function SetupInner() {
     {
       target: '.section-card',
       title: 'Users list',
-      body: 'Every current user — name, email, role, and password (visible only to Branch Manager).\n\nClick the pencil to edit a user, X to remove them. Removing a user does NOT delete anything they created (loans, tasks, notes stay put) — it just prevents future logins.',
+      body: 'Every current user — name, email, role.\n\nPasswords are bcrypt-hashed server-side and never leave the database. Nobody, not even the Branch Manager, can view them. Use Edit → set a new password to reset for a user; the change takes effect at their next login.\n\nRemoving a user does NOT delete anything they created (loans, tasks, notes stay put) — it just prevents future logins.',
     },
     {
       title: 'Notification Rules + Webhooks',
@@ -277,7 +280,7 @@ function SetupInner() {
           <table className="loans-table">
             <thead>
               <tr>
-                <th>Name</th><th>Email</th><th>Role</th><th>Password</th>
+                <th>Name</th><th>Email</th><th>Role</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -294,9 +297,6 @@ function SetupInner() {
                   </td>
                   <td>{u.email}</td>
                   <td><span className="status-pill" style={rolePillStyle(u.role)}>{ROLE_LABELS[u.role]}</span></td>
-                  <td style={{ fontFamily: 'Menlo,monospace', fontSize: 11, color: '#888' }}>
-                    {me?.role === 'branch_manager' ? u.password : '••••••••'}
-                  </td>
                   <td style={{ textAlign: 'right' }}>
                     <button className="form-btn secondary" style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setEdit(u)}>
                       {me && me.id === u.id ? 'Edit (you)' : 'Edit'}

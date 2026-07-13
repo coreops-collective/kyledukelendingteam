@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
-import { USERS } from '../data/users.js';
 import { setCurrentUser } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 
 const REMEMBER_KEY = 'kdt.rememberEmail';
-const REMEMBER_PASS_KEY = 'kdt.rememberPass';
-// Light obfuscation only — this is browser-local convenience, not security.
-const encodePass = (p) => btoa(unescape(encodeURIComponent(p)));
-const decodePass = (p) => { try { return decodeURIComponent(escape(atob(p))); } catch { return ''; } };
+// Legacy key from when remember-me stored a base64-encoded password in
+// localStorage. Cleared on mount so the plaintext-in-localStorage
+// artifact doesn't linger after this update ships.
+const LEGACY_REMEMBER_PASS_KEY = 'kdt.rememberPass';
 
 export default function Login({ onSuccess }) {
   const [email, setEmail] = useState('');
@@ -19,12 +18,17 @@ export default function Login({ onSuccess }) {
   const [forgotMsg, setForgotMsg] = useState('');
   const [forgotSending, setForgotSending] = useState(false);
 
-  // Prefill remembered email + password on mount
+  // Prefill remembered email on mount. Password prefill was removed —
+  // storing plaintext (even base64) in localStorage is not compatible
+  // with the bcrypt-hashed users table introduced in migration 028.
+  // Also clear any leftover legacy password value so upgraded browsers
+  // don't keep an old plaintext artifact around.
   useEffect(() => {
     const savedEmail = localStorage.getItem(REMEMBER_KEY);
-    const savedPass = localStorage.getItem(REMEMBER_PASS_KEY);
     if (savedEmail) { setEmail(savedEmail); setRemember(true); }
-    if (savedPass) { setPass(decodePass(savedPass)); }
+    if (localStorage.getItem(LEGACY_REMEMBER_PASS_KEY)) {
+      localStorage.removeItem(LEGACY_REMEMBER_PASS_KEY);
+    }
   }, []);
 
   const [submitting, setSubmitting] = useState(false);
@@ -57,15 +61,14 @@ export default function Login({ onSuccess }) {
         // eslint-disable-next-line no-console
         console.log('[login] RPC data:', data);
       }
-      let user = !error && Array.isArray(data) && data.length ? data[0] : null;
+      const user = !error && Array.isArray(data) && data.length ? data[0] : null;
 
-      // Local-seed fallback so dev / offline / pre-migration environments
-      // still work. In production the RPC is the source of truth.
-      if (!user) {
-        user = USERS.find(
-          (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === pass
-        ) || null;
-      }
+      // Local-seed fallback removed. Previously src/data/users.js shipped
+      // plaintext credentials in the JS bundle for offline / dev
+      // convenience; anyone who viewed the bundle could log in as any
+      // seeded user. Now the RPC is the ONLY source of truth. If the
+      // RPC is unreachable, the app can't authenticate — but the app
+      // can't do anything useful in that state anyway.
       if (!user) {
         if (error) {
           const msg = error.message || error.toString();
@@ -79,10 +82,8 @@ export default function Login({ onSuccess }) {
 
       if (remember) {
         localStorage.setItem(REMEMBER_KEY, email.trim());
-        localStorage.setItem(REMEMBER_PASS_KEY, encodePass(pass));
       } else {
         localStorage.removeItem(REMEMBER_KEY);
-        localStorage.removeItem(REMEMBER_PASS_KEY);
       }
       setCurrentUser(user);
       onSuccess?.(user);
