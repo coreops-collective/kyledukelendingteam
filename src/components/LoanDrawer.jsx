@@ -3,6 +3,7 @@ import { STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import { markLoansDirty } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
+import { audit, ACTIONS } from '../lib/audit.js';
 
 // Every pipeline stage label so the Status dropdown works for both
 // pre-contract (New Lead, Applied, HOT PA, REFI Watch) and LOS stages.
@@ -79,6 +80,12 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     // Mirror the GHL webhook LoanManagement fires on status transitions so
     // status flipped from the drawer stays in sync with GHL contact state.
     if (key === 'status' && prevStatus !== value) {
+      audit(ACTIONS.LOAN_STATUS_CHANGED, 'loan', loan.id, {
+        borrower: loan.borrower,
+        old_status: prevStatus,
+        new_status: value,
+        source: 'loan_drawer',
+      });
       fireWebhooks('loan.status_changed', {
         loan_id: loan.id,
         borrower: loan.borrower,

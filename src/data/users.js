@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase.js';
 import { showError } from '../lib/toaster.js';
+import { audit, ACTIONS } from '../lib/audit.js';
 
 // USERS — mutable module-level array. Populated on app mount from the
 // Supabase users table via loadUsersFromSupabase(). Previously carried a
@@ -36,7 +37,13 @@ export async function sbInsertUser(user) {
       });
       return null;
     }
-    return Array.isArray(data) && data.length ? data[0] : null;
+    const created = Array.isArray(data) && data.length ? data[0] : null;
+    if (created) {
+      audit(ACTIONS.USER_CREATED, 'user', created.id, {
+        name: created.name, email: created.email, role: created.role,
+      });
+    }
+    return created;
   } catch (e) {
     console.warn('sbInsertUser error:', e.message);
     showError(`Couldn't add ${user.name}: ${e.message}`, {
@@ -60,7 +67,9 @@ export async function sbSetUserPassword(userId, newPassword) {
       showError(`Couldn't reset password: ${error.message}`);
       return false;
     }
-    return !!data;
+    const ok = !!data;
+    if (ok) audit(ACTIONS.USER_PASSWORD_RESET, 'user', userId, null);
+    return ok;
   } catch (e) {
     console.warn('sbSetUserPassword error:', e.message);
     showError(`Couldn't reset password: ${e.message}`);
@@ -82,7 +91,9 @@ export async function sbChangeMyPassword(email, currentPassword, newPassword) {
       showError(`Couldn't change password: ${error.message}`);
       return false;
     }
-    return !!data;
+    const ok = !!data;
+    if (ok) audit(ACTIONS.USER_PASSWORD_CHANGED, 'user', null, { email });
+    return ok;
   } catch (e) {
     console.warn('sbChangeMyPassword error:', e.message);
     showError(`Couldn't change password: ${e.message}`);
@@ -121,6 +132,10 @@ export async function sbUpdateUser(id, patch) {
         });
         return;
       }
+      const changed = Object.entries(profileArgs)
+        .filter(([k, v]) => k !== 'p_target_id' && v !== null)
+        .map(([k]) => k.replace(/^p_/, ''));
+      audit(ACTIONS.USER_UPDATED, 'user', id, { changed_fields: changed });
     }
     if (wantsRole) {
       const { error } = await supabase.rpc('set_user_role', {
@@ -130,6 +145,8 @@ export async function sbUpdateUser(id, patch) {
       if (error) {
         console.warn('sbUpdateUser (role):', error.message);
         showError(`Couldn't update role: ${error.message}`);
+      } else {
+        audit(ACTIONS.USER_ROLE_CHANGED, 'user', id, { new_role: patch.role });
       }
     }
   } catch (e) {
@@ -148,6 +165,8 @@ export async function sbDeleteUser(id) {
       showError(`Couldn't remove team member: ${error.message}`, {
         retry: () => sbDeleteUser(id),
       });
+    } else {
+      audit(ACTIONS.USER_DELETED, 'user', id, null);
     }
   } catch (e) {
     console.warn('sbDeleteUser error:', e.message);

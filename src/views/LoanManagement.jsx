@@ -7,6 +7,7 @@ import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, saveLoansNow, subscribeLoans } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
+import { audit, ACTIONS } from '../lib/audit.js';
 import { appendNotesHistory, loadNotesHistory } from '../lib/notesHistory.js';
 import { parseLocalDate } from '../lib/clientDates.js';
 import Tour from '../components/Tour.jsx';
@@ -1037,6 +1038,12 @@ export default function LoanManagement() {
     // Payload matches the shape GHL expects for their contact-update
     // webhook — full loan record plus the transition details.
     if (prevStatus !== statusValue) {
+      audit(ACTIONS.LOAN_STATUS_CHANGED, 'loan', loan.id, {
+        borrower: loan.borrower,
+        old_status: prevStatus,
+        new_status: statusValue,
+        source: 'loan_management',
+      });
       fireWebhooks('loan.status_changed', {
         loan_id: loan.id,
         borrower: loan.borrower,
