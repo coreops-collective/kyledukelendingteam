@@ -43,7 +43,7 @@ function sanitizeHtml(html) {
   return doc.body.innerHTML;
 }
 
-export default function RichTextEditor({ value, onChange, placeholder, minHeight = 220, ariaLabel }) {
+export default function RichTextEditor({ value, onChange, onBlur, placeholder, minHeight = 220, ariaLabel }) {
   const ref = useRef(null);
   const lastValueRef = useRef(value);
   const [hasFocus, setHasFocus] = useState(false);
@@ -159,7 +159,7 @@ export default function RichTextEditor({ value, onChange, placeholder, minHeight
         aria-multiline="true"
         aria-label={ariaLabel || 'Rich text editor'}
         onInput={commit}
-        onBlur={() => { setHasFocus(false); commit(); }}
+        onBlur={() => { setHasFocus(false); commit(); onBlur?.(); }}
         onFocus={() => setHasFocus(true)}
         onPaste={onPaste}
         suppressContentEditableWarning
