@@ -478,16 +478,16 @@ function RoleTabs({ role, draft, responsibilities, onChangeField, onCommitField,
   );
 }
 
-// Visual training outline for a role. Renders every workflow this role
-// is involved in as a tree — tasks in order, decision points expanded
-// into branches with each answer's sub-tasks. Designed for a new hire
-// to open, read top-to-bottom, and understand what their day looks
-// like across every workflow they touch.
+// Visual training outline for a role. Sub-tabs across the top pick one
+// workflow at a time so each flowchart gets the full page width — no
+// competing for space or scrolling past unrelated content.
+//
+// Below the sub-tab strip, the picked workflow renders as a true
+// vertical flowchart: task cards centered on the page, arrows between
+// them, and decision points that fan out into labeled columns for each
+// answer. Print-friendly by design (see .training-flowchart print
+// styles inline below).
 function TrainingPanel({ role }) {
-  // Consider a workflow "relevant" to this role if it has at least one
-  // task assigned to them. New hires still see the full task list of
-  // each workflow (not just their own tasks) so they understand the
-  // hand-offs — but muted styling makes their own tasks pop.
   const trainingWorkflows = useMemo(() => {
     const out = [];
     for (const wf of getWorkflows()) {
@@ -498,6 +498,15 @@ function TrainingPanel({ role }) {
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role.key]);
+
+  const [activeWfId, setActiveWfId] = useState(null);
+  // Auto-pick the first workflow whenever the list changes.
+  useEffect(() => {
+    if (trainingWorkflows.length === 0) return;
+    if (!activeWfId || !trainingWorkflows.some((tw) => tw.workflow.id === activeWfId)) {
+      setActiveWfId(trainingWorkflows[0].workflow.id);
+    }
+  }, [trainingWorkflows, activeWfId]);
 
   if (trainingWorkflows.length === 0) {
     return (
@@ -512,31 +521,68 @@ function TrainingPanel({ role }) {
     );
   }
 
+  const active = trainingWorkflows.find((tw) => tw.workflow.id === activeWfId) || trainingWorkflows[0];
+
   return (
     <div>
       <div style={{
-        marginBottom: 18, padding: 14,
+        marginBottom: 14, padding: 12,
         background: 'linear-gradient(135deg,#0A0A0A,#3a0e17)', color: '#fff',
         borderRadius: 10,
-      }}>
+      }} className="training-header">
         <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#fbc02d', marginBottom: 4 }}>
           Training Outline for {role.label}
         </div>
         <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.5 }}>
-          These are the workflows you'll be responsible for. Each one is laid out top-to-bottom: what triggers it, what tasks run in order, and how decision points branch the work. Your tasks are highlighted; other teammates' tasks appear muted so you understand the full hand-off.
+          Pick a workflow to see it as a top-to-bottom flowchart. Print any workflow directly from your browser — the layout is designed for it. Your tasks are highlighted yellow; hand-offs to other roles are muted so you can see the full picture.
         </div>
       </div>
-      {trainingWorkflows.map((tw) => (
-        <TrainingWorkflow key={tw.workflow.id} workflow={tw.workflow} tasks={tw.tasks} roleKey={role.key} />
-      ))}
+
+      {/* Sub-tab strip: one pill per workflow, active gets the red underline. */}
+      <div style={{
+        display: 'flex', gap: 2, borderBottom: '1px solid #e5e5e5',
+        marginBottom: 20, flexWrap: 'wrap',
+      }} role="tablist" className="training-subtabs">
+        {trainingWorkflows.map((tw) => {
+          const on = tw.workflow.id === active.workflow.id;
+          const myCount = tw.tasks.filter((t) => (t.role || '') === role.key).length;
+          return (
+            <button
+              key={tw.workflow.id}
+              role="tab"
+              aria-selected={on}
+              onClick={() => setActiveWfId(tw.workflow.id)}
+              style={{
+                padding: '8px 14px', fontSize: 11, fontWeight: 700,
+                background: on ? '#fff' : 'transparent',
+                border: 'none',
+                borderBottom: `3px solid ${on ? '#c62828' : 'transparent'}`,
+                marginBottom: -1, cursor: 'pointer',
+                color: on ? '#0A0A0A' : '#666',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <span>{tw.workflow.name}</span>
+              <span style={{
+                fontSize: 9, background: on ? '#c62828' : '#e5e5e5',
+                color: on ? '#fff' : '#666',
+                padding: '2px 6px', borderRadius: 999, fontWeight: 700,
+              }}>{myCount}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <TrainingFlowchart workflow={active.workflow} tasks={active.tasks} roleKey={role.key} />
     </div>
   );
 }
 
-function TrainingWorkflow({ workflow, tasks, roleKey }) {
-  // Split tasks into top-level (not gated on a decision) and per-decision
-  // branches so the tree renders cleanly. A decision point's own row
-  // becomes the branch parent; its dependent tasks nest underneath.
+// Vertical top-to-bottom flowchart of a single workflow. Every task
+// becomes a card centered on the page with an arrow-connector below
+// linking to the next card. Decision points spread their answers out
+// into labeled columns, each column running its own vertical chain.
+function TrainingFlowchart({ workflow, tasks, roleKey }) {
   const topLevel = tasks.filter((t) => !t.depends_on_task_id);
   const byParent = new Map();
   for (const t of tasks) {
@@ -545,15 +591,17 @@ function TrainingWorkflow({ workflow, tasks, roleKey }) {
       byParent.get(t.depends_on_task_id).push(t);
     }
   }
+
+  const printWorkflow = () => window.print();
+
   return (
-    <div style={{
-      marginBottom: 20, background: '#fff',
-      border: '1px solid #e5e5e5', borderRadius: 10, overflow: 'hidden',
+    <div className="training-flowchart" style={{
+      background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, overflow: 'hidden',
     }}>
       <div style={{
         padding: '12px 16px', background: '#fafafa', borderBottom: '1px solid #eee',
         display: 'flex', alignItems: 'baseline', gap: 10,
-      }}>
+      }} className="training-flowchart-header">
         <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 15, fontWeight: 700 }}>
           {workflow.name}
         </div>
@@ -562,48 +610,198 @@ function TrainingWorkflow({ workflow, tasks, roleKey }) {
             {workflow.category}
           </span>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#888' }}>{tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+        <span style={{ fontSize: 11, color: '#888' }}>{tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+        <button
+          className="training-print-btn"
+          onClick={printWorkflow}
+          style={{
+            marginLeft: 'auto', padding: '6px 12px', fontSize: 11, fontWeight: 700,
+            border: '1px solid #0A0A0A', background: '#0A0A0A', color: '#fff',
+            borderRadius: 4, cursor: 'pointer',
+          }}
+        >🖨 Print</button>
       </div>
-      <div style={{ padding: 14 }}>
-        {topLevel.map((t, i) => (
-          <TrainingNode
-            key={t.id}
-            task={t}
-            byParent={byParent}
-            roleKey={roleKey}
-            depth={0}
-            isFirst={i === 0}
-          />
-        ))}
+
+      <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {topLevel.length === 0 ? (
+          <div style={{ padding: 32, color: '#888', fontSize: 12 }}>No top-level tasks in this workflow.</div>
+        ) : (
+          <TrainingChain tasks={topLevel} byParent={byParent} roleKey={roleKey} />
+        )}
       </div>
+
+      {/* Inline print + flowchart styles. Kept scoped by container class
+          so they only affect the flowchart — not the rest of the page. */}
+      <style>{`
+        .training-flowchart .flow-node {
+          width: 100%;
+          max-width: 520px;
+          box-sizing: border-box;
+        }
+        .training-flowchart .flow-connector {
+          width: 3px;
+          height: 28px;
+          background: #999;
+          position: relative;
+        }
+        .training-flowchart .flow-connector::after {
+          content: '';
+          position: absolute;
+          bottom: -1px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 0; height: 0;
+          border-left: 6px solid transparent;
+          border-right: 6px solid transparent;
+          border-top: 8px solid #999;
+        }
+        .training-flowchart .flow-branches {
+          display: flex;
+          gap: 24px;
+          justify-content: center;
+          align-items: flex-start;
+          width: 100%;
+          flex-wrap: wrap;
+        }
+        .training-flowchart .flow-branch {
+          flex: 1 1 260px;
+          min-width: 240px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 12px;
+          border: 2px dashed #d0d0d0;
+          border-radius: 10px;
+          background: #fafafa;
+        }
+        .training-flowchart .flow-branch-label {
+          padding: 6px 14px;
+          background: #0A0A0A;
+          color: #fff;
+          border-radius: 999px;
+          font-weight: 700;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: .5px;
+          margin-bottom: 10px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .training-flowchart .flow-branch-empty {
+          padding: 10px 14px;
+          background: #fff;
+          border: 1px dashed #ccc;
+          border-radius: 6px;
+          color: #999;
+          font-size: 11px;
+          font-style: italic;
+        }
+        @media print {
+          .training-flowchart { border: none; box-shadow: none; }
+          .training-flowchart-header .training-print-btn { display: none; }
+          .training-subtabs, .training-header { display: none; }
+          .training-flowchart .flow-node { break-inside: avoid; page-break-inside: avoid; }
+          .training-flowchart .flow-branch { break-inside: avoid; page-break-inside: avoid; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// A vertical chain of tasks. Each task is followed by an arrow to the
+// next task. Decision points terminate their linear chain and open up
+// into a horizontal branching row.
+function TrainingChain({ tasks, byParent, roleKey }) {
+  // Chain runs linearly until we hit a decision point. Everything after
+  // a decision must be reached through the branches, so we render the
+  // linear prefix, then the decision + its branches, then stop (branch
+  // continuations recurse via their own TrainingChain).
+  const parts = [];
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    const isDecision = Array.isArray(t.decision_options) && t.decision_options.length > 0;
+    parts.push(
+      <TrainingCard
+        key={t.id}
+        task={t}
+        roleKey={roleKey}
+      />
+    );
+    if (isDecision) {
+      parts.push(
+        <div key={`c-${t.id}`} className="flow-connector" />
+      );
+      parts.push(
+        <TrainingBranches
+          key={`b-${t.id}`}
+          decision={t}
+          byParent={byParent}
+          roleKey={roleKey}
+        />
+      );
+      break; // downstream tasks live inside branches, not on this chain
+    } else if (i < tasks.length - 1) {
+      // Regular linear connector to the next task in the chain.
+      parts.push(
+        <div key={`c-${t.id}`} className="flow-connector" />
+      );
+    }
+    // If this task has non-decision dependents (rare: linear chains
+    // wired through depends_on without a decision), splice them in
+    // now so the chain keeps flowing.
+    const kids = byParent.get(t.id) || [];
+    const linearKids = kids.filter((k) => !k.depends_on_outcome);
+    if (linearKids.length && !isDecision) {
+      parts.push(<div key={`c-${t.id}-x`} className="flow-connector" />);
+      parts.push(
+        <TrainingChain
+          key={`kids-${t.id}`}
+          tasks={linearKids}
+          byParent={byParent}
+          roleKey={roleKey}
+        />
+      );
+    }
+  }
+  return <>{parts}</>;
+}
+
+function TrainingBranches({ decision, byParent, roleKey }) {
+  const opts = decision.decision_options || [];
+  const kids = byParent.get(decision.id) || [];
+  return (
+    <div className="flow-branches">
+      {opts.map((opt) => {
+        const branchTasks = kids
+          .filter((k) => k.depends_on_outcome === opt)
+          .sort((a, b) => (a.position || 0) - (b.position || 0));
+        return (
+          <div key={opt} className="flow-branch">
+            <div className="flow-branch-label">If &quot;{opt}&quot;</div>
+            {branchTasks.length === 0 ? (
+              <div className="flow-branch-empty">No follow-up tasks yet</div>
+            ) : (
+              <TrainingChain tasks={branchTasks} byParent={byParent} roleKey={roleKey} />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 const ROLE_COLORS = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
 
-function TrainingNode({ task, byParent, roleKey, depth, isFirst, branchAnswer }) {
+// A single flowchart node. Decision points get a diamond-adjacent
+// visual treatment (dark background, "DECISION POINT" ribbon at top,
+// list of possible answers). Regular tasks get a clean card with
+// icon + trigger + email details.
+function TrainingCard({ task, roleKey }) {
   const isDecision = Array.isArray(task.decision_options) && task.decision_options.length > 0;
   const isEmail = !!task.email_recipient && !!task.email_subject;
   const isMine = (task.role || '') === roleKey;
-  const children = byParent.get(task.id) || [];
   const roleColor = ROLE_COLORS[task.role || 'lo'] || '#555';
-
-  // Group children by their decision outcome so each answer becomes its
-  // own visual branch. Non-decision children (dependencies without
-  // outcome) group under a "Next" bucket.
-  const branchGroups = new Map();
-  if (isDecision) {
-    for (const opt of (task.decision_options || [])) branchGroups.set(opt, []);
-  }
-  const nextBucket = [];
-  for (const c of children) {
-    if (isDecision && c.depends_on_outcome && branchGroups.has(c.depends_on_outcome)) {
-      branchGroups.get(c.depends_on_outcome).push(c);
-    } else {
-      nextBucket.push(c);
-    }
-  }
 
   const iconFor = () => {
     if (isDecision) return '❓';
@@ -630,135 +828,91 @@ function TrainingNode({ task, byParent, roleKey, depth, isFirst, branchAnswer })
     return `${when} ${task.trigger_label || 'Closing'}${recur}`;
   };
 
-  return (
-    <div style={{
-      marginLeft: depth * 22,
-      marginTop: isFirst ? 0 : 10,
-      position: 'relative',
-    }}>
-      {depth > 0 && (
-        <div style={{
-          position: 'absolute', left: -14, top: 12, width: 12, height: 2,
-          background: '#ccc',
-        }} />
-      )}
-      {branchAnswer && (
-        <div style={{
-          display: 'inline-block',
-          padding: '3px 10px', marginBottom: 6,
-          fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px',
-          background: '#0A0A0A', color: '#fff', borderRadius: 999,
-        }}>
-          If &quot;{branchAnswer}&quot;
-        </div>
-      )}
-      <div style={{
-        padding: 12,
-        background: isMine ? '#fff8e6' : '#fafafa',
-        border: `1px solid ${isMine ? '#f5c518' : '#e5e5e5'}`,
-        borderLeft: `4px solid ${isMine ? '#f5c518' : '#ddd'}`,
-        borderRadius: 8,
+  if (isDecision) {
+    return (
+      <div className="flow-node" style={{
+        background: '#0A0A0A', color: '#fff', border: '2px solid #0A0A0A',
+        borderRadius: 12, overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,.15)',
       }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <div style={{ fontSize: 18, lineHeight: '20px', flexShrink: 0 }}>{iconFor()}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 3 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: isMine ? '#0A0A0A' : '#555' }}>{task.title}</span>
-              <span style={{
-                fontSize: 9, fontWeight: 700, color: '#fff', background: roleColor,
-                padding: '2px 7px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.4px',
-              }}>{task.role || 'lo'}</span>
-              {isDecision && (
-                <span style={{
-                  fontSize: 9, fontWeight: 700, color: '#fff', background: '#0A0A0A',
-                  padding: '2px 7px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.4px',
-                }}>Decision</span>
-              )}
-              {!isMine && (
-                <span style={{ fontSize: 10, color: '#999', fontStyle: 'italic' }}>(hand-off)</span>
-              )}
-            </div>
-            {triggerText() && (
-              <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
-                <strong style={{ color: '#333' }}>When:</strong> {triggerText()}
-              </div>
-            )}
-            {isEmail && (
-              <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
-                <strong style={{ color: '#333' }}>Email:</strong> {task.email_recipient === 'other' && task.email_other_recipient
-                  ? `Send to ${task.email_other_recipient}`
-                  : `Send to ${(task.email_recipient || '').replace('_', ' ')}`}
-                {task.email_subject ? ` — "${task.email_subject}"` : ''}
-              </div>
-            )}
-            {isDecision && (task.decision_options || []).length > 0 && (
-              <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
-                <strong style={{ color: '#333' }}>Answers:</strong> {(task.decision_options || []).join(' · ')}
-              </div>
-            )}
-            {task.notes && (
-              <div style={{ fontSize: 11, color: '#555', fontStyle: 'italic', marginTop: 4, padding: '6px 8px', background: 'rgba(0,0,0,.03)', borderRadius: 4 }}>
-                {task.notes}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {isDecision && (task.decision_options || []).length > 0 ? (
         <div style={{
-          marginLeft: 22, marginTop: 8,
-          borderLeft: '2px dashed #ccc', paddingLeft: 16,
+          padding: '6px 12px', background: '#fbc02d', color: '#0A0A0A',
+          fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '1.2px', textAlign: 'center',
         }}>
-          {(task.decision_options || []).map((opt) => {
-            const branchTasks = branchGroups.get(opt) || [];
-            return (
-              <div key={opt} style={{ marginBottom: 12 }}>
-                {branchTasks.length === 0 ? (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                    fontSize: 11, color: '#888', fontStyle: 'italic',
-                  }}>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '3px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                      letterSpacing: '.5px', background: '#f4f4f6', color: '#666', borderRadius: 999,
-                    }}>If &quot;{opt}&quot;</span>
-                    No follow-up tasks yet
-                  </div>
-                ) : (
-                  branchTasks.map((child, ci) => (
-                    <TrainingNode
-                      key={child.id}
-                      task={child}
-                      byParent={byParent}
-                      roleKey={roleKey}
-                      depth={depth + 1}
-                      isFirst={ci === 0}
-                      branchAnswer={opt}
-                    />
-                  ))
-                )}
-              </div>
-            );
-          })}
+          ❓ Decision Point
         </div>
-      ) : (
-        nextBucket.length > 0 && (
-          <div style={{ marginLeft: 22, marginTop: 8, borderLeft: '2px dashed #ccc', paddingLeft: 16 }}>
-            {nextBucket.map((child, ci) => (
-              <TrainingNode
-                key={child.id}
-                task={child}
-                byParent={byParent}
-                roleKey={roleKey}
-                depth={depth + 1}
-                isFirst={ci === 0}
-              />
+        <div style={{ padding: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, lineHeight: 1.35 }}>
+            {task.title}
+          </div>
+          <div style={{ fontSize: 11, color: '#ccc', marginBottom: 10 }}>
+            Answered by <span style={{
+              display: 'inline-block',
+              fontSize: 10, fontWeight: 700, color: '#fff', background: roleColor,
+              padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.4px',
+              marginLeft: 4,
+            }}>{task.role || 'lo'}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {(task.decision_options || []).map((opt) => (
+              <span key={opt} style={{
+                padding: '4px 10px', background: 'rgba(255,255,255,.14)',
+                border: '1px solid rgba(255,255,255,.3)', borderRadius: 999,
+                fontSize: 11, fontWeight: 600,
+              }}>{opt}</span>
             ))}
           </div>
-        )
-      )}
+          {task.notes && (
+            <div style={{ marginTop: 10, fontSize: 11, color: '#ccc', fontStyle: 'italic', padding: '8px 10px', background: 'rgba(255,255,255,.06)', borderRadius: 6 }}>
+              {task.notes}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flow-node" style={{
+      background: isMine ? '#fff8e6' : '#fff',
+      border: `2px solid ${isMine ? '#f5c518' : '#d0d0d0'}`,
+      borderRadius: 10,
+      boxShadow: isMine ? '0 2px 8px rgba(245,192,24,.25)' : '0 1px 4px rgba(0,0,0,.06)',
+      padding: 14,
+    }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        <div style={{ fontSize: 22, lineHeight: '22px', flexShrink: 0 }}>{iconFor()}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 4 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: isMine ? '#0A0A0A' : '#333' }}>{task.title}</span>
+            <span style={{
+              fontSize: 10, fontWeight: 700, color: '#fff', background: roleColor,
+              padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.4px',
+            }}>{task.role || 'lo'}</span>
+            {!isMine && (
+              <span style={{ fontSize: 10, color: '#999', fontStyle: 'italic' }}>(hand-off)</span>
+            )}
+          </div>
+          {triggerText() && (
+            <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>
+              <strong style={{ color: '#0A0A0A' }}>When:</strong> {triggerText()}
+            </div>
+          )}
+          {isEmail && (
+            <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>
+              <strong style={{ color: '#0A0A0A' }}>Email:</strong> {task.email_recipient === 'other' && task.email_other_recipient
+                ? `Send to ${task.email_other_recipient}`
+                : `Send to ${(task.email_recipient || '').replace('_', ' ')}`}
+              {task.email_subject ? ` — "${task.email_subject}"` : ''}
+            </div>
+          )}
+          {task.notes && (
+            <div style={{ fontSize: 12, color: '#555', fontStyle: 'italic', marginTop: 6, padding: '8px 10px', background: 'rgba(0,0,0,.03)', borderRadius: 4 }}>
+              {task.notes}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
