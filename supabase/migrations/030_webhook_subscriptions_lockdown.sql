@@ -29,7 +29,11 @@ drop policy if exists webhook_subscriptions_select on public.webhook_subscriptio
 create policy webhook_subscriptions_select on public.webhook_subscriptions
   for select to anon using (true);
 
--- Helper: does this user have admin/BM privileges?
+-- Helper: does this user have admin/BM privileges? users.id is uuid; the
+-- caller sends text (from the login RPC, which returns id as text), so
+-- cast the column so this SQL function passes create-time typechecking
+-- and lookups still work when the client sends the raw uuid string.
+drop function if exists public._is_admin_user(text);
 create or replace function public._is_admin_user(p_caller_id text)
 returns boolean
 language sql
@@ -38,7 +42,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from public.users
-    where id = p_caller_id
+    where id::text = p_caller_id
       and role in ('branch_manager', 'admin')
   );
 $$;

@@ -539,15 +539,17 @@ function TrainingPanel({ role }) {
   return (
     <div>
       <div style={{
-        marginBottom: 14, padding: 12,
-        background: 'linear-gradient(135deg,#0A0A0A,#3a0e17)', color: '#fff',
+        marginBottom: 14, padding: '14px 18px',
+        background: 'linear-gradient(135deg,var(--brand-black) 0%,#1f1f1f 100%)',
+        color: '#fff',
         borderRadius: 10,
+        borderLeft: '4px solid var(--brand-red)',
       }} className="training-header">
-        <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#fbc02d', marginBottom: 4 }}>
-          Training Outline for {role.label}
+        <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#fff', marginBottom: 4 }}>
+          Training Outline · {role.label}
         </div>
-        <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.5 }}>
-          Pick a workflow to see it as a top-to-bottom flowchart. Print any workflow directly from your browser — the layout is designed for it. Your tasks are highlighted yellow; hand-offs to other roles are muted so you can see the full picture.
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.7)', lineHeight: 1.5 }}>
+          Pick a workflow to see it as a top-to-bottom flowchart. Print any workflow directly from your browser — the layout is designed for it. Your tasks are highlighted; hand-offs to other roles are muted so you can see the full picture.
         </div>
       </div>
 
@@ -643,20 +645,19 @@ function TrainingFlowchart({ workflow, tasks, roleKey }) {
 
       <style>{`
         .training-flowchart {
-          background: #FAF7F0;
-          border: 1px solid #E4DFD3;
-          border-radius: 6px;
+          background: #fff;
+          border: 1px solid #e5e5e5;
+          border-radius: 10px;
           overflow: hidden;
-          --tf-ink: #171412;
-          --tf-text-2: #6B6560;
-          --tf-text-3: #A29A8F;
-          --tf-border: #E4DFD3;
-          --tf-divider: #EFEAE0;
-          --tf-card: #FFFFFF;
-          --tf-hi-bg: #FDF6D8;
+          --tf-ink: #0A0A0A;
+          --tf-text-2: #555;
+          --tf-text-3: #888;
+          --tf-border: #e5e5e5;
+          --tf-divider: #f0f0f0;
+          --tf-card: #fff;
+          --tf-hi-bg: rgba(200,16,46,.05);
           --tf-hi-border: #C8102E;
-          --tf-meta-bg: #F2ECDD;
-          --tf-track: #241F1A;
+          --tf-meta-bg: #fafafa;
           --tf-accent: #C8102E;
         }
         .training-flowchart .tf-header {
@@ -666,28 +667,29 @@ function TrainingFlowchart({ workflow, tasks, roleKey }) {
           background: var(--tf-card);
         }
         .training-flowchart .tf-title {
-          font-family: Georgia, "Times New Roman", serif;
-          font-size: 17px; font-weight: 700;
+          font-family: 'Oswald', sans-serif;
+          font-size: 15px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: .6px;
           color: var(--tf-ink);
-          letter-spacing: -0.005em;
           flex-shrink: 0;
         }
         .training-flowchart .tf-meta {
-          font: 10px/1 "SF Mono", ui-monospace, Menlo, monospace;
-          text-transform: uppercase; letter-spacing: .12em;
+          font: 700 11px/1 'Oswald', sans-serif;
+          text-transform: uppercase; letter-spacing: .6px;
           color: var(--tf-text-3);
         }
         .training-flowchart .tf-print {
           margin-left: auto;
-          font: 500 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;
-          color: var(--tf-text-2);
+          font: 700 11px/1 'Oswald', sans-serif;
+          text-transform: uppercase; letter-spacing: .6px;
+          color: var(--tf-accent);
           background: transparent;
-          border: 1px solid var(--tf-border);
+          border: 1px solid var(--tf-accent);
           padding: 6px 12px;
-          border-radius: 3px;
+          border-radius: 6px;
           cursor: pointer;
         }
-        .training-flowchart .tf-print:hover { border-color: var(--tf-accent); color: var(--tf-ink); }
+        .training-flowchart .tf-print:hover { background: var(--tf-accent); color: #fff; }
         .training-flowchart .tf-body {
           padding: 28px 24px;
           display: flex; flex-direction: column; align-items: stretch;
@@ -700,17 +702,18 @@ function TrainingFlowchart({ workflow, tasks, roleKey }) {
            long chains stay readable at wide screen sizes. */
         .training-flowchart .tf-chain {
           display: flex; flex-direction: column; gap: 0;
-          max-width: 620px;
+          max-width: 640px;
           margin: 0 auto;
           width: 100%;
         }
 
-        /* Task card */
+        /* Task card — rounded rectangle, clearly RECTANGULAR so the eye
+           reads it as "step" vs the pentagon-shaped decision point. */
         .training-flowchart .tf-task {
           background: var(--tf-card);
           border: 1px solid var(--tf-border);
           border-left: 3px solid var(--tf-border);
-          border-radius: 3px;
+          border-radius: 8px;
           padding: 14px 16px 12px;
           display: grid;
           grid-template-columns: auto 1fr auto;
@@ -722,32 +725,31 @@ function TrainingFlowchart({ workflow, tasks, roleKey }) {
           background: var(--tf-hi-bg);
         }
         .training-flowchart .tf-task .tf-role {
-          font: 700 9px/1 "SF Mono", ui-monospace, Menlo, monospace;
-          text-transform: uppercase; letter-spacing: .1em;
+          font: 700 10px/1 'Oswald', sans-serif;
+          text-transform: uppercase; letter-spacing: .8px;
           color: var(--tf-text-3);
-          padding: 4px 6px;
+          padding: 5px 8px;
           border: 1px solid var(--tf-border);
-          border-radius: 2px;
+          border-radius: 4px;
           background: var(--tf-card);
           min-width: 40px; text-align: center;
         }
         .training-flowchart .tf-task[data-mine="true"] .tf-role {
           border-color: var(--tf-hi-border);
-          color: var(--tf-track);
-          background: rgba(255,255,255,.55);
+          color: var(--tf-hi-border);
+          background: #fff;
         }
         .training-flowchart .tf-task .tf-title {
-          font-family: Georgia, "Times New Roman", serif;
-          font-size: 15px; font-weight: 600;
-          line-height: 1.35;
+          font-size: 14px; font-weight: 600;
+          line-height: 1.4;
           color: var(--tf-ink);
         }
         .training-flowchart .tf-task[data-handoff="true"] .tf-title {
           color: var(--tf-text-2);
         }
         .training-flowchart .tf-task .tf-kind {
-          font: 9px/1 "SF Mono", ui-monospace, Menlo, monospace;
-          text-transform: uppercase; letter-spacing: .14em;
+          font: 700 10px/1 'Oswald', sans-serif;
+          text-transform: uppercase; letter-spacing: .6px;
           color: var(--tf-text-3);
         }
         .training-flowchart .tf-task .tf-meta {
@@ -758,119 +760,136 @@ function TrainingFlowchart({ workflow, tasks, roleKey }) {
           margin-top: 4px;
         }
         .training-flowchart .tf-task .tf-code {
-          font: 11px "SF Mono", ui-monospace, Menlo, monospace;
-          color: var(--tf-text-2);
+          font: 12px ui-monospace, 'SF Mono', Menlo, monospace;
+          color: var(--tf-ink);
           background: var(--tf-meta-bg);
-          padding: 1px 5px;
-          border-radius: 2px;
+          padding: 1px 6px;
+          border-radius: 4px;
+          border: 1px solid var(--tf-border);
         }
         .training-flowchart .tf-task .tf-notes {
           grid-column: 2 / -1;
-          font-family: Georgia, serif;
-          font-style: italic;
           font-size: 12px;
           color: var(--tf-text-2);
-          margin-top: 6px;
-          padding: 6px 10px;
+          line-height: 1.5;
+          margin-top: 8px;
+          padding: 8px 12px;
+          background: var(--tf-meta-bg);
           border-left: 2px solid var(--tf-border);
+          border-radius: 4px;
         }
 
         /* Vertical connector between task cards */
         .training-flowchart .tf-link {
-          height: 20px;
-          border-left: 1px solid var(--tf-border);
+          height: 18px;
+          border-left: 2px solid var(--tf-border);
           margin-left: 26px;
           width: 0;
         }
 
-        /* Decision point card */
+        /* Decision point — downward-pointing pentagon so the shape ALONE
+           tells you "this is a fork; a choice happens here". Clip-path
+           gives clean sharp edges in all modern browsers. Padding is
+           padded aggressively so the pointed bottom doesn't clip text. */
         .training-flowchart .tf-decision {
-          background: var(--tf-track);
-          color: var(--tf-card);
-          border-radius: 3px;
-          padding: 20px 22px 22px;
-          border-left: 3px solid var(--tf-accent);
+          position: relative;
+          background: linear-gradient(135deg, #0A0A0A 0%, #1f1f1f 100%);
+          color: #fff;
+          padding: 26px 30px 44px;
+          text-align: center;
+          clip-path: polygon(0 0, 100% 0, 100% 72%, 50% 100%, 0 72%);
+          margin: 4px auto 8px;
+          max-width: 560px;
+          width: 100%;
+        }
+        .training-flowchart .tf-decision::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 4px;
+          background: var(--tf-accent);
         }
         .training-flowchart .tf-decision-eyebrow {
-          font: 9px/1 "SF Mono", ui-monospace, Menlo, monospace;
-          text-transform: uppercase; letter-spacing: .18em;
+          font: 700 10px/1 'Oswald', sans-serif;
+          text-transform: uppercase; letter-spacing: .8px;
           color: var(--tf-accent);
-          margin-bottom: 8px;
+          margin-bottom: 10px;
         }
         .training-flowchart .tf-decision-q {
-          font-family: Georgia, "Times New Roman", serif;
-          font-size: 18px; font-weight: 600;
-          line-height: 1.28;
-          color: var(--tf-card);
-          margin-bottom: 12px;
+          font-size: 16px; font-weight: 700;
+          line-height: 1.35;
+          color: #fff;
+          margin-bottom: 4px;
+          max-width: 440px;
+          margin-left: auto;
+          margin-right: auto;
         }
         .training-flowchart .tf-decision-notes {
-          font-family: Georgia, serif; font-style: italic;
-          color: rgba(255,255,255,.7);
           font-size: 12px;
-          padding: 6px 10px;
-          border-left: 2px solid rgba(255,255,255,.2);
+          color: rgba(255,255,255,.75);
+          line-height: 1.5;
           margin-top: 10px;
+          max-width: 440px;
+          margin-left: auto;
+          margin-right: auto;
         }
 
-        /* Branch tabs (Option B) */
+        /* Branch tabs (Option B) — mirror the app's tab pattern: red
+           underline on the active tab, Oswald caps, count pill on the
+           right. Reads instantly as "same tab family as the rest of the
+           app". */
         .training-flowchart .tf-tabs-wrap {
-          margin: 24px 0 0;
-          padding-top: 24px;
+          margin: 20px 0 0;
+          padding-top: 20px;
           border-top: 1px solid var(--tf-border);
-          max-width: 620px;
+          max-width: 640px;
           width: 100%;
           margin-left: auto;
           margin-right: auto;
         }
         .training-flowchart .tf-tabs {
           display: flex; gap: 2px;
-          background: var(--tf-meta-bg);
-          padding: 4px;
-          border-radius: 4px;
+          border-bottom: 1px solid var(--tf-border);
           margin-bottom: 20px;
           overflow-x: auto;
+          flex-wrap: wrap;
         }
         .training-flowchart .tf-tab {
-          flex: 1 1 auto;
-          min-width: 0;
-          padding: 10px 14px;
+          padding: 10px 16px;
           background: transparent;
           border: none;
-          color: var(--tf-text-2);
-          font-family: Georgia, serif;
-          font-style: italic;
-          font-size: 12px;
+          border-bottom: 3px solid transparent;
+          margin-bottom: -1px;
+          color: #666;
+          font: 700 11px/1 'Oswald', sans-serif;
+          text-transform: uppercase; letter-spacing: .6px;
           cursor: pointer;
-          border-radius: 3px;
           white-space: nowrap;
+          display: inline-flex; align-items: center; gap: 8px;
         }
         .training-flowchart .tf-tab[aria-selected="true"] {
-          background: var(--tf-card);
           color: var(--tf-ink);
-          font-style: normal;
-          font-weight: 700;
-          box-shadow: 0 1px 2px rgba(0,0,0,.08);
+          border-bottom-color: var(--tf-accent);
         }
         .training-flowchart .tf-tab-count {
           display: inline-block;
-          font: 500 9px/1 "SF Mono", ui-monospace, monospace;
-          color: var(--tf-text-3);
-          margin-left: 6px;
-          vertical-align: middle;
+          font: 700 9px/1 'Oswald', sans-serif;
+          color: #666;
+          background: #e5e5e5;
+          padding: 3px 7px;
+          border-radius: 999px;
         }
         .training-flowchart .tf-tab[aria-selected="true"] .tf-tab-count {
-          color: var(--tf-accent);
+          color: #fff;
+          background: var(--tf-accent);
         }
         .training-flowchart .tf-branch-empty {
           padding: 24px;
           text-align: center;
-          font-family: Georgia, serif;
-          font-style: italic;
           color: var(--tf-text-3);
           font-size: 12px;
           border: 1px dashed var(--tf-border);
-          border-radius: 3px;
+          border-radius: 8px;
         }
 
         @media print {
@@ -890,16 +909,26 @@ function TrainingFlowchart({ workflow, tasks, roleKey }) {
           .training-flowchart [data-print-branch]::before {
             content: "If \\201C" attr(data-branch-name) "\\201D";
             display: block;
-            font-family: Georgia, serif;
-            font-weight: 700; font-size: 15px;
-            color: #171412;
+            font-family: 'Oswald', sans-serif;
+            font-weight: 700; font-size: 13px;
+            text-transform: uppercase; letter-spacing: .6px;
+            color: #0A0A0A;
             margin-bottom: 10px;
             padding-bottom: 6px;
-            border-bottom: 1px solid #E4DFD3;
+            border-bottom: 2px solid #C8102E;
           }
           .training-flowchart .tf-task,
           .training-flowchart .tf-decision {
             break-inside: avoid; page-break-inside: avoid;
+          }
+          /* Clip-path can look odd when printed — revert to a plain dark
+             card with a red accent bar so the shape still reads as
+             "decision" without relying on clip-path support. */
+          .training-flowchart .tf-decision {
+            clip-path: none;
+            border-radius: 8px;
+            border-left: 4px solid #C8102E;
+            padding: 20px 24px;
           }
         }
       `}</style>
