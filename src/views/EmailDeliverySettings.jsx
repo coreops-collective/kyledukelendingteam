@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
+import { getCurrentUser } from '../lib/auth.js';
 
 export default function EmailDeliverySettings() {
   const [loaded, setLoaded] = useState(false);
@@ -44,10 +45,14 @@ export default function EmailDeliverySettings() {
         replyToEmail: overrides.replyToEmail ?? settings.replyToEmail,
         appPassword: passwordDirty ? (overrides.appPassword ?? settings.appPassword) : '__KEEP__',
       };
+      const caller = getCurrentUser()?.email || '';
       const res = await fetch('/.netlify/functions/save-email-delivery', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(caller ? { 'x-kdt-user-email': caller } : {}),
+        },
+        body: JSON.stringify({ ...payload, callerEmail: caller }),
       });
       let data = {};
       try { data = await res.json(); } catch {}
@@ -82,10 +87,14 @@ export default function EmailDeliverySettings() {
     setTesting(true);
     setTestResult(null);
     try {
+      const caller = getCurrentUser()?.email || '';
       const res = await fetch('/.netlify/functions/test-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: settings.username }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(caller ? { 'x-kdt-user-email': caller } : {}),
+        },
+        body: JSON.stringify({ callerEmail: caller }),
       });
       let data = {};
       try { data = await res.json(); } catch {}

@@ -4,6 +4,7 @@ import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { sbInsert } from '../lib/supabase.js';
 import { markLoansDirty } from '../lib/loansStore.js';
+import { getCurrentUser } from '../lib/auth.js';
 import { upsertClientDate } from '../lib/clientDates.js';
 import Tour from '../components/Tour.jsx';
 import {
@@ -293,10 +294,15 @@ export default function NewLoan() {
     try { await sbInsert('loan_intakes', row); } catch { /* non-fatal — table may not exist */ }
     if (!isFresh) return; // Skip notification unless this is a New Contract.
     // Fire-and-forget notification (email rules configured in Setup).
+    const notifCaller = getCurrentUser()?.email || '';
     fetch('/.netlify/functions/send-notification', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(notifCaller ? { 'x-kdt-user-email': notifCaller } : {}),
+      },
       body: JSON.stringify({
+        callerEmail: notifCaller,
         event_type: 'loan.created',
         context: {
           ...row,

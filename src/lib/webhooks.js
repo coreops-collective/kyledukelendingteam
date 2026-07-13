@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { showError } from './toaster.js';
+import { getCurrentUser } from './auth.js';
 
 // In-memory webhook subscription cache. Loaded once on boot; refreshed
 // after any admin edits + on the realtime change event. Firing hot
@@ -28,18 +29,23 @@ export async function loadWebhookSubscriptions() {
   }
 }
 
+// Migration 030 blocks anon inserts/updates/deletes on webhook_subscriptions.
+// All writes go through security-definer RPCs that verify the caller has
+// admin or branch_manager role before touching the row.
+function callerId() {
+  return getCurrentUser()?.id || '';
+}
+
 export async function createWebhookSubscription(row) {
   try {
-    const { data, error } = await supabase
-      .from('webhook_subscriptions')
-      .insert({
-        event: row.event,
-        filter_status: row.filter_status || null,
-        url: row.url,
-        active: row.active !== false,
-        label: row.label || null,
-      })
-      .select().single();
+    const { data, error } = await supabase.rpc('create_webhook_subscription', {
+      p_caller_id: callerId(),
+      p_event: row.event,
+      p_filter_status: row.filter_status || null,
+      p_url: row.url,
+      p_active: row.active !== false,
+      p_label: row.label || null,
+    });
     if (error) {
       console.warn('[webhooks] create:', error.message);
       showError(`Couldn't create webhook subscription: ${error.message}`, {
@@ -47,9 +53,10 @@ export async function createWebhookSubscription(row) {
       });
       return null;
     }
-    SUBSCRIPTIONS.push(data);
+    const created = Array.isArray(data) && data.length ? data[0] : null;
+    if (created) SUBSCRIPTIONS.push(created);
     window.dispatchEvent(new Event('kdt-webhooks-changed'));
-    return data;
+    return created;
   } catch (e) {
     console.warn('[webhooks] create error:', e.message);
     showError(`Couldn't create webhook subscription: ${e.message}`, {
@@ -61,7 +68,15 @@ export async function createWebhookSubscription(row) {
 
 export async function updateWebhookSubscription(id, patch) {
   try {
-    const { error } = await supabase.from('webhook_subscriptions').update(patch).eq('id', id);
+    const { error } = await supabase.rpc('update_webhook_subscription', {
+      p_caller_id: callerId(),
+      p_id: id,
+      p_event: patch.event ?? null,
+      p_filter_status: patch.filter_status ?? null,
+      p_url: patch.url ?? null,
+      p_active: patch.active ?? null,
+      p_label: patch.label ?? null,
+    });
     if (error) {
       console.warn('[webhooks] update:', error.message);
       showError(`Couldn't update webhook subscription: ${error.message}`, {
@@ -82,7 +97,10 @@ export async function updateWebhookSubscription(id, patch) {
 
 export async function deleteWebhookSubscription(id) {
   try {
-    const { error } = await supabase.from('webhook_subscriptions').delete().eq('id', id);
+    const { error } = await supabase.rpc('delete_webhook_subscription', {
+      p_caller_id: callerId(),
+      p_id: id,
+    });
     if (error) {
       console.warn('[webhooks] delete:', error.message);
       showError(`Couldn't delete webhook subscription: ${error.message}`, {

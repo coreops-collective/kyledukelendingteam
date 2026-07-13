@@ -5,6 +5,7 @@ import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, subscribeLoans } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
+import { getCurrentUser } from '../lib/auth.js';
 import Tour from '../components/Tour.jsx';
 import { parseLocalDate } from '../lib/clientDates.js';
 
@@ -234,10 +235,15 @@ export default function Pipeline() {
     const [lastName, firstName] = (loan.borrower || '').split(',').map((s) => (s || '').trim());
     const oldLabel = STAGE_TO_STATUS[oldStageKey] || stageByKey(oldStageKey)?.label || oldStageKey;
     const newLabel = STAGE_TO_STATUS[newStageKey] || stageByKey(newStageKey)?.label || newStageKey;
+    const notifCaller = getCurrentUser()?.email || '';
     fetch('/.netlify/functions/send-notification', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(notifCaller ? { 'x-kdt-user-email': notifCaller } : {}),
+      },
       body: JSON.stringify({
+        callerEmail: notifCaller,
         event_type: 'loan.stage_changed',
         context: {
           loan_id: loan.id,
