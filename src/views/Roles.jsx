@@ -104,8 +104,8 @@ export default function Roles() {
       body: 'Three more tabs contain the writable JD sections:\n\n• Job Description — the professional prose summary\n• 30-60-90 — combined month 1/2/3 onboarding plan\n• Accountability — measurable outcomes reviewed quarterly\n\nEach section has an ✨ AI Suggest button that drafts content in the Kyle Duke team voice, then you edit and blur to save.',
     },
     {
-      title: 'Tab 5: Training (visual workflow trees)',
-      body: 'The last tab is the killer feature for onboarding. Every workflow this role touches renders as a top-to-bottom tree:\n\n• Icons show task type (📅 date · 🔄 status · ❓ decision · 📧 email)\n• Trigger context shown inline ("3 days before Closing")\n• Decision points branch into their answers with the follow-up tasks under each\n• Your role\'s tasks are highlighted yellow; hand-offs to other roles are muted\n\nHand this to a new hire and they can read their entire role top-to-bottom.',
+      title: 'Tab 5: Training (printable flowcharts)',
+      body: 'The last tab is the onboarding killer. Sub-tabs across the top let you pick one workflow at a time — each gets the full page width so nothing competes for space.\n\nInside each workflow, tasks stack top-to-bottom as centered flowchart cards with arrow connectors. Icons show task type (📅 date · 🔄 status · ❓ decision · 📧 email). Trigger context reads plainly ("3 days before Closing").\n\nDecision points render as a dark card with a "❓ DECISION POINT" ribbon. Their answers spread horizontally into labeled branch columns, each running its own vertical chain of follow-up tasks.\n\nYour tasks are highlighted yellow; hand-offs are muted. The 🖨 Print button in the workflow header prints just the flowchart — no page chrome — so a new hire can carry it around on paper.',
     },
     {
       target: '[data-tour="export-pdf"]',
