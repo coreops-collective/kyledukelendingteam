@@ -184,9 +184,9 @@ export async function createTask(workflowId, task) {
   };
   let { data, error } = await supabase.from('workflow_tasks').insert(row).select().single();
   // Same graceful downgrade as updateTask — strip email_other_recipient
-  // and retry on the column-missing error so createTask lands even if
-  // migration 027 hasn't run yet.
-  if (error && /column\s+.*email_other_recipient.*does not exist/i.test(error.message || '')) {
+  // and retry on either the Postgres "column does not exist" or the
+  // PostgREST "in the schema cache" wording.
+  if (error && (error.message || '').includes('email_other_recipient')) {
     console.warn('[workflows] email_other_recipient column missing on insert — retrying without.');
     const { email_other_recipient: _, ...safeRow } = row;
     ({ data, error } = await supabase.from('workflow_tasks').insert(safeRow).select().single());
@@ -235,10 +235,12 @@ export async function updateTask(id, patch, opts = {}) {
   }
   let { error } = await supabase.from('workflow_tasks').update(patch).eq('id', id);
   // Graceful downgrade: migration 027_workflow_task_email_other adds an
-  // email_other_recipient column. Before it runs, sending the field in
-  // an update fails with "column does not exist". Detect that specific
-  // error, strip the field, and retry so the rest of the save lands.
-  if (error && 'email_other_recipient' in patch && /column\s+.*email_other_recipient.*does not exist/i.test(error.message || '')) {
+  // email_other_recipient column. Before it runs, sending the field
+  // fails with either the Postgres "column ... does not exist" or the
+  // PostgREST "Could not find the 'x' column ... in the schema cache"
+  // depending on which layer surfaced the error. Detect either wording
+  // and retry without the field so the rest of the save lands.
+  if (error && 'email_other_recipient' in patch && (error.message || '').includes('email_other_recipient')) {
     console.warn('[workflows] email_other_recipient column missing — retrying without. Run migration 027_workflow_task_email_other.');
     const { email_other_recipient: _, ...safe } = patch;
     ({ error } = await supabase.from('workflow_tasks').update(safe).eq('id', id));
