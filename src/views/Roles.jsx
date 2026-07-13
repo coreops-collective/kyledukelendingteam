@@ -3,6 +3,7 @@ import {
   loadJobRoles, getJobRoles, createJobRole, updateJobRole, deleteJobRole,
 } from '../lib/jobRoles.js';
 import { loadWorkflows, getWorkflows, getTasksFor } from '../lib/workflows.js';
+import { getCurrentUser } from '../lib/auth.js';
 import { showError } from '../lib/toaster.js';
 import Tour from '../components/Tour.jsx';
 import RichTextEditor from '../components/RichTextEditor.jsx';
@@ -234,10 +235,15 @@ function RoleEditor({ role, allRoles, onChange }) {
   const suggest = async (section) => {
     setSuggesting((s) => ({ ...s, [section]: true }));
     try {
+      const caller = getCurrentUser()?.email || '';
       const res = await fetch('/.netlify/functions/rewrite-job-description', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(caller ? { 'x-kdt-user-email': caller } : {}),
+        },
         body: JSON.stringify({
+          callerEmail: caller,
           role_label: role.label,
           section,
           responsibilities: responsibilities.flat,

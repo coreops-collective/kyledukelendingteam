@@ -1,6 +1,15 @@
 /**
- * POST { email, name } — emails the admin that a user needs a password reset.
- * Uses the existing email_settings row (same SMTP creds as send-notification.js).
+ * POST { email, name } — emails the admin that a user needs a password
+ * reset. Uses the existing email_settings row (same SMTP creds as
+ * send-notification.js).
+ *
+ * Auth (S2): unauthenticated by nature (the user is trying to log in!),
+ * so protection here is:
+ *   - Origin allowlist (blocks cross-origin abuse from browsers)
+ *   - Aggressive per-IP rate limit (S5) — 2/min
+ *   - The submitted email MUST match a users row. Unknown emails silently
+ *     succeed without emailing admin, so this endpoint can't be used to
+ *     enumerate users or spam admin about arbitrary addresses.
  */
 
 const nodemailer = require('nodemailer');
@@ -38,26 +47,88 @@ function normalizeSupabaseUrl(raw) {
 const SUPABASE_URL = normalizeSupabaseUrl(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '');
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+const RAW_ORIGINS = (process.env.KDT_ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+const PREVIEW_ORIGIN = (process.env.DEPLOY_URL || '').trim();
+function isOriginAllowed(origin) {
+  if (RAW_ORIGINS.length === 0) return true;
+  if (!origin) return false;
+  if (RAW_ORIGINS.includes(origin)) return true;
+  if (PREVIEW_ORIGIN && origin === PREVIEW_ORIGIN) return true;
+  return false;
+}
+function corsHeadersFor(event) {
+  const origin = event.headers.origin || event.headers.Origin || '';
+  const allowed = isOriginAllowed(origin) ? (origin || '*') : (RAW_ORIGINS[0] || '*');
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json',
+    'Vary': 'Origin',
+  };
+}
+
+const sbHeaders = () => ({
+  apikey: SUPABASE_KEY,
+  Authorization: `Bearer ${SUPABASE_KEY}`,
   'Content-Type': 'application/json',
-};
+  Accept: 'application/json',
+});
+
+async function checkRateLimit(event, endpoint, perMinute) {
+  const ip = (event.headers['x-forwarded-for'] || event.headers['x-nf-client-connection-ip'] || event.headers['client-ip'] || '')
+    .toString().split(',')[0].trim() || 'unknown';
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/rate_limit_bump`, {
+      method: 'POST',
+      headers: sbHeaders(),
+      body: JSON.stringify({ p_ip: ip, p_endpoint: endpoint, p_per_minute: perMinute }),
+    });
+    if (!res.ok) return true;
+    const ok = await res.json();
+    return ok === true;
+  } catch { return true; }
+}
+
+async function knownEmail(email) {
+  if (!email) return false;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/users?select=id&email=eq.${encodeURIComponent(email)}&limit=1`,
+      { headers: sbHeaders() }
+    );
+    if (!res.ok) return false;
+    const rows = await res.json();
+    return !!rows?.[0]?.id;
+  } catch { return false; }
+}
 
 exports.handler = async (event) => {
+  const corsHeaders = corsHeadersFor(event);
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: corsHeaders, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ error: 'Method not allowed' }) };
   if (!SUPABASE_URL || !SUPABASE_KEY) return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Not configured' }) };
 
+  const origin = event.headers.origin || event.headers.Origin || '';
+  if (!isOriginAllowed(origin)) {
+    return { statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Origin not allowed' }) };
+  }
+  if (!(await checkRateLimit(event, 'request-password-reset', 2))) {
+    return { statusCode: 429, headers: corsHeaders, body: JSON.stringify({ error: 'Too many requests. Try again in a minute.' }) };
+  }
+
   try {
     const { email, name } = JSON.parse(event.body || '{}');
-    const userEmail = String(email || '').trim();
+    const userEmail = String(email || '').trim().toLowerCase();
     if (!userEmail) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Email required' }) };
 
-    const settingsRes = await fetch(`${SUPABASE_URL}/rest/v1/email_settings?id=eq.1&select=*`, {
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-    });
+    // Silently succeed on unknown emails so this endpoint can't be used
+    // to probe for valid accounts. Admin only hears about real users.
+    if (!(await knownEmail(userEmail))) {
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ ok: true }) };
+    }
+
+    const settingsRes = await fetch(`${SUPABASE_URL}/rest/v1/email_settings?id=eq.1&select=*`, { headers: sbHeaders() });
     const [settings] = await settingsRes.json();
     if (!settings?.username) {
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ ok: false, reason: 'Email delivery not configured' }) };

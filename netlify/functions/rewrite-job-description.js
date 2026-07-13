@@ -15,12 +15,72 @@ const MODEL = 'claude-sonnet-5';
 const MAX_TOKENS = 1400;
 const API_URL = 'https://api.anthropic.com/v1/messages';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+function normalizeSupabaseUrl(raw) {
+  if (!raw) return '';
+  const url = String(raw).trim().replace(/\/+$/, '');
+  const m = url.match(/supabase\.com\/dashboard\/project\/([a-z0-9]+)/i);
+  return m ? `https://${m[1]}.supabase.co` : url;
+}
+const SUPABASE_URL = normalizeSupabaseUrl(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '');
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+const RAW_ORIGINS = (process.env.KDT_ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+const PREVIEW_ORIGIN = (process.env.DEPLOY_URL || '').trim();
+function isOriginAllowed(origin) {
+  if (RAW_ORIGINS.length === 0) return true;
+  if (!origin) return false;
+  if (RAW_ORIGINS.includes(origin)) return true;
+  if (PREVIEW_ORIGIN && origin === PREVIEW_ORIGIN) return true;
+  return false;
+}
+function corsHeadersFor(event) {
+  const origin = event.headers.origin || event.headers.Origin || '';
+  const allowed = isOriginAllowed(origin) ? (origin || '*') : (RAW_ORIGINS[0] || '*');
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Headers': 'Content-Type, x-kdt-user-email',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json',
+    'Vary': 'Origin',
+  };
+}
+
+const sbHeaders = () => ({
+  apikey: SUPABASE_KEY,
+  Authorization: `Bearer ${SUPABASE_KEY}`,
   'Content-Type': 'application/json',
-};
+  Accept: 'application/json',
+});
+
+async function checkRateLimit(event, endpoint, perMinute) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return true;
+  const ip = (event.headers['x-forwarded-for'] || event.headers['x-nf-client-connection-ip'] || event.headers['client-ip'] || '')
+    .toString().split(',')[0].trim() || 'unknown';
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/rate_limit_bump`, {
+      method: 'POST',
+      headers: sbHeaders(),
+      body: JSON.stringify({ p_ip: ip, p_endpoint: endpoint, p_per_minute: perMinute }),
+    });
+    if (!res.ok) return true;
+    const ok = await res.json();
+    return ok === true;
+  } catch { return true; }
+}
+
+async function requireKnownCaller(callerEmail) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return true; // dev
+  if (!callerEmail) return false;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/users?select=id&email=eq.${encodeURIComponent(callerEmail)}&limit=1`,
+      { headers: sbHeaders() }
+    );
+    if (!res.ok) return false;
+    const rows = await res.json();
+    return !!rows?.[0]?.id;
+  } catch { return false; }
+}
 
 // ── Team context ──────────────────────────────────────────────────────
 // The system prompt every section shares. Establishes who this JD is
@@ -161,11 +221,20 @@ Plain markdown, under 250 words.${existingBlock}`;
 }
 
 exports.handler = async (event) => {
+  const corsHeaders = corsHeadersFor(event);
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: corsHeaders, body: '' };
   }
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ error: 'POST only' }) };
+  }
+
+  const origin = event.headers.origin || event.headers.Origin || '';
+  if (!isOriginAllowed(origin)) {
+    return { statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Origin not allowed' }) };
+  }
+  if (!(await checkRateLimit(event, 'rewrite-job-description', 20))) {
+    return { statusCode: 429, headers: corsHeaders, body: JSON.stringify({ error: 'Rate limit exceeded' }) };
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -181,7 +250,12 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || '{}'); }
   catch { return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Malformed JSON body.' }) }; }
 
-  const { role_label, section, responsibilities = [], existing_content = '', reports_to = '' } = body;
+  const { role_label, section, responsibilities = [], existing_content = '', reports_to = '', callerEmail } = body;
+  const headerCaller = (event.headers['x-kdt-user-email'] || event.headers['X-KDT-User-Email'] || '').toString().trim().toLowerCase();
+  const caller = headerCaller || String(callerEmail || '').trim().toLowerCase();
+  if (!(await requireKnownCaller(caller))) {
+    return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Sign in first' }) };
+  }
   if (!role_label || !section) {
     return {
       statusCode: 400,
