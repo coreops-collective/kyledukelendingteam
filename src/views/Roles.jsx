@@ -107,7 +107,7 @@ export default function Roles() {
     },
     {
       title: 'Tab 5: Training (printable flowcharts)',
-      body: 'The last tab is the onboarding killer. Sub-tabs across the top let you pick one workflow at a time — each gets the full page width so nothing competes for space.\n\nInside each workflow, tasks stack top-to-bottom as centered flowchart cards with arrow connectors. Icons show task type (📅 date · 🔄 status · ❓ decision · 📧 email). Trigger context reads plainly ("3 days before Closing").\n\nDecision points render as a dark card with a "❓ DECISION POINT" ribbon. Their answers spread horizontally into labeled branch columns, each running its own vertical chain of follow-up tasks.\n\nYour tasks are highlighted yellow; hand-offs are muted. The 🖨 Print button in the workflow header prints just the flowchart — no page chrome — so a new hire can carry it around on paper.',
+      body: 'The last tab is the onboarding killer. Sub-tabs across the top let you pick one workflow at a time — each gets the full page width so nothing competes for space.\n\nInside each workflow, tasks stack top-to-bottom as centered flowchart cards with arrow connectors. Icons show task type (📅 date · 🔄 status · ❓ decision · 📧 email). Trigger context reads plainly ("3 days before Closing").\n\nDecision points render as a dark card with a "❓ DECISION POINT" ribbon. Below the decision, curved black arrows fan out to each answer\'s column. Every column is its own boxed card with a black header showing the answer, and the follow-up tasks stack vertically beneath it — so a new hire can literally trace their finger down the branch they need.\n\nYour tasks are highlighted yellow; hand-offs are muted. The 🖨 Print button in the workflow header prints just the flowchart — no page chrome — so a new hire can carry it around on paper.',
     },
     {
       target: '[data-tour="export-pdf"]',
@@ -662,38 +662,59 @@ function TrainingFlowchart({ workflow, tasks, roleKey }) {
           border-right: 6px solid transparent;
           border-top: 8px solid #999;
         }
-        .training-flowchart .flow-branches {
+        .training-flowchart .flow-fan-wrap {
           display: flex;
-          gap: 24px;
+          flex-direction: column;
+          align-items: stretch;
+          width: 100%;
+        }
+        .training-flowchart .flow-fan-svg {
+          margin-bottom: -1px;
+        }
+        .training-flowchart .flow-branches {
+          display: grid;
+          grid-template-columns: repeat(var(--branch-count, 4), minmax(0, 1fr));
+          gap: 16px;
           justify-content: center;
           align-items: flex-start;
           width: 100%;
-          flex-wrap: wrap;
+        }
+        /* Auto-fit to whatever count the child SVG uses. Falls back to
+           flex on narrow screens so 4 columns don't crush at phone width. */
+        .training-flowchart .flow-branches {
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         }
         .training-flowchart .flow-branch {
-          flex: 1 1 260px;
-          min-width: 240px;
+          display: flex;
+          flex-direction: column;
+          background: #fff;
+          border: 1px solid #e5e5e5;
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 2px 6px rgba(0,0,0,.05);
+        }
+        .training-flowchart .flow-branch-header {
+          background: linear-gradient(135deg,#0A0A0A,#3a0e17);
+          padding: 12px 14px;
+          border-left: 4px solid #C8102E;
+        }
+        .training-flowchart .flow-branch-answer {
+          font-family: 'Oswald', sans-serif;
+          font-size: 13px;
+          font-weight: 700;
+          color: #fff;
+          text-transform: uppercase;
+          letter-spacing: .8px;
+          text-align: center;
+          line-height: 1.3;
+        }
+        .training-flowchart .flow-branch-body {
+          padding: 16px 14px;
           display: flex;
           flex-direction: column;
           align-items: center;
-          padding: 12px;
-          border: 2px dashed #d0d0d0;
-          border-radius: 10px;
           background: #fafafa;
-        }
-        .training-flowchart .flow-branch-label {
-          padding: 6px 14px;
-          background: #0A0A0A;
-          color: #fff;
-          border-radius: 999px;
-          font-weight: 700;
-          font-size: 11px;
-          text-transform: uppercase;
-          letter-spacing: .5px;
-          margin-bottom: 10px;
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
+          flex: 1;
         }
         .training-flowchart .flow-branch-empty {
           padding: 10px 14px;
@@ -704,12 +725,19 @@ function TrainingFlowchart({ workflow, tasks, roleKey }) {
           font-size: 11px;
           font-style: italic;
         }
+        /* Inside a branch column, cards should shrink to fit the narrower
+           column width instead of maxing out at 520px like top-level ones. */
+        .training-flowchart .flow-branch-body .flow-node {
+          max-width: 100%;
+        }
         @media print {
           .training-flowchart { border: none; box-shadow: none; }
           .training-flowchart-header .training-print-btn { display: none; }
           .training-subtabs, .training-header { display: none; }
-          .training-flowchart .flow-node { break-inside: avoid; page-break-inside: avoid; }
-          .training-flowchart .flow-branch { break-inside: avoid; page-break-inside: avoid; }
+          .training-flowchart .flow-node,
+          .training-flowchart .flow-branch,
+          .training-flowchart .flow-fan-wrap { break-inside: avoid; page-break-inside: avoid; }
+          .training-flowchart .flow-fan-svg { max-height: 40px; }
         }
       `}</style>
     </div>
@@ -777,23 +805,69 @@ function TrainingChain({ tasks, byParent, roleKey }) {
 function TrainingBranches({ decision, byParent, roleKey }) {
   const opts = decision.decision_options || [];
   const kids = byParent.get(decision.id) || [];
+  const n = opts.length;
+  // Draw a proper fan of connector lines from the single point below
+  // the decision card down to the top-center of each branch column.
+  // SVG scales with the container so lines stay lined up on any width.
+  const fanHeight = 56;
   return (
-    <div className="flow-branches">
-      {opts.map((opt) => {
-        const branchTasks = kids
-          .filter((k) => k.depends_on_outcome === opt)
-          .sort((a, b) => (a.position || 0) - (b.position || 0));
-        return (
-          <div key={opt} className="flow-branch">
-            <div className="flow-branch-label">If &quot;{opt}&quot;</div>
-            {branchTasks.length === 0 ? (
-              <div className="flow-branch-empty">No follow-up tasks yet</div>
-            ) : (
-              <TrainingChain tasks={branchTasks} byParent={byParent} roleKey={roleKey} />
-            )}
-          </div>
-        );
-      })}
+    <div className="flow-fan-wrap">
+      <svg
+        className="flow-fan-svg"
+        viewBox={`0 0 ${n * 100} ${fanHeight}`}
+        preserveAspectRatio="none"
+        style={{ width: '100%', height: fanHeight, display: 'block' }}
+        aria-hidden="true"
+      >
+        {opts.map((_, i) => {
+          // Common source: horizontal center of the SVG.
+          const sx = (n * 100) / 2;
+          // Each destination: horizontal center of the i-th column.
+          const dx = i * 100 + 50;
+          // Cubic bezier gives a soft fan-out curve — feels less like
+          // a schematic and more like a hand-drawn onboarding flowchart.
+          const cp1y = fanHeight * 0.35;
+          const cp2y = fanHeight * 0.75;
+          return (
+            <g key={i}>
+              <path
+                d={`M ${sx} 0 C ${sx} ${cp1y}, ${dx} ${cp2y}, ${dx} ${fanHeight - 6}`}
+                stroke="#0A0A0A"
+                strokeWidth="1.6"
+                fill="none"
+                strokeLinecap="round"
+              />
+              {/* Arrowhead pointing down at the branch column top. */}
+              <polygon
+                points={`${dx - 4},${fanHeight - 8} ${dx + 4},${fanHeight - 8} ${dx},${fanHeight - 1}`}
+                fill="#0A0A0A"
+              />
+            </g>
+          );
+        })}
+      </svg>
+
+      <div className="flow-branches">
+        {opts.map((opt) => {
+          const branchTasks = kids
+            .filter((k) => k.depends_on_outcome === opt)
+            .sort((a, b) => (a.position || 0) - (b.position || 0));
+          return (
+            <div key={opt} className="flow-branch">
+              <div className="flow-branch-header">
+                <div className="flow-branch-answer">If &quot;{opt}&quot;</div>
+              </div>
+              <div className="flow-branch-body">
+                {branchTasks.length === 0 ? (
+                  <div className="flow-branch-empty">No follow-up tasks yet</div>
+                ) : (
+                  <TrainingChain tasks={branchTasks} byParent={byParent} roleKey={roleKey} />
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
