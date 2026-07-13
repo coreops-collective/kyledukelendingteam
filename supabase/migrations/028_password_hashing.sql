@@ -28,8 +28,10 @@ alter table public.users
 -- Backfill every plaintext password to bcrypt (cost 10). Idempotent —
 -- rows that already have a hash are skipped, so re-running this migration
 -- (or running it against a partially-migrated project) is safe.
+-- crypt/gen_salt qualified as extensions.* because Supabase installs
+-- pgcrypto in the extensions schema (not public).
 update public.users
-set password_hash = crypt(password, gen_salt('bf', 10))
+set password_hash = extensions.crypt(password, extensions.gen_salt('bf', 10))
 where password is not null and password_hash is null;
 
 -- Replace the login RPC. New body checks the bcrypt hash — the plaintext
@@ -47,7 +49,7 @@ returns table (
 )
 language sql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select u.id, u.name, u.email, u.role, u.initials, coalesce(u.nmls, ''), coalesce(u.phone, '')
   from public.users u
@@ -76,7 +78,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   new_id text := 'u_' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 14);
@@ -108,7 +110,7 @@ create or replace function public.set_user_password(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   update public.users
@@ -131,7 +133,7 @@ create or replace function public.change_password(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   target_id text;
