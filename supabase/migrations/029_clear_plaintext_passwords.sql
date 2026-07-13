@@ -17,9 +17,15 @@
 -- edits the plaintext column, which the app no longer reads.
 --
 -- Idempotent: re-running is a no-op once every hashed row has null
--- plaintext.
+-- plaintext. `alter column ... drop not null` is also a no-op if the
+-- constraint has already been removed.
 --
 -- Run in Supabase SQL editor.
+
+-- Drop the legacy NOT NULL constraint on password so we can null it. The
+-- column itself stays (additive-only rule) — just the constraint goes.
+alter table public.users
+  alter column password drop not null;
 
 update public.users
 set password = null
