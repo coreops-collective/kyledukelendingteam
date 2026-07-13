@@ -106,8 +106,8 @@ export default function Roles() {
       body: 'Three more tabs contain the writable JD sections:\n\n• Job Description — the professional prose summary\n• 30-60-90 — combined month 1/2/3 onboarding plan\n• Accountability — measurable outcomes reviewed quarterly\n\nEach section has an ✨ AI Suggest button that drafts content in the Kyle Duke team voice.\n\nEditor is full rich text — bold, italic, underline, bulleted lists, numbered lists, hyperlinks. Format text however you like, then blur to save. Everything you write here also flows into the Export PDF layout so the printed version keeps your formatting.',
     },
     {
-      title: 'Tab 5: Training (printable flowcharts)',
-      body: 'The last tab is the onboarding killer. Sub-tabs across the top let you pick one workflow at a time — each gets the full page width so nothing competes for space.\n\nInside each workflow, tasks stack top-to-bottom as centered flowchart cards with arrow connectors. Icons show task type (📅 date · 🔄 status · ❓ decision · 📧 email). Trigger context reads plainly ("3 days before Closing").\n\nDecision points render as a dark card with a "❓ DECISION POINT" ribbon. Below the decision, curved black arrows fan out to each answer\'s column. Every column is its own boxed card with a black header showing the answer, and the follow-up tasks stack vertically beneath it — so a new hire can literally trace their finger down the branch they need.\n\nYour tasks are highlighted yellow; hand-offs are muted. The 🖨 Print button in the workflow header prints just the flowchart — no page chrome — so a new hire can carry it around on paper.',
+      title: 'Tab 5: Training (printable handbook)',
+      body: 'The last tab is the onboarding killer. Sub-tabs across the top let you pick one workflow at a time.\n\nInside a workflow, tasks read like a handbook page: serif titles, monospace role chip ("LO" / "LOA" / "Admin"), short task-type label ("Email · Status"), and the trigger in plain English ("3 days before Closing"). No emojis, no icons — just the information.\n\nDecision points render as a dark card with the question in white serif. Below the decision, branch tabs let you pick one answer at a time and see only that branch\'s follow-up tasks. On screen you get a clean read; when you Print, every branch renders in sequence with an "If \'X\'" header before each block, so the printed page carries the whole tree.\n\nOwn-role tasks get a red left rule + soft cream background. Hand-offs to other roles are the same shape, muted.',
     },
     {
       target: '[data-tour="export-pdf"]',
@@ -589,6 +589,24 @@ function TrainingPanel({ role }) {
 // becomes a card centered on the page with an arrow-connector below
 // linking to the next card. Decision points spread their answers out
 // into labeled columns, each column running its own vertical chain.
+// One workflow rendered as a printable training document. Task cards
+// stack vertically; when a decision point is hit, the tasks after it
+// route through tabbed branches (Option B — the user picked this over
+// the fan-out layout because it reads cleanly at any width and doesn't
+// overflow on 4+ answer decisions).
+//
+// Deliberate styling choices to move away from the "AI generated" feel:
+// - Task titles set in a system serif (Georgia) — feels like a document,
+//   not an app.
+// - Task-type labels are short SF-Mono uppercase strings ("EMAIL · STATUS")
+//   in place of emojis.
+// - Role indicator is a monospace chip ("LO", "LOA") — no colored badge.
+// - Own-role tasks get a red left rule + soft cream background, not
+//   a yellow-tinted card.
+// - 1px borders, no drop shadows. The composition carries the hierarchy.
+// - Warm-neutral surface (#FAF7F0) that makes the training pages feel
+//   like handbook pages, not chrome — scoped to this component so the
+//   rest of the app stays cold.
 function TrainingFlowchart({ workflow, tasks, roleKey }) {
   const topLevel = tasks.filter((t) => !t.depends_on_task_id);
   const byParent = new Map();
@@ -602,171 +620,297 @@ function TrainingFlowchart({ workflow, tasks, roleKey }) {
   const printWorkflow = () => window.print();
 
   return (
-    <div className="training-flowchart" style={{
-      background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, overflow: 'hidden',
-    }}>
-      <div style={{
-        padding: '12px 16px', background: '#fafafa', borderBottom: '1px solid #eee',
-        display: 'flex', alignItems: 'baseline', gap: 10,
-      }} className="training-flowchart-header">
-        <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 15, fontWeight: 700 }}>
-          {workflow.name}
-        </div>
-        {workflow.category && (
-          <span style={{ fontSize: 10, fontWeight: 700, color: '#666', background: '#eee', padding: '2px 8px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-            {workflow.category}
-          </span>
-        )}
-        <span style={{ fontSize: 11, color: '#888' }}>{tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
-        <button
-          className="training-print-btn"
-          onClick={printWorkflow}
-          style={{
-            marginLeft: 'auto', padding: '6px 12px', fontSize: 11, fontWeight: 700,
-            border: '1px solid #0A0A0A', background: '#0A0A0A', color: '#fff',
-            borderRadius: 4, cursor: 'pointer',
-          }}
-        >🖨 Print</button>
+    <div className="training-flowchart">
+      <div className="tf-header">
+        <div className="tf-title">{workflow.name}</div>
+        {workflow.category && <div className="tf-meta">{workflow.category} · {tasks.length} tasks</div>}
+        <button className="tf-print" onClick={printWorkflow}>Print</button>
       </div>
 
-      <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div className="tf-body">
         {topLevel.length === 0 ? (
-          <div style={{ padding: 32, color: '#888', fontSize: 12 }}>No top-level tasks in this workflow.</div>
+          <div className="tf-empty">No top-level tasks in this workflow.</div>
         ) : (
           <TrainingChain tasks={topLevel} byParent={byParent} roleKey={roleKey} />
         )}
       </div>
 
-      {/* Inline print + flowchart styles. Kept scoped by container class
-          so they only affect the flowchart — not the rest of the page. */}
       <style>{`
-        .training-flowchart .flow-node {
-          width: 100%;
-          max-width: 520px;
-          box-sizing: border-box;
-        }
-        .training-flowchart .flow-connector {
-          width: 3px;
-          height: 28px;
-          background: #999;
-          position: relative;
-        }
-        .training-flowchart .flow-connector::after {
-          content: '';
-          position: absolute;
-          bottom: -1px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 0; height: 0;
-          border-left: 6px solid transparent;
-          border-right: 6px solid transparent;
-          border-top: 8px solid #999;
-        }
-        .training-flowchart .flow-fan-wrap {
-          display: flex;
-          flex-direction: column;
-          align-items: stretch;
-          width: 100%;
-        }
-        .training-flowchart .flow-fan-svg {
-          margin-bottom: -1px;
-        }
-        .training-flowchart .flow-branches {
-          display: grid;
-          grid-template-columns: repeat(var(--branch-count, 4), minmax(0, 1fr));
-          gap: 16px;
-          justify-content: center;
-          align-items: flex-start;
-          width: 100%;
-        }
-        /* Auto-fit to whatever count the child SVG uses. Falls back to
-           flex on narrow screens so 4 columns don't crush at phone width. */
-        .training-flowchart .flow-branches {
-          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        }
-        .training-flowchart .flow-branch {
-          display: flex;
-          flex-direction: column;
-          background: #fff;
-          border: 1px solid #e5e5e5;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 2px 6px rgba(0,0,0,.05);
-        }
-        .training-flowchart .flow-branch-header {
-          background: linear-gradient(135deg,#0A0A0A,#3a0e17);
-          padding: 12px 14px;
-          border-left: 4px solid #C8102E;
-        }
-        .training-flowchart .flow-branch-answer {
-          font-family: 'Oswald', sans-serif;
-          font-size: 13px;
-          font-weight: 700;
-          color: #fff;
-          text-transform: uppercase;
-          letter-spacing: .8px;
-          text-align: center;
-          line-height: 1.3;
-        }
-        .training-flowchart .flow-branch-body {
-          padding: 16px 14px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          background: #fafafa;
-          flex: 1;
-        }
-        .training-flowchart .flow-branch-empty {
-          padding: 10px 14px;
-          background: #fff;
-          border: 1px dashed #ccc;
+        .training-flowchart {
+          background: #FAF7F0;
+          border: 1px solid #E4DFD3;
           border-radius: 6px;
-          color: #999;
-          font-size: 11px;
+          overflow: hidden;
+          --tf-ink: #171412;
+          --tf-text-2: #6B6560;
+          --tf-text-3: #A29A8F;
+          --tf-border: #E4DFD3;
+          --tf-divider: #EFEAE0;
+          --tf-card: #FFFFFF;
+          --tf-hi-bg: #FDF6D8;
+          --tf-hi-border: #C8102E;
+          --tf-meta-bg: #F2ECDD;
+          --tf-track: #241F1A;
+          --tf-accent: #C8102E;
+        }
+        .training-flowchart .tf-header {
+          display: flex; align-items: baseline; gap: 12px;
+          padding: 14px 20px 12px;
+          border-bottom: 1px solid var(--tf-divider);
+          background: var(--tf-card);
+        }
+        .training-flowchart .tf-title {
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 17px; font-weight: 700;
+          color: var(--tf-ink);
+          letter-spacing: -0.005em;
+          flex-shrink: 0;
+        }
+        .training-flowchart .tf-meta {
+          font: 10px/1 "SF Mono", ui-monospace, Menlo, monospace;
+          text-transform: uppercase; letter-spacing: .12em;
+          color: var(--tf-text-3);
+        }
+        .training-flowchart .tf-print {
+          margin-left: auto;
+          font: 500 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+          color: var(--tf-text-2);
+          background: transparent;
+          border: 1px solid var(--tf-border);
+          padding: 6px 12px;
+          border-radius: 3px;
+          cursor: pointer;
+        }
+        .training-flowchart .tf-print:hover { border-color: var(--tf-accent); color: var(--tf-ink); }
+        .training-flowchart .tf-body {
+          padding: 28px 24px;
+          display: flex; flex-direction: column; align-items: stretch;
+        }
+        .training-flowchart .tf-empty {
+          padding: 32px; color: var(--tf-text-3); font-size: 12px; text-align: center;
+        }
+
+        /* Vertical chain container — centered column with a max width so
+           long chains stay readable at wide screen sizes. */
+        .training-flowchart .tf-chain {
+          display: flex; flex-direction: column; gap: 0;
+          max-width: 620px;
+          margin: 0 auto;
+          width: 100%;
+        }
+
+        /* Task card */
+        .training-flowchart .tf-task {
+          background: var(--tf-card);
+          border: 1px solid var(--tf-border);
+          border-left: 3px solid var(--tf-border);
+          border-radius: 3px;
+          padding: 14px 16px 12px;
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          gap: 14px;
+          align-items: baseline;
+        }
+        .training-flowchart .tf-task[data-mine="true"] {
+          border-left: 3px solid var(--tf-hi-border);
+          background: var(--tf-hi-bg);
+        }
+        .training-flowchart .tf-task .tf-role {
+          font: 700 9px/1 "SF Mono", ui-monospace, Menlo, monospace;
+          text-transform: uppercase; letter-spacing: .1em;
+          color: var(--tf-text-3);
+          padding: 4px 6px;
+          border: 1px solid var(--tf-border);
+          border-radius: 2px;
+          background: var(--tf-card);
+          min-width: 40px; text-align: center;
+        }
+        .training-flowchart .tf-task[data-mine="true"] .tf-role {
+          border-color: var(--tf-hi-border);
+          color: var(--tf-track);
+          background: rgba(255,255,255,.55);
+        }
+        .training-flowchart .tf-task .tf-title {
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 15px; font-weight: 600;
+          line-height: 1.35;
+          color: var(--tf-ink);
+        }
+        .training-flowchart .tf-task[data-handoff="true"] .tf-title {
+          color: var(--tf-text-2);
+        }
+        .training-flowchart .tf-task .tf-kind {
+          font: 9px/1 "SF Mono", ui-monospace, Menlo, monospace;
+          text-transform: uppercase; letter-spacing: .14em;
+          color: var(--tf-text-3);
+        }
+        .training-flowchart .tf-task .tf-meta {
+          grid-column: 2 / -1;
+          color: var(--tf-text-2);
+          font-size: 12px;
+          line-height: 1.5;
+          margin-top: 4px;
+        }
+        .training-flowchart .tf-task .tf-code {
+          font: 11px "SF Mono", ui-monospace, Menlo, monospace;
+          color: var(--tf-text-2);
+          background: var(--tf-meta-bg);
+          padding: 1px 5px;
+          border-radius: 2px;
+        }
+        .training-flowchart .tf-task .tf-notes {
+          grid-column: 2 / -1;
+          font-family: Georgia, serif;
           font-style: italic;
+          font-size: 12px;
+          color: var(--tf-text-2);
+          margin-top: 6px;
+          padding: 6px 10px;
+          border-left: 2px solid var(--tf-border);
         }
-        /* Inside a branch column, cards should shrink to fit the narrower
-           column width instead of maxing out at 520px like top-level ones. */
-        .training-flowchart .flow-branch-body .flow-node {
-          max-width: 100%;
+
+        /* Vertical connector between task cards */
+        .training-flowchart .tf-link {
+          height: 20px;
+          border-left: 1px solid var(--tf-border);
+          margin-left: 26px;
+          width: 0;
         }
+
+        /* Decision point card */
+        .training-flowchart .tf-decision {
+          background: var(--tf-track);
+          color: var(--tf-card);
+          border-radius: 3px;
+          padding: 20px 22px 22px;
+          border-left: 3px solid var(--tf-accent);
+        }
+        .training-flowchart .tf-decision-eyebrow {
+          font: 9px/1 "SF Mono", ui-monospace, Menlo, monospace;
+          text-transform: uppercase; letter-spacing: .18em;
+          color: var(--tf-accent);
+          margin-bottom: 8px;
+        }
+        .training-flowchart .tf-decision-q {
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 18px; font-weight: 600;
+          line-height: 1.28;
+          color: var(--tf-card);
+          margin-bottom: 12px;
+        }
+        .training-flowchart .tf-decision-notes {
+          font-family: Georgia, serif; font-style: italic;
+          color: rgba(255,255,255,.7);
+          font-size: 12px;
+          padding: 6px 10px;
+          border-left: 2px solid rgba(255,255,255,.2);
+          margin-top: 10px;
+        }
+
+        /* Branch tabs (Option B) */
+        .training-flowchart .tf-tabs-wrap {
+          margin: 24px 0 0;
+          padding-top: 24px;
+          border-top: 1px solid var(--tf-border);
+          max-width: 620px;
+          width: 100%;
+          margin-left: auto;
+          margin-right: auto;
+        }
+        .training-flowchart .tf-tabs {
+          display: flex; gap: 2px;
+          background: var(--tf-meta-bg);
+          padding: 4px;
+          border-radius: 4px;
+          margin-bottom: 20px;
+          overflow-x: auto;
+        }
+        .training-flowchart .tf-tab {
+          flex: 1 1 auto;
+          min-width: 0;
+          padding: 10px 14px;
+          background: transparent;
+          border: none;
+          color: var(--tf-text-2);
+          font-family: Georgia, serif;
+          font-style: italic;
+          font-size: 12px;
+          cursor: pointer;
+          border-radius: 3px;
+          white-space: nowrap;
+        }
+        .training-flowchart .tf-tab[aria-selected="true"] {
+          background: var(--tf-card);
+          color: var(--tf-ink);
+          font-style: normal;
+          font-weight: 700;
+          box-shadow: 0 1px 2px rgba(0,0,0,.08);
+        }
+        .training-flowchart .tf-tab-count {
+          display: inline-block;
+          font: 500 9px/1 "SF Mono", ui-monospace, monospace;
+          color: var(--tf-text-3);
+          margin-left: 6px;
+          vertical-align: middle;
+        }
+        .training-flowchart .tf-tab[aria-selected="true"] .tf-tab-count {
+          color: var(--tf-accent);
+        }
+        .training-flowchart .tf-branch-empty {
+          padding: 24px;
+          text-align: center;
+          font-family: Georgia, serif;
+          font-style: italic;
+          color: var(--tf-text-3);
+          font-size: 12px;
+          border: 1px dashed var(--tf-border);
+          border-radius: 3px;
+        }
+
         @media print {
-          .training-flowchart { border: none; box-shadow: none; }
-          .training-flowchart-header .training-print-btn { display: none; }
+          .training-flowchart { border: none; }
+          .training-flowchart .tf-print,
           .training-subtabs, .training-header { display: none; }
-          .training-flowchart .flow-node,
-          .training-flowchart .flow-branch,
-          .training-flowchart .flow-fan-wrap { break-inside: avoid; page-break-inside: avoid; }
-          .training-flowchart .flow-fan-svg { max-height: 40px; }
+          /* Print every branch after the tabs, one after the other, so
+             the printed page shows the whole decision tree even though
+             only one tab is visible on screen. */
+          .training-flowchart .tf-tabs { display: none; }
+          .training-flowchart [data-print-branch] {
+            display: block !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            margin-top: 20px;
+          }
+          .training-flowchart [data-print-branch]::before {
+            content: "If \\201C" attr(data-branch-name) "\\201D";
+            display: block;
+            font-family: Georgia, serif;
+            font-weight: 700; font-size: 15px;
+            color: #171412;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #E4DFD3;
+          }
+          .training-flowchart .tf-task,
+          .training-flowchart .tf-decision {
+            break-inside: avoid; page-break-inside: avoid;
+          }
         }
       `}</style>
     </div>
   );
 }
 
-// A vertical chain of tasks. Each task is followed by an arrow to the
-// next task. Decision points terminate their linear chain and open up
-// into a horizontal branching row.
+// Linear task chain. Renders each task with a connector between; when a
+// decision point is reached, chain output stops and its branches (tabs)
+// render below. Branch continuations recurse into their own chains.
 function TrainingChain({ tasks, byParent, roleKey }) {
-  // Chain runs linearly until we hit a decision point. Everything after
-  // a decision must be reached through the branches, so we render the
-  // linear prefix, then the decision + its branches, then stop (branch
-  // continuations recurse via their own TrainingChain).
   const parts = [];
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
     const isDecision = Array.isArray(t.decision_options) && t.decision_options.length > 0;
-    parts.push(
-      <TrainingCard
-        key={t.id}
-        task={t}
-        roleKey={roleKey}
-      />
-    );
+    parts.push(<TrainingCard key={t.id} task={t} roleKey={roleKey} />);
     if (isDecision) {
-      parts.push(
-        <div key={`c-${t.id}`} className="flow-connector" />
-      );
       parts.push(
         <TrainingBranches
           key={`b-${t.id}`}
@@ -775,225 +919,153 @@ function TrainingChain({ tasks, byParent, roleKey }) {
           roleKey={roleKey}
         />
       );
-      break; // downstream tasks live inside branches, not on this chain
-    } else if (i < tasks.length - 1) {
-      // Regular linear connector to the next task in the chain.
-      parts.push(
-        <div key={`c-${t.id}`} className="flow-connector" />
-      );
+      break; // downstream tasks live inside branches
     }
-    // If this task has non-decision dependents (rare: linear chains
-    // wired through depends_on without a decision), splice them in
-    // now so the chain keeps flowing.
+    // Linear connector to next task (unless the next iteration will draw
+    // its own via a linear child follow).
+    if (i < tasks.length - 1) parts.push(<div key={`c-${t.id}`} className="tf-link" />);
+    // Linear children (rare: chain follow via depends_on_task_id without
+    // decision outcome).
     const kids = byParent.get(t.id) || [];
     const linearKids = kids.filter((k) => !k.depends_on_outcome);
     if (linearKids.length && !isDecision) {
-      parts.push(<div key={`c-${t.id}-x`} className="flow-connector" />);
-      parts.push(
-        <TrainingChain
-          key={`kids-${t.id}`}
-          tasks={linearKids}
-          byParent={byParent}
-          roleKey={roleKey}
-        />
-      );
+      parts.push(<div key={`c2-${t.id}`} className="tf-link" />);
+      parts.push(<TrainingChain key={`kids-${t.id}`} tasks={linearKids} byParent={byParent} roleKey={roleKey} />);
     }
   }
-  return <>{parts}</>;
+  return <div className="tf-chain">{parts}</div>;
 }
 
+// Branch tabs (Option B). Decision follow-up tasks are grouped by
+// answer and shown one branch at a time. On print, every branch renders
+// (see @media print rules above) with a serif "If 'X'" header before
+// each block so the physical page carries the whole tree.
 function TrainingBranches({ decision, byParent, roleKey }) {
   const opts = decision.decision_options || [];
   const kids = byParent.get(decision.id) || [];
-  const n = opts.length;
-  // Draw a proper fan of connector lines from the single point below
-  // the decision card down to the top-center of each branch column.
-  // SVG scales with the container so lines stay lined up on any width.
-  const fanHeight = 56;
-  return (
-    <div className="flow-fan-wrap">
-      <svg
-        className="flow-fan-svg"
-        viewBox={`0 0 ${n * 100} ${fanHeight}`}
-        preserveAspectRatio="none"
-        style={{ width: '100%', height: fanHeight, display: 'block' }}
-        aria-hidden="true"
-      >
-        {opts.map((_, i) => {
-          // Common source: horizontal center of the SVG.
-          const sx = (n * 100) / 2;
-          // Each destination: horizontal center of the i-th column.
-          const dx = i * 100 + 50;
-          // Cubic bezier gives a soft fan-out curve — feels less like
-          // a schematic and more like a hand-drawn onboarding flowchart.
-          const cp1y = fanHeight * 0.35;
-          const cp2y = fanHeight * 0.75;
-          return (
-            <g key={i}>
-              <path
-                d={`M ${sx} 0 C ${sx} ${cp1y}, ${dx} ${cp2y}, ${dx} ${fanHeight - 6}`}
-                stroke="#0A0A0A"
-                strokeWidth="1.6"
-                fill="none"
-                strokeLinecap="round"
-              />
-              {/* Arrowhead pointing down at the branch column top. */}
-              <polygon
-                points={`${dx - 4},${fanHeight - 8} ${dx + 4},${fanHeight - 8} ${dx},${fanHeight - 1}`}
-                fill="#0A0A0A"
-              />
-            </g>
-          );
-        })}
-      </svg>
+  const byOpt = new Map();
+  for (const opt of opts) {
+    byOpt.set(opt, kids
+      .filter((k) => k.depends_on_outcome === opt)
+      .sort((a, b) => (a.position || 0) - (b.position || 0))
+    );
+  }
+  const [active, setActive] = useState(opts[0] || '');
+  useEffect(() => { if (opts.length && !byOpt.has(active)) setActive(opts[0]); }, [opts, byOpt, active]);
 
-      <div className="flow-branches">
+  if (opts.length === 0) return null;
+
+  return (
+    <div className="tf-tabs-wrap">
+      <div className="tf-tabs" role="tablist">
         {opts.map((opt) => {
-          const branchTasks = kids
-            .filter((k) => k.depends_on_outcome === opt)
-            .sort((a, b) => (a.position || 0) - (b.position || 0));
+          const count = (byOpt.get(opt) || []).length;
           return (
-            <div key={opt} className="flow-branch">
-              <div className="flow-branch-header">
-                <div className="flow-branch-answer">If &quot;{opt}&quot;</div>
-              </div>
-              <div className="flow-branch-body">
-                {branchTasks.length === 0 ? (
-                  <div className="flow-branch-empty">No follow-up tasks yet</div>
-                ) : (
-                  <TrainingChain tasks={branchTasks} byParent={byParent} roleKey={roleKey} />
-                )}
-              </div>
-            </div>
+            <button
+              key={opt}
+              role="tab"
+              aria-selected={opt === active}
+              onClick={() => setActive(opt)}
+              className="tf-tab"
+            >
+              {opt}
+              <span className="tf-tab-count">{count}</span>
+            </button>
           );
         })}
       </div>
+      {opts.map((opt) => {
+        const branchTasks = byOpt.get(opt) || [];
+        const visible = opt === active;
+        return (
+          <div
+            key={opt}
+            data-print-branch
+            data-branch-name={opt}
+            style={{ display: visible ? 'block' : 'none' }}
+          >
+            {branchTasks.length === 0 ? (
+              <div className="tf-branch-empty">No follow-up tasks yet.</div>
+            ) : (
+              <TrainingChain tasks={branchTasks} byParent={byParent} roleKey={roleKey} />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-const ROLE_COLORS = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
-
-// A single flowchart node. Decision points get a diamond-adjacent
-// visual treatment (dark background, "DECISION POINT" ribbon at top,
-// list of possible answers). Regular tasks get a clean card with
-// icon + trigger + email details.
-function TrainingCard({ task, roleKey }) {
+// Task-kind label — short SF-Mono uppercase strings replace the emoji
+// icons the previous design used. Reads like a technical spec sheet.
+function taskKindLabel(task) {
   const isDecision = Array.isArray(task.decision_options) && task.decision_options.length > 0;
-  const isEmail = !!task.email_recipient && !!task.email_subject;
-  const isMine = (task.role || '') === roleKey;
-  const roleColor = ROLE_COLORS[task.role || 'lo'] || '#555';
+  if (isDecision) return null;
+  const parts = [];
+  if (task.email_recipient && task.email_subject) parts.push('Email');
+  if (task.trigger_kind === 'status') parts.push('Status');
+  else if (task.trigger_calendar_date) parts.push('Calendar');
+  else parts.push('Date');
+  if (task.trigger_recurring) parts.push('Recurring');
+  return parts.join(' · ');
+}
 
-  const iconFor = () => {
-    if (isDecision) return '❓';
-    if (isEmail) return '📧';
-    if (task.trigger_kind === 'status') return '🔄';
-    if (task.trigger_calendar_date) return '📆';
-    return '📅';
-  };
-
-  const triggerText = () => {
-    if (isDecision) return null;
-    if (task.trigger_kind === 'status') {
-      const repeat = task.repeat_interval && task.repeat_interval !== 'none' ? ` · repeats ${task.repeat_interval}` : '';
-      return `While loan is in "${task.trigger_label || '—'}"${repeat}`;
+function taskMeta(task) {
+  const parts = [];
+  if (task.trigger_kind === 'status') {
+    parts.push(
+      <>While loan is in <code className="tf-code">{task.trigger_label || '—'}</code></>
+    );
+    if (task.repeat_interval && task.repeat_interval !== 'none') {
+      parts.push(<> · repeats <code className="tf-code">{task.repeat_interval}</code></>);
     }
-    if (task.trigger_calendar_date) {
-      return `Every ${task.trigger_calendar_date}${task.trigger_recurring ? ' (yearly)' : ''}`;
-    }
+  } else if (task.trigger_calendar_date) {
+    parts.push(<>Every <code className="tf-code">{task.trigger_calendar_date}</code>{task.trigger_recurring ? ' (yearly)' : ''}</>);
+  } else {
     const n = Number(task.trigger_days || 0);
     const unit = task.trigger_unit || 'days';
     const abs = Math.abs(n);
-    const when = n === 0 ? 'On' : n < 0 ? `${abs} ${unit} before` : `${abs} ${unit} after`;
-    const recur = task.trigger_recurring ? ' (recurring every year)' : '';
-    return `${when} ${task.trigger_label || 'Closing'}${recur}`;
-  };
+    const when = n === 0 ? 'Same day' : n < 0 ? `${abs} ${unit} before` : `${abs} ${unit} after`;
+    parts.push(<><code className="tf-code">{when}</code> {task.trigger_label || 'Closing'}</>);
+  }
+  if (task.email_recipient && task.email_subject) {
+    const to = task.email_recipient === 'other' && task.email_other_recipient
+      ? task.email_other_recipient
+      : (task.email_recipient || '').replace('_', ' ');
+    parts.push(<> · sends to {to}</>);
+  }
+  return parts;
+}
+
+const ROLE_LABEL_MAP = { lo: 'LO', loa: 'LOA', admin: 'Admin', automated: 'Auto' };
+
+function TrainingCard({ task, roleKey }) {
+  const isDecision = Array.isArray(task.decision_options) && task.decision_options.length > 0;
+  const isMine = (task.role || '') === roleKey;
+  const isHandoff = !isMine && !isDecision;
 
   if (isDecision) {
     return (
-      <div className="flow-node" style={{
-        background: '#0A0A0A', color: '#fff', border: '2px solid #0A0A0A',
-        borderRadius: 12, overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,.15)',
-      }}>
-        <div style={{
-          padding: '6px 12px', background: '#fbc02d', color: '#0A0A0A',
-          fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700,
-          textTransform: 'uppercase', letterSpacing: '1.2px', textAlign: 'center',
-        }}>
-          ❓ Decision Point
+      <div className="tf-decision">
+        <div className="tf-decision-eyebrow">
+          Decision Point · answered by {ROLE_LABEL_MAP[task.role || 'lo'] || (task.role || 'LO')}
         </div>
-        <div style={{ padding: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, lineHeight: 1.35 }}>
-            {task.title}
-          </div>
-          <div style={{ fontSize: 11, color: '#ccc', marginBottom: 10 }}>
-            Answered by <span style={{
-              display: 'inline-block',
-              fontSize: 10, fontWeight: 700, color: '#fff', background: roleColor,
-              padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.4px',
-              marginLeft: 4,
-            }}>{task.role || 'lo'}</span>
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {(task.decision_options || []).map((opt) => (
-              <span key={opt} style={{
-                padding: '4px 10px', background: 'rgba(255,255,255,.14)',
-                border: '1px solid rgba(255,255,255,.3)', borderRadius: 999,
-                fontSize: 11, fontWeight: 600,
-              }}>{opt}</span>
-            ))}
-          </div>
-          {task.notes && (
-            <div style={{ marginTop: 10, fontSize: 11, color: '#ccc', fontStyle: 'italic', padding: '8px 10px', background: 'rgba(255,255,255,.06)', borderRadius: 6 }}>
-              {task.notes}
-            </div>
-          )}
-        </div>
+        <div className="tf-decision-q">{task.title}</div>
+        {task.notes && <div className="tf-decision-notes">{task.notes}</div>}
       </div>
     );
   }
 
+  const kind = taskKindLabel(task);
   return (
-    <div className="flow-node" style={{
-      background: isMine ? '#fff8e6' : '#fff',
-      border: `2px solid ${isMine ? '#f5c518' : '#d0d0d0'}`,
-      borderRadius: 10,
-      boxShadow: isMine ? '0 2px 8px rgba(245,192,24,.25)' : '0 1px 4px rgba(0,0,0,.06)',
-      padding: 14,
-    }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <div style={{ fontSize: 22, lineHeight: '22px', flexShrink: 0 }}>{iconFor()}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 4 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: isMine ? '#0A0A0A' : '#333' }}>{task.title}</span>
-            <span style={{
-              fontSize: 10, fontWeight: 700, color: '#fff', background: roleColor,
-              padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.4px',
-            }}>{task.role || 'lo'}</span>
-            {!isMine && (
-              <span style={{ fontSize: 10, color: '#999', fontStyle: 'italic' }}>(hand-off)</span>
-            )}
-          </div>
-          {triggerText() && (
-            <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>
-              <strong style={{ color: '#0A0A0A' }}>When:</strong> {triggerText()}
-            </div>
-          )}
-          {isEmail && (
-            <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>
-              <strong style={{ color: '#0A0A0A' }}>Email:</strong> {task.email_recipient === 'other' && task.email_other_recipient
-                ? `Send to ${task.email_other_recipient}`
-                : `Send to ${(task.email_recipient || '').replace('_', ' ')}`}
-              {task.email_subject ? ` — "${task.email_subject}"` : ''}
-            </div>
-          )}
-          {task.notes && (
-            <div style={{ fontSize: 12, color: '#555', fontStyle: 'italic', marginTop: 6, padding: '8px 10px', background: 'rgba(0,0,0,.03)', borderRadius: 4 }}>
-              {task.notes}
-            </div>
-          )}
-        </div>
+    <div className="tf-task" data-mine={isMine ? 'true' : undefined} data-handoff={isHandoff ? 'true' : undefined}>
+      <div className="tf-role">{ROLE_LABEL_MAP[task.role || 'lo'] || (task.role || 'LO')}</div>
+      <div className="tf-title">{task.title}</div>
+      {kind && <div className="tf-kind">{kind}</div>}
+      <div className="tf-meta">
+        {taskMeta(task).map((chunk, i) => <span key={i}>{chunk}</span>)}
       </div>
+      {task.notes && <div className="tf-notes">{task.notes}</div>}
     </div>
   );
 }
