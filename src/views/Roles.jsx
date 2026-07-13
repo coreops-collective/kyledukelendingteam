@@ -5,6 +5,8 @@ import {
 import { loadWorkflows, getWorkflows, getTasksFor } from '../lib/workflows.js';
 import { showError } from '../lib/toaster.js';
 import Tour from '../components/Tour.jsx';
+import RichTextEditor from '../components/RichTextEditor.jsx';
+import { toEditorHtml } from '../lib/markdown.js';
 
 // One-line hint for each section so the empty state doesn't feel blank.
 const SECTION_META = {
@@ -101,7 +103,7 @@ export default function Roles() {
     },
     {
       title: 'Tabs: Job Description · 30-60-90 · Accountability',
-      body: 'Three more tabs contain the writable JD sections:\n\n• Job Description — the professional prose summary\n• 30-60-90 — combined month 1/2/3 onboarding plan\n• Accountability — measurable outcomes reviewed quarterly\n\nEach section has an ✨ AI Suggest button that drafts content in the Kyle Duke team voice, then you edit and blur to save.',
+      body: 'Three more tabs contain the writable JD sections:\n\n• Job Description — the professional prose summary\n• 30-60-90 — combined month 1/2/3 onboarding plan\n• Accountability — measurable outcomes reviewed quarterly\n\nEach section has an ✨ AI Suggest button that drafts content in the Kyle Duke team voice.\n\nEditor is full rich text — bold, italic, underline, bulleted lists, numbered lists, hyperlinks. Format text however you like, then blur to save. Everything you write here also flows into the Export PDF layout so the printed version keeps your formatting.',
     },
     {
       title: 'Tab 5: Training (printable flowcharts)',
@@ -248,9 +250,14 @@ function RoleEditor({ role, allRoles, onChange }) {
         showError(`AI Suggest failed: ${data.error || res.status}`);
         return;
       }
-      // Replace the section text with the AI draft and save.
-      saveField(section, data.text || '');
-      updateJobRole(role.id, { [section]: data.text || '' });
+      // Convert the AI's markdown output to HTML so the rich text editor
+      // renders it with real bold/italic/list formatting the user can
+      // edit visually. Storage is always HTML going forward; legacy
+      // plain-text saves still display fine because toEditorHtml passes
+      // through anything that already looks like HTML.
+      const html = toEditorHtml(data.text || '');
+      saveField(section, html);
+      updateJobRole(role.id, { [section]: html });
       onChange?.();
     } catch (e) {
       showError(`AI Suggest failed: ${e.message}`);
@@ -923,9 +930,13 @@ function SectionEditor({ section, value, onChange, onCommit, onSuggest, suggesti
   // tour lands on it deterministically instead of any of 5 identical
   // buttons.
   const isFirst = section === 'job_description';
+  // Content may be HTML (from AI Suggest or manual RTE editing) or
+  // legacy plain text (from earlier saves). toEditorHtml passes HTML
+  // through and converts markdown / plain text on the fly.
+  const editorValue = toEditorHtml(value);
   return (
     <div data-tour={isFirst ? 'ai-suggest' : undefined} style={{ marginBottom: 14, padding: 14, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
         <div>
           <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px' }}>
             {meta.title}
@@ -943,17 +954,13 @@ function SectionEditor({ section, value, onChange, onCommit, onSuggest, suggesti
           }}
         >{suggesting ? 'Suggesting…' : '✨ AI Suggest'}</button>
       </div>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+      <RichTextEditor
+        value={editorValue}
+        onChange={onChange}
         onBlur={onCommit}
         placeholder={`Draft ${meta.title.toLowerCase()} manually, or click AI Suggest…`}
-        rows={Math.max(4, Math.min(20, value.split('\n').length + 2))}
-        style={{
-          width: '100%', padding: 10, fontFamily: 'inherit', fontSize: 13,
-          border: '1px solid #ddd', borderRadius: 6, resize: 'vertical', lineHeight: 1.5,
-        }}
-        aria-label={meta.title}
+        minHeight={200}
+        ariaLabel={meta.title}
       />
     </div>
   );
@@ -1034,31 +1041,6 @@ function ConfirmDeleteModal({ roleLabel, onCancel, onConfirm }) {
 function printRole({ role, draft, responsibilities, reportsToLabel }) {
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const mdToHtml = (md) => {
-    // Small, defensive markdown → HTML for our short section outputs.
-    // Only handles paragraphs, bullets, bold, italic — no arbitrary
-    // HTML pass-through, so a spelling of "<script>" in a manual edit
-    // won't execute in the print window.
-    const safe = esc(md || '');
-    const lines = safe.split(/\r?\n/);
-    const out = [];
-    let inList = false;
-    for (const rawLine of lines) {
-      const line = rawLine.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
-      if (/^\s*[-*]\s+/.test(line)) {
-        if (!inList) { out.push('<ul>'); inList = true; }
-        out.push(`<li>${line.replace(/^\s*[-*]\s+/, '')}</li>`);
-      } else if (line.trim() === '') {
-        if (inList) { out.push('</ul>'); inList = false; }
-        out.push('');
-      } else {
-        if (inList) { out.push('</ul>'); inList = false; }
-        out.push(`<p>${line}</p>`);
-      }
-    }
-    if (inList) out.push('</ul>');
-    return out.join('\n');
-  };
 
   // Grouped-by-workflow rendering so the PDF reads categorically —
   // matches what the user sees on the page. Each workflow becomes a
@@ -1073,8 +1055,13 @@ function printRole({ role, draft, responsibilities, reportsToLabel }) {
         </div>`).join('')
     : '<p class="muted">No workflow tasks assigned yet.</p>';
 
+  // Section body is stored as HTML from the rich text editor. Legacy
+  // plain-text / markdown saves still work because toEditorHtml passes
+  // HTML through and converts everything else. Rendered content is
+  // trusted — it was authored by an admin editing their own team's
+  // handbook, not user-generated public content.
   const section = (title, body) => body?.trim()
-    ? `<section><h2>${esc(title)}</h2>${mdToHtml(body)}</section>`
+    ? `<section><h2>${esc(title)}</h2>${toEditorHtml(body)}</section>`
     : '';
 
   const html = `<!doctype html>
