@@ -24,9 +24,14 @@ export default function RateLocks() {
       body: 'Every loan currently in escrow with a locked rate. The list is auto-sourced from Loan Management — any loan with a Lock Expires date that\'s not Funded shows up here.\n\nSorted by days left so the most urgent locks are always at the top.',
     },
     {
-      target: '.kpi-grid',
-      title: 'The 4 KPIs',
+      target: '[data-tour="lock-kpis"]',
+      title: 'The 4 count KPIs',
       body: '• Expired (past due) — locks that have already lapsed. Urgent.\n• Expiring ≤ 7 days — the fire drill window.\n• 8–14 days — watch list.\n• Total Active Locks — everything you\'re actively tracking.\n\nExpired turns bright red when > 0.',
+    },
+    {
+      target: '[data-tour="lock-exposure"]',
+      title: 'Dollars-at-risk exposure',
+      body: 'The second row translates lock count into dollar terms:\n\n• Locked Volume — total $ under committed rate right now.\n• Weighted Avg Days Left — each lock weighted by its loan amount, so a $600K lock 3 days out counts more than a $200K lock 30 days out. Red when < 7d.\n• Next Big Lock — earliest expiration among the biggest half of locks by $. Your "when\'s the next fire drill" indicator.',
     },
     {
       target: '.loans-table',
@@ -53,12 +58,31 @@ export default function RateLocks() {
   const overdue = withDays.filter((l) => l.daysLeft < 0).length;
   const next14 = withDays.filter((l) => l.daysLeft > 7 && l.daysLeft <= 14).length;
 
+  // Exposure metrics. "Locked volume" is total dollars sitting under a
+  // committed rate right now — the number that matters if the market
+  // moves and locks need to be extended. "Weighted avg days left"
+  // weights each lock by its loan amount so a $600K lock 3 days out
+  // counts more than a $200K lock 30 days out. "Nearest big lock" is
+  // the earliest expiration among the biggest half of locks by amount
+  // — a rough "when's the next fire drill" indicator.
+  const lockedVolume = withDays.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+  const weightedDaysLeft = lockedVolume > 0
+    ? withDays.reduce((s, l) => s + (Number(l.amount) || 0) * l.daysLeft, 0) / lockedVolume
+    : 0;
+  const bigCutoff = withDays.length
+    ? [...withDays].sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))[Math.floor(withDays.length / 2)]?.amount || 0
+    : 0;
+  const nearestBigLock = withDays
+    .filter((l) => (Number(l.amount) || 0) >= (Number(bigCutoff) || 0))
+    .reduce((min, l) => (min === null || l.daysLeft < min ? l.daysLeft : min), null);
+
   const daysColor = (d) => d < 0 ? '#c62828' : d <= 7 ? '#c62828' : d <= 14 ? '#e65100' : '#2e7d32';
+  const exposureColor = weightedDaysLeft < 7 ? '#c62828' : weightedDaysLeft < 14 ? '#e65100' : '#2e7d32';
   const openLoan = openId ? LOANS.find((l) => l.id === openId) : null;
 
   return (
     <div>
-      <div className="kpi-grid">
+      <div className="kpi-grid" data-tour="lock-kpis">
         <div className="kpi" style={{ borderTopColor: overdue > 0 ? '#c62828' : 'var(--brand-red)' }}>
           <div className="kpi-label">Expired (past due)</div>
           <div className="kpi-value">{overdue}</div>
@@ -78,6 +102,31 @@ export default function RateLocks() {
           <div className="kpi-label">Total Active Locks</div>
           <div className="kpi-value">{totalLocked}</div>
           <div className="kpi-sub">From Loan Management</div>
+        </div>
+      </div>
+
+      {/* Rate lock exposure — dollars-at-risk view. */}
+      <div className="kpi-grid" data-tour="lock-exposure" style={{ marginTop: 4 }}>
+        <div className="kpi" style={{ borderTopColor: '#0A0A0A' }}>
+          <div className="kpi-label">Locked Volume</div>
+          <div className="kpi-value">{lockedVolume > 0 ? fmt$(lockedVolume) : '—'}</div>
+          <div className="kpi-sub">Total $ under committed rate</div>
+        </div>
+        <div className="kpi" style={{ borderTopColor: exposureColor }}>
+          <div className="kpi-label">Weighted Avg Days Left</div>
+          <div className="kpi-value" style={{ color: exposureColor }}>
+            {lockedVolume > 0 ? Math.round(weightedDaysLeft) + 'd' : '—'}
+          </div>
+          <div className="kpi-sub">$ × days ÷ total $</div>
+        </div>
+        <div className="kpi" style={{ borderTopColor: nearestBigLock !== null && nearestBigLock <= 7 ? '#c62828' : nearestBigLock !== null && nearestBigLock <= 14 ? '#e65100' : '#2e7d32' }}>
+          <div className="kpi-label">Next Big Lock</div>
+          <div className="kpi-value">
+            {nearestBigLock !== null
+              ? (nearestBigLock < 0 ? (-nearestBigLock + 'd late') : nearestBigLock + 'd')
+              : '—'}
+          </div>
+          <div className="kpi-sub">Earliest among top-half by $</div>
         </div>
       </div>
 

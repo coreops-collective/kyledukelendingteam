@@ -48,6 +48,34 @@ function computeIcdDeadline(closeDate) {
   }
   return out.toISOString().slice(0, 10);
 }
+
+// Shift a date by N business days (Mon-Fri only). Positive n = forward,
+// negative n = backward. Returns a YYYY-MM-DD string.
+function shiftBusinessDays(startYmd, n) {
+  const d = parseDate(startYmd);
+  if (!d) return '';
+  const out = new Date(d);
+  const step = n >= 0 ? 1 : -1;
+  let remaining = Math.abs(n);
+  while (remaining > 0) {
+    out.setDate(out.getDate() + step);
+    const dow = out.getDay();
+    if (dow !== 0 && dow !== 6) remaining--;
+  }
+  return out.toISOString().slice(0, 10);
+}
+
+// TRID / Reg Z regulatory clocks. LE (Loan Estimate) must be delivered
+// within 3 business days of application. The 7-business-day waiting
+// period says the earliest permissible close is 7 business days after
+// LE delivery. Both are hard rules — missing them is a re-disclosure /
+// delay / potential UDAAP finding.
+function computeLeDeadline(applicationDate) {
+  return applicationDate ? shiftBusinessDays(applicationDate, 3) : '';
+}
+function computeTridEarliestClose(leSentDate) {
+  return leSentDate ? shiftBusinessDays(leSentDate, 7) : '';
+}
 function getYearFromDate(s) {
   const d = parseDate(s);
   return d ? String(d.getFullYear()) : '';
@@ -75,10 +103,19 @@ function DeadlinesPanel({ loans, onOpen }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const items = [];
   loans.forEach((l) => {
+    // Regulatory clocks (TRID / Reg Z). LE and CD both trip UDAAP if
+    // missed, so they show up in the same panel as the operational
+    // deadlines and count against overdue counts.
+    const leDeadline = l.leDeadline || computeLeDeadline(l.dateApplied || l.applicationDate);
+    const tridEarliestClose = computeTridEarliestClose(l.leSentDate);
+    const tridViolation = tridEarliestClose && l.closeDate
+      && parseDate(l.closeDate) && parseDate(tridEarliestClose)
+      && parseDate(l.closeDate) < parseDate(tridEarliestClose);
     const checks = [
+      { type: 'LE Deadline (TRID 3-day)', date: leDeadline, done: !!l.leSentDate },
+      { type: 'CD / ICD Deadline (TRID)',  date: l.icdDeadline, done: l.icdSigned },
       { type: 'Appraisal Deadline', date: l.apprDeadline, done: l.apprReceived },
       { type: 'Lock Expires', date: l.lockExp, done: l.stage === 'funded' },
-      { type: 'ICD Deadline', date: l.icdDeadline, done: l.icdSigned },
     ];
     checks.forEach((ch) => {
       const d = parseDate(ch.date);
@@ -87,6 +124,16 @@ function DeadlinesPanel({ loans, onOpen }) {
       if (daysAway > 30) return;
       items.push({ loan: l, type: ch.type, date: ch.date, daysAway });
     });
+    // TRID 7-day wait violation gets its own overdue-style row so it
+    // can't hide in a bucket.
+    if (tridViolation) {
+      items.push({
+        loan: l,
+        type: `TRID 7-day wait violation (earliest close ${tridEarliestClose})`,
+        date: l.closeDate,
+        daysAway: -1,
+      });
+    }
   });
   items.sort((a, b) => a.daysAway - b.daysAway);
   const overdue = items.filter((d) => d.daysAway < 0);
@@ -870,7 +917,7 @@ export default function LoanManagement() {
     {
       target: '[data-tour="deadlines-panel"]',
       title: 'Deadlines panel',
-      body: 'The Deadlines panel highlights every Appraisal Deadline, Lock Expiration, and ICD Deadline in the next 30 days.\n\nOverdue = red · This Week = orange · Later = green. Click any row to jump straight to the loan.',
+      body: 'Highlights every Appraisal Deadline, Lock Expiration, ICD Deadline, LE (TRID 3-day) Deadline, and TRID 7-day-wait violation in the next 30 days.\n\nOverdue = red · This Week = orange · Later = green. Click any row to jump straight to the loan. LE and CD/ICD are TRID rules — missing them is a re-disclosure event.',
     },
     {
       target: '.lm-view-toggle',
@@ -894,7 +941,9 @@ export default function LoanManagement() {
 
   // One-time backfill: any loan with a close date but no ICD deadline gets
   // the auto-computed value (3 days back, skipping Sundays). Existing
-  // manual ICD deadlines are left alone.
+  // manual ICD deadlines are left alone. Same treatment for LE deadline:
+  // if there's an application date but no LE deadline, compute it from
+  // TRID's 3-business-day rule.
   useEffect(() => {
     let changed = false;
     LOANS.forEach((l) => {
@@ -902,6 +951,15 @@ export default function LoanManagement() {
         const auto = computeIcdDeadline(l.closeDate);
         if (auto) {
           l.icdDeadline = auto;
+          markLoansDirty(l);
+          changed = true;
+        }
+      }
+      const applied = l.dateApplied || l.applicationDate;
+      if (applied && !l.leDeadline) {
+        const auto = computeLeDeadline(applied);
+        if (auto) {
+          l.leDeadline = auto;
           markLoansDirty(l);
           changed = true;
         }
@@ -1021,6 +1079,10 @@ export default function LoanManagement() {
     if (key === 'closeDate') {
       const auto = computeIcdDeadline(value);
       if (auto) loan.icdDeadline = auto;
+    }
+    if (key === 'dateApplied' || key === 'applicationDate') {
+      const auto = computeLeDeadline(value);
+      if (auto) loan.leDeadline = auto;
     }
     markLoansDirty(loan);
     bump();

@@ -286,6 +286,27 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
             </div>
           </div>
 
+          {/* TRID / Reg Z compliance clocks. LE must be sent within 3
+              business days of application; earliest permissible close
+              is 7 business days after LE delivery. Both dates flag on
+              the Deadlines panel and against loan-management rules. */}
+          <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eee' }}>
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10, color: '#555' }}>
+              Compliance (TRID)
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <Field label="Application Date">
+                <I type="date" defaultValue={loan.dateApplied || loan.applicationDate || ''} onBlur={(e) => set('dateApplied', e.target.value)} />
+              </Field>
+              <Field label="LE Sent Date">
+                <I type="date" defaultValue={loan.leSentDate || ''} onBlur={(e) => set('leSentDate', e.target.value)} />
+              </Field>
+              <Field label="LE Deadline (auto)">
+                <I type="text" readOnly value={loan.leDeadline || ''} placeholder="auto from application" style={{ background: '#f5f5f5' }} />
+              </Field>
+            </div>
+          </div>
+
           <div style={{ marginTop: 18 }}>
             <Field label="Notes" full>
               <textarea
