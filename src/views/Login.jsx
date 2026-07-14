@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { setCurrentUser } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
+import { audit, ACTIONS } from '../lib/audit.js';
 
 const REMEMBER_KEY = 'kdt.rememberEmail';
 // Legacy key from when remember-me stored a base64-encoded password in
@@ -70,6 +71,13 @@ export default function Login({ onSuccess }) {
       // RPC is unreachable, the app can't authenticate — but the app
       // can't do anything useful in that state anyway.
       if (!user) {
+        // Record the failed attempt against the submitted email so an
+        // examiner can see repeated failed logins on an account (a
+        // brute-force signal). We deliberately do NOT record the
+        // password itself in details.
+        audit(ACTIONS.AUTH_LOGIN_FAILED, 'user', null, { attempted_email: email.trim() }, {
+          actorId: null, actorEmail: email.trim(),
+        });
         if (error) {
           const msg = error.message || error.toString();
           const code = error.code || error.hint || '';
@@ -86,6 +94,9 @@ export default function Login({ onSuccess }) {
         localStorage.removeItem(REMEMBER_KEY);
       }
       setCurrentUser(user);
+      audit(ACTIONS.AUTH_LOGIN_SUCCESS, 'user', user.id, null, {
+        actorId: user.id, actorEmail: user.email,
+      });
       onSuccess?.(user);
     } catch (thrown) {
       // eslint-disable-next-line no-console

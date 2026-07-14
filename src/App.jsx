@@ -26,7 +26,7 @@ import Login from './views/Login.jsx';
 import Welcome from './views/Welcome.jsx';
 import Setup from './views/Setup.jsx';
 import useAuth from './hooks/useAuth.js';
-import { isAdmin, isBranchManager } from './lib/auth.js';
+import { isAdmin, isBranchManager, enforceSessionCap } from './lib/auth.js';
 import { loadUsersFromSupabase } from './data/users.js';
 import { loadLoansFromSupabase } from './lib/loansStore.js';
 import { loadPartnersFromSupabase } from './lib/partnersStore.js';
@@ -105,6 +105,24 @@ export default function App() {
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
+
+  // 12h absolute session cap. Check on mount, on window focus / tab
+  // visibility, and every 5 minutes. If the login timestamp is > 12h
+  // old, enforceSessionCap clears storage and dispatches kdt-auth-changed
+  // which drops the user back to Login on the next render.
+  useEffect(() => {
+    enforceSessionCap();
+    const onFocus = () => enforceSessionCap();
+    const onVisibility = () => { if (document.visibilityState === 'visible') enforceSessionCap(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    const timer = setInterval(enforceSessionCap, 5 * 60 * 1000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(timer);
+    };
+  }, []);
 
   if (!usersReady) return (<><UpdateBanner /><ToasterStack /></>);
 

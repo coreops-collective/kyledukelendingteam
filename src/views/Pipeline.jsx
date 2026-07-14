@@ -6,6 +6,7 @@ import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, subscribeLoans } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
 import { getCurrentUser } from '../lib/auth.js';
+import { audit, ACTIONS } from '../lib/audit.js';
 import Tour from '../components/Tour.jsx';
 import { parseLocalDate } from '../lib/clientDates.js';
 
@@ -212,6 +213,12 @@ export default function Pipeline() {
     // a Kanban drag that promotes a card is a status change too.
     const finalStatus = loan.status || '';
     if (prevStatus !== finalStatus) {
+      audit(ACTIONS.LOAN_STATUS_CHANGED, 'loan', loan.id, {
+        borrower: loan.borrower,
+        old_status: prevStatus,
+        new_status: finalStatus,
+        source: 'pipeline_drag',
+      });
       fireWebhooks('loan.status_changed', {
         loan_id: loan.id,
         borrower: loan.borrower,

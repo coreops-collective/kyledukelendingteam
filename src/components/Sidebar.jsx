@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ROLE_LABELS } from '../data/users.js';
-import { setCurrentUser, isAdmin, isBranchManager } from '../lib/auth.js';
+import { setCurrentUser, isAdmin, isBranchManager, getCurrentUser } from '../lib/auth.js';
+import { audit, ACTIONS } from '../lib/audit.js';
 
 const NAV_GROUPS = [
   { label: 'Overview', className: '', items: [
@@ -108,7 +109,11 @@ export default function Sidebar({ user, open = false }) {
             </>
           )}
         </div>
-        <button className="sidebar-logout" onClick={() => setCurrentUser(null)}>Sign Out</button>
+        <button className="sidebar-logout" onClick={() => {
+          const me = getCurrentUser();
+          audit(ACTIONS.AUTH_LOGOUT, 'user', me?.id, null);
+          setCurrentUser(null);
+        }}>Sign Out</button>
         <div className="sidebar-fine">
           NMLS #2172565 · Valor Home Loans<br />
           Equal Housing Lender · Member FDIC<br />

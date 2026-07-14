@@ -1,6 +1,7 @@
 import { supabase } from './supabase.js';
 import { showError } from './toaster.js';
 import { getCurrentUser } from './auth.js';
+import { audit, ACTIONS } from './audit.js';
 
 // In-memory webhook subscription cache. Loaded once on boot; refreshed
 // after any admin edits + on the realtime change event. Firing hot
@@ -54,7 +55,12 @@ export async function createWebhookSubscription(row) {
       return null;
     }
     const created = Array.isArray(data) && data.length ? data[0] : null;
-    if (created) SUBSCRIPTIONS.push(created);
+    if (created) {
+      SUBSCRIPTIONS.push(created);
+      audit(ACTIONS.WEBHOOK_CREATED, 'webhook_subscription', created.id, {
+        event: created.event, url: created.url, label: created.label,
+      });
+    }
     window.dispatchEvent(new Event('kdt-webhooks-changed'));
     return created;
   } catch (e) {
@@ -86,6 +92,9 @@ export async function updateWebhookSubscription(id, patch) {
     }
     const row = SUBSCRIPTIONS.find((s) => s.id === id);
     if (row) Object.assign(row, patch);
+    audit(ACTIONS.WEBHOOK_UPDATED, 'webhook_subscription', id, {
+      changed_fields: Object.keys(patch || {}),
+    });
     window.dispatchEvent(new Event('kdt-webhooks-changed'));
   } catch (e) {
     console.warn('[webhooks] update error:', e.message);
@@ -110,6 +119,7 @@ export async function deleteWebhookSubscription(id) {
     }
     const idx = SUBSCRIPTIONS.findIndex((s) => s.id === id);
     if (idx >= 0) SUBSCRIPTIONS.splice(idx, 1);
+    audit(ACTIONS.WEBHOOK_DELETED, 'webhook_subscription', id, null);
     window.dispatchEvent(new Event('kdt-webhooks-changed'));
   } catch (e) {
     console.warn('[webhooks] delete error:', e.message);

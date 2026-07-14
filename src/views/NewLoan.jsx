@@ -5,6 +5,7 @@ import { LOANS } from '../data/loans.js';
 import { sbInsert } from '../lib/supabase.js';
 import { markLoansDirty } from '../lib/loansStore.js';
 import { getCurrentUser } from '../lib/auth.js';
+import { audit, ACTIONS } from '../lib/audit.js';
 import { upsertClientDate } from '../lib/clientDates.js';
 import Tour from '../components/Tour.jsx';
 import {
@@ -262,6 +263,13 @@ export default function NewLoan() {
       };
       LOANS.push(newLoan);
       touchedLoan = newLoan;
+      audit(ACTIONS.LOAN_CREATED, 'loan', newLoan.id, {
+        borrower: newLoan.borrower,
+        status: newLoan.status,
+        amount: newLoan.amount,
+        lo: newLoan.lo,
+        source: 'new_loan',
+      });
     }
 
     markLoansDirty(touchedLoan);
