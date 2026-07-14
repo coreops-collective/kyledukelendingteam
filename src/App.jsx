@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import Sidebar from './components/Sidebar.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import ToasterStack from './components/ToasterStack.jsx';
+import GlobalSearch from './components/GlobalSearch.jsx';
 import Pipeline from './views/Pipeline.jsx';
 import NewLoan from './views/NewLoan.jsx';
 import Placeholder from './views/Placeholder.jsx';
@@ -82,6 +83,7 @@ export default function App() {
   const user = useAuth();
   const [justLoggedIn, setJustLoggedIn] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const meta = PAGE_META[location.pathname] || PAGE_META['/snapshot'];
 
   const [usersReady, setUsersReady] = useState(false);
@@ -105,6 +107,25 @@ export default function App() {
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
+
+  // Global Cmd+K / Ctrl+K opens the fuzzy-search modal. Standard search
+  // hotkey across most modern apps — no advertised shortcut screen
+  // needed. Skipped when typing in a form field so the shortcut can't
+  // interrupt data entry.
+  useEffect(() => {
+    const onKey = (e) => {
+      const isSearchShortcut = (e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K');
+      if (!isSearchShortcut) return;
+      // Don't hijack when the user is typing in a native input.
+      const t = e.target;
+      const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (inField) return;
+      e.preventDefault();
+      setSearchOpen((v) => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // 12h absolute session cap. Check on mount, on window focus / tab
   // visibility, and every 5 minutes. If the login timestamp is > 12h
@@ -212,6 +233,7 @@ export default function App() {
       <div id="drawerRoot"></div>
       <div id="loginRoot"></div>
       <ToasterStack />
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
 import { loadClientProfiles } from '../lib/clientProfiles.js';
 import { parseLocalDate } from '../lib/clientDates.js';
 import { getRoleLabel, getRoleKeysForWorkflowDropdown } from '../lib/jobRoles.js';
+import { escalateOverdueTasks } from '../lib/taskEscalation.js';
 import Tour from '../components/Tour.jsx';
 
 const TASKS_KEY = 'kdt-tasks-v1';
@@ -74,6 +75,15 @@ export default function Tasks() {
     generated.sort((a, b) => a.due_date - b.due_date);
     return generated;
   }, [workflowVersion]); // real counter — was previously the setter, which never changed identity so the memo went stale
+
+  // Auto-escalate overdue LOA tasks: any pipeline task assigned to an
+  // LOA that's past its due date fires a task.overdue notification so
+  // the LO gets a nudge. De-dupes via audit_log so we don't spam.
+  // Runs once on mount and again on any task refresh. Non-blocking.
+  useEffect(() => {
+    if (!pipelineTasks.length) return;
+    escalateOverdueTasks(pipelineTasks).catch(() => {});
+  }, [pipelineTasks]);
 
   const toggleWorkflowTask = (item) => {
     const iso = fmtIsoToday();
@@ -237,7 +247,11 @@ export default function Tasks() {
     {
       target: '[data-tour="pipeline-panel"]',
       title: 'Pipeline Task rows',
-      body: 'Each row shows the task, the client, the source workflow, and the role tag. Check the box to mark done \u2014 completion is scoped to that specific loan, so two loans with the same borrower name don\'t double-complete.\n\nRecurring tasks re-emit tomorrow if you don\'t check them today.',
+      body: 'Each row shows the task, the client, the source workflow, and the role tag. Check the red box to mark done \u2014 completion is scoped to that specific loan, so two loans with the same borrower name don\'t double-complete.\n\nRecurring tasks re-emit tomorrow if you don\'t check them today.',
+    },
+    {
+      title: 'Knock out many tasks at once',
+      body: 'To complete a batch: click the "Select multiple" button in the filter bar. Each row grows a second smaller checkbox for selection, plus a Select-all and Complete-N toolbar appears above the list.\n\nWhen you\'re done, click Cancel or hit Complete to send them all through in one shot.',
     },
     {
       target: '[data-tour="tracker-tabs"]',
@@ -619,7 +633,10 @@ function TaskDrawer({ task, projects, onClose, onSave, onDelete }) {
 function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filters }) {
   // Selection state for bulk completion. Only tracks IDs currently in
   // the filtered list — resetting filters clears selections that would
-  // no longer be visible.
+  // no longer be visible. Selection UI is gated behind a Select mode
+  // toggle so the default row shows ONE checkbox (the primary complete
+  // action) instead of two side-by-side checkboxes.
+  const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const visibleIds = new Set(items.filter((it) => !it.completed).map((it) => it.id));
   // Prune any stale selections when the visible list changes.
@@ -646,6 +663,11 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
     const targets = items.filter((it) => selected.has(it.id));
     await onBulkComplete(targets);
     setSelected(new Set());
+    setSelectMode(false);
+  };
+  const exitSelectMode = () => {
+    setSelected(new Set());
+    setSelectMode(false);
   };
   const roleColors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
   const roles = getRoleKeysForWorkflowDropdown();
@@ -712,12 +734,27 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
             style={{ padding: '4px 10px', background: '#5a0e1a', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
           >Reset</button>
         )}
+        {visibleIds.size > 0 && !selectMode && (
+          <button
+            onClick={() => setSelectMode(true)}
+            style={{
+              padding: '4px 10px', background: '#fff', color: '#0A0A0A',
+              border: '1px solid #d0d0d0', borderRadius: 4,
+              fontWeight: 700, fontSize: 11, cursor: 'pointer',
+              textTransform: 'uppercase', letterSpacing: '.4px',
+              fontFamily: "'Oswald',sans-serif",
+            }}
+          >Select multiple</button>
+        )}
         <div style={{ marginLeft: 'auto', color: '#888', fontSize: 11 }}>
           {items.length} of {totalCount}
         </div>
       </div>
 
-      {visibleIds.size > 0 && (
+      {/* Bulk selection toolbar — only visible while the user is in
+          Select mode. Default view keeps the row lean with a single
+          "complete" checkbox per task. */}
+      {selectMode && visibleIds.size > 0 && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '8px 14px', background: someChecked ? '#fff3cd' : '#f7f9fc',
@@ -732,7 +769,7 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
               style={{ width: 16, height: 16, accentColor: 'var(--brand-red)' }}
             />
             <span style={{ color: '#666', fontWeight: 600 }}>
-              {someChecked ? `${selected.size} selected` : 'Select all'}
+              {someChecked ? `${selected.size} selected` : 'Select all visible'}
             </span>
           </label>
           {someChecked && (
@@ -745,6 +782,16 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
               }}
             >✓ Complete {selected.size}</button>
           )}
+          <button
+            onClick={exitSelectMode}
+            style={{
+              marginLeft: 'auto',
+              padding: '4px 10px', background: 'transparent', color: '#555',
+              border: '1px solid #d0d0d0', borderRadius: 4, fontWeight: 700,
+              fontSize: 11, cursor: 'pointer', textTransform: 'uppercase',
+              letterSpacing: '.4px', fontFamily: "'Oswald',sans-serif",
+            }}
+          >Cancel</button>
         </div>
       )}
 
@@ -780,8 +827,8 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
                 alignItems: 'center',
                 background: it.completed ? '#fafafa' : isSelected ? '#fffce7' : (overdue ? '#fff5f5' : '#fff'),
               }}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  {!it.completed && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {selectMode && !it.completed && (
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -795,7 +842,7 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
                     type="checkbox"
                     checked={it.completed}
                     onChange={() => onToggle(it)}
-                    style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }}
+                    style={{ width: 20, height: 20, cursor: 'pointer', accentColor: 'var(--brand-red)' }}
                     title="Mark complete"
                     aria-label="Complete"
                   />

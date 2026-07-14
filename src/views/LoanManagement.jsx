@@ -10,6 +10,9 @@ import { fireWebhooks } from '../lib/webhooks.js';
 import { audit, ACTIONS } from '../lib/audit.js';
 import { appendNotesHistory, loadNotesHistory } from '../lib/notesHistory.js';
 import { parseLocalDate } from '../lib/clientDates.js';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { notifyMentions } from '../lib/mentions.js';
+import MentionTextarea from '../components/MentionTextarea.jsx';
 import Tour from '../components/Tour.jsx';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -48,6 +51,34 @@ function computeIcdDeadline(closeDate) {
   }
   return out.toISOString().slice(0, 10);
 }
+
+// Shift a date by N business days (Mon-Fri only). Positive n = forward,
+// negative n = backward. Returns a YYYY-MM-DD string.
+function shiftBusinessDays(startYmd, n) {
+  const d = parseDate(startYmd);
+  if (!d) return '';
+  const out = new Date(d);
+  const step = n >= 0 ? 1 : -1;
+  let remaining = Math.abs(n);
+  while (remaining > 0) {
+    out.setDate(out.getDate() + step);
+    const dow = out.getDay();
+    if (dow !== 0 && dow !== 6) remaining--;
+  }
+  return out.toISOString().slice(0, 10);
+}
+
+// TRID / Reg Z regulatory clocks. LE (Loan Estimate) must be delivered
+// within 3 business days of application. The 7-business-day waiting
+// period says the earliest permissible close is 7 business days after
+// LE delivery. Both are hard rules — missing them is a re-disclosure /
+// delay / potential UDAAP finding.
+function computeLeDeadline(applicationDate) {
+  return applicationDate ? shiftBusinessDays(applicationDate, 3) : '';
+}
+function computeTridEarliestClose(leSentDate) {
+  return leSentDate ? shiftBusinessDays(leSentDate, 7) : '';
+}
 function getYearFromDate(s) {
   const d = parseDate(s);
   return d ? String(d.getFullYear()) : '';
@@ -75,10 +106,19 @@ function DeadlinesPanel({ loans, onOpen }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const items = [];
   loans.forEach((l) => {
+    // Regulatory clocks (TRID / Reg Z). LE and CD both trip UDAAP if
+    // missed, so they show up in the same panel as the operational
+    // deadlines and count against overdue counts.
+    const leDeadline = l.leDeadline || computeLeDeadline(l.dateApplied || l.applicationDate);
+    const tridEarliestClose = computeTridEarliestClose(l.leSentDate);
+    const tridViolation = tridEarliestClose && l.closeDate
+      && parseDate(l.closeDate) && parseDate(tridEarliestClose)
+      && parseDate(l.closeDate) < parseDate(tridEarliestClose);
     const checks = [
+      { type: 'LE Deadline (TRID 3-day)', date: leDeadline, done: !!l.leSentDate },
+      { type: 'CD / ICD Deadline (TRID)',  date: l.icdDeadline, done: l.icdSigned },
       { type: 'Appraisal Deadline', date: l.apprDeadline, done: l.apprReceived },
       { type: 'Lock Expires', date: l.lockExp, done: l.stage === 'funded' },
-      { type: 'ICD Deadline', date: l.icdDeadline, done: l.icdSigned },
     ];
     checks.forEach((ch) => {
       const d = parseDate(ch.date);
@@ -87,6 +127,16 @@ function DeadlinesPanel({ loans, onOpen }) {
       if (daysAway > 30) return;
       items.push({ loan: l, type: ch.type, date: ch.date, daysAway });
     });
+    // TRID 7-day wait violation gets its own overdue-style row so it
+    // can't hide in a bucket.
+    if (tridViolation) {
+      items.push({
+        loan: l,
+        type: `TRID 7-day wait violation (earliest close ${tridEarliestClose})`,
+        date: l.closeDate,
+        daysAway: -1,
+      });
+    }
   });
   items.sort((a, b) => a.daysAway - b.daysAway);
   const overdue = items.filter((d) => d.daysAway < 0);
@@ -139,7 +189,7 @@ function DeadlinesPanel({ loans, onOpen }) {
         </div>
       </div>
       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+        <div className="kdt-grid-3">
           {col('Overdue', '#c62828', overdue)}
           {col('This Week', '#e65100', thisWeek)}
           {col('8–30 Days', '#666', later)}
@@ -240,15 +290,15 @@ function NotesDrawer({ loan, onSave, onClose }) {
                 {showHistory ? 'Hide history' : 'View history'}
               </button>
             </label>
-            <textarea
-              autoFocus
+            <MentionTextarea
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(v) => setNotes(v)}
+              minHeight={420}
+              placeholder="Type @ to mention a teammate…"
+              ariaLabel="Loan notes"
               style={{
-                minHeight: 420, width: '100%', padding: 14,
-                fontFamily: 'inherit', fontSize: 13, lineHeight: 1.6,
-                border: '1px solid var(--border)', borderRadius: 8, resize: 'both',
-                boxSizing: 'border-box',
+                fontSize: 13, lineHeight: 1.6,
+                border: '1px solid var(--border)', borderRadius: 8,
               }}
             />
           </div>
@@ -840,6 +890,22 @@ export default function LoanManagement() {
   const [newLoanOpen, setNewLoanOpen] = useState(false);
   const [saveToast, setSaveToast] = useState(null);
 
+  // Global Search navigates here with ?loan=<id> to signal "open this
+  // loan's drawer." Consume the query on mount, then strip it from the
+  // URL so a browser back / refresh doesn't re-open the drawer
+  // unexpectedly.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const wantLoan = params.get('loan');
+    if (wantLoan) {
+      setLoanFor(wantLoan);
+      navigate('/loanmgmt', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Listen for column-width-changed events so the user gets a brief toast
   // confirming each click on the column +/- buttons actually fires.
   useEffect(() => {
@@ -870,7 +936,7 @@ export default function LoanManagement() {
     {
       target: '[data-tour="deadlines-panel"]',
       title: 'Deadlines panel',
-      body: 'The Deadlines panel highlights every Appraisal Deadline, Lock Expiration, and ICD Deadline in the next 30 days.\n\nOverdue = red · This Week = orange · Later = green. Click any row to jump straight to the loan.',
+      body: 'Highlights every Appraisal Deadline, Lock Expiration, ICD Deadline, LE (TRID 3-day) Deadline, and TRID 7-day-wait violation in the next 30 days.\n\nOverdue = red · This Week = orange · Later = green. Click any row to jump straight to the loan. LE and CD/ICD are TRID rules — missing them is a re-disclosure event.',
     },
     {
       target: '.lm-view-toggle',
@@ -888,13 +954,15 @@ export default function LoanManagement() {
     },
     {
       title: 'Click any loan for the drawer',
-      body: 'Click a card or a row to open the full Loan Drawer — every field editable, notes history preserved, archive/unarchive available.\n\nStatus changes made anywhere (drawer, spreadsheet, Pipeline drag) sync in real time across the app.',
+      body: 'Click a card or a row to open the full Loan Drawer — every field editable, notes history preserved, archive/unarchive available.\n\nThe drawer now has two note surfaces:\n• Notes (static) — standing description of the loan.\n• Comments — threaded ops log with @-mentions. Type @ to nudge a teammate; mentions fire an email if you\'ve wired the mention rule in Setup.\n\nStatus changes made anywhere (drawer, spreadsheet, Pipeline drag) sync in real time across the app.',
     },
   ];
 
   // One-time backfill: any loan with a close date but no ICD deadline gets
   // the auto-computed value (3 days back, skipping Sundays). Existing
-  // manual ICD deadlines are left alone.
+  // manual ICD deadlines are left alone. Same treatment for LE deadline:
+  // if there's an application date but no LE deadline, compute it from
+  // TRID's 3-business-day rule.
   useEffect(() => {
     let changed = false;
     LOANS.forEach((l) => {
@@ -902,6 +970,15 @@ export default function LoanManagement() {
         const auto = computeIcdDeadline(l.closeDate);
         if (auto) {
           l.icdDeadline = auto;
+          markLoansDirty(l);
+          changed = true;
+        }
+      }
+      const applied = l.dateApplied || l.applicationDate;
+      if (applied && !l.leDeadline) {
+        const auto = computeLeDeadline(applied);
+        if (auto) {
+          l.leDeadline = auto;
           markLoansDirty(l);
           changed = true;
         }
@@ -1022,6 +1099,10 @@ export default function LoanManagement() {
       const auto = computeIcdDeadline(value);
       if (auto) loan.icdDeadline = auto;
     }
+    if (key === 'dateApplied' || key === 'applicationDate') {
+      const auto = computeLeDeadline(value);
+      if (auto) loan.leDeadline = auto;
+    }
     markLoansDirty(loan);
     bump();
   }, [bump]);
@@ -1069,6 +1150,14 @@ export default function LoanManagement() {
     // Fire-and-forget — never block the local save on the history insert.
     if (loan && (loan.notes || '') !== (value || '')) {
       appendNotesHistory(loan.id, loan.notes || '');
+      notifyMentions({
+        oldText: loan.notes || '', newText: value || '',
+        context: {
+          borrower: loan.borrower, loan_id: loan.id,
+          dashboard_url: 'https://thekyleduketeam.netlify.app/',
+          snippet: (value || '').slice(0, 240),
+        },
+      });
     }
     if (loan) {
       loan.notes = value;

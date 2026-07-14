@@ -4,6 +4,9 @@ import { PARTNERS } from '../data/partners.js';
 import { markLoansDirty } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
 import { audit, ACTIONS } from '../lib/audit.js';
+import { notifyMentions } from '../lib/mentions.js';
+import MentionTextarea from './MentionTextarea.jsx';
+import CommentThread from './CommentThread.jsx';
 
 // Every pipeline stage label so the Status dropdown works for both
 // pre-contract (New Lead, Applied, HOT PA, REFI Watch) and LOS stages.
@@ -210,7 +213,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
               ✓ Saved · {justSaved}
             </div>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="kdt-grid-2">
             <Field label="Borrower" full>
               <I defaultValue={loan.borrower || ''} onBlur={(e) => set('borrower', e.target.value)} />
             </Field>
@@ -268,7 +271,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
             <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10, color: '#555' }}>
               Timeline
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div className="kdt-grid-3">
               <Chk value={loan.apprOrdered} onChange={(v) => set('apprOrdered', v)} label="Appraisal Ordered" />
               <Chk value={loan.apprReceived} onChange={(v) => set('apprReceived', v)} label="Appraisal Received" />
               <Chk value={loan.titleReceived} onChange={(v) => set('titleReceived', v)} label="Title Received" />
@@ -286,19 +289,52 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
             </div>
           </div>
 
+          {/* TRID / Reg Z compliance clocks. LE must be sent within 3
+              business days of application; earliest permissible close
+              is 7 business days after LE delivery. Both dates flag on
+              the Deadlines panel and against loan-management rules. */}
+          <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eee' }}>
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10, color: '#555' }}>
+              Compliance (TRID)
+            </div>
+            <div className="kdt-grid-3">
+              <Field label="Application Date">
+                <I type="date" defaultValue={loan.dateApplied || loan.applicationDate || ''} onBlur={(e) => set('dateApplied', e.target.value)} />
+              </Field>
+              <Field label="LE Sent Date">
+                <I type="date" defaultValue={loan.leSentDate || ''} onBlur={(e) => set('leSentDate', e.target.value)} />
+              </Field>
+              <Field label="LE Deadline (auto)">
+                <I type="text" readOnly value={loan.leDeadline || ''} placeholder="auto from application" style={{ background: '#f5f5f5' }} />
+              </Field>
+            </div>
+          </div>
+
           <div style={{ marginTop: 18 }}>
-            <Field label="Notes" full>
-              <textarea
+            <Field label="Notes (static)" full>
+              <MentionTextarea
                 defaultValue={loan.notes || ''}
-                onBlur={(e) => set('notes', e.target.value)}
-                style={{
-                  width: '100%', minHeight: 260, padding: 12, fontFamily: 'inherit',
-                  fontSize: 13, lineHeight: 1.55, border: '1px solid #d0d0d0',
-                  borderRadius: 6, resize: 'both', boxSizing: 'border-box',
+                minHeight={180}
+                placeholder="Standing notes about this loan. Ongoing discussion goes below."
+                ariaLabel="Notes"
+                onBlur={(e) => {
+                  const prev = loan.notes || '';
+                  const next = e.target.value;
+                  set('notes', next);
+                  notifyMentions({
+                    oldText: prev, newText: next,
+                    context: {
+                      borrower: loan.borrower, loan_id: loan.id,
+                      dashboard_url: 'https://thekyleduketeam.netlify.app/',
+                      snippet: next.slice(0, 240),
+                    },
+                  });
                 }}
               />
             </Field>
           </div>
+
+          <CommentThread loanId={loan.id} borrower={loan.borrower} />
         </div>
         <div className="drawer-actions">
           {loan.archived ? (
