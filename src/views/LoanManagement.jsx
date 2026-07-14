@@ -954,7 +954,7 @@ export default function LoanManagement() {
     },
     {
       title: 'Click any loan for the drawer',
-      body: 'Click a card or a row to open the full Loan Drawer — every field editable, notes history preserved, archive/unarchive available.\n\nStatus changes made anywhere (drawer, spreadsheet, Pipeline drag) sync in real time across the app.',
+      body: 'Click a card or a row to open the full Loan Drawer — every field editable, notes history preserved, archive/unarchive available.\n\nThe drawer now has two note surfaces:\n• Notes (static) — standing description of the loan.\n• Comments — threaded ops log with @-mentions. Type @ to nudge a teammate; mentions fire an email if you\'ve wired the mention rule in Setup.\n\nStatus changes made anywhere (drawer, spreadsheet, Pipeline drag) sync in real time across the app.',
     },
   ];
 

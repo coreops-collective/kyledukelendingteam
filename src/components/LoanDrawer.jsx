@@ -6,6 +6,7 @@ import { fireWebhooks } from '../lib/webhooks.js';
 import { audit, ACTIONS } from '../lib/audit.js';
 import { notifyMentions } from '../lib/mentions.js';
 import MentionTextarea from './MentionTextarea.jsx';
+import CommentThread from './CommentThread.jsx';
 
 // Every pipeline stage label so the Status dropdown works for both
 // pre-contract (New Lead, Applied, HOT PA, REFI Watch) and LOS stages.
@@ -310,11 +311,11 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
           </div>
 
           <div style={{ marginTop: 18 }}>
-            <Field label="Notes" full>
+            <Field label="Notes (static)" full>
               <MentionTextarea
                 defaultValue={loan.notes || ''}
-                minHeight={260}
-                placeholder="Type @ to mention a teammate…"
+                minHeight={180}
+                placeholder="Standing notes about this loan. Ongoing discussion goes below."
                 ariaLabel="Notes"
                 onBlur={(e) => {
                   const prev = loan.notes || '';
@@ -332,6 +333,8 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
               />
             </Field>
           </div>
+
+          <CommentThread loanId={loan.id} borrower={loan.borrower} />
         </div>
         <div className="drawer-actions">
           {loan.archived ? (
