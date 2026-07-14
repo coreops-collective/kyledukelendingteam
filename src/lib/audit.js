@@ -34,6 +34,9 @@ export const ACTIONS = {
   TASK_COMPLETED:          'task.completed',
   TASK_UNCOMPLETED:        'task.uncompleted',
   TASK_DELETED:            'task.deleted',
+  TASK_ESCALATED:          'task.escalated',
+
+  MENTION_FIRED:           'mention.fired',
 
   WEBHOOK_CREATED:         'webhook.created',
   WEBHOOK_UPDATED:         'webhook.updated',

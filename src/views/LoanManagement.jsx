@@ -10,6 +10,9 @@ import { fireWebhooks } from '../lib/webhooks.js';
 import { audit, ACTIONS } from '../lib/audit.js';
 import { appendNotesHistory, loadNotesHistory } from '../lib/notesHistory.js';
 import { parseLocalDate } from '../lib/clientDates.js';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { notifyMentions } from '../lib/mentions.js';
+import MentionTextarea from '../components/MentionTextarea.jsx';
 import Tour from '../components/Tour.jsx';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -287,15 +290,15 @@ function NotesDrawer({ loan, onSave, onClose }) {
                 {showHistory ? 'Hide history' : 'View history'}
               </button>
             </label>
-            <textarea
-              autoFocus
+            <MentionTextarea
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(v) => setNotes(v)}
+              minHeight={420}
+              placeholder="Type @ to mention a teammate…"
+              ariaLabel="Loan notes"
               style={{
-                minHeight: 420, width: '100%', padding: 14,
-                fontFamily: 'inherit', fontSize: 13, lineHeight: 1.6,
-                border: '1px solid var(--border)', borderRadius: 8, resize: 'both',
-                boxSizing: 'border-box',
+                fontSize: 13, lineHeight: 1.6,
+                border: '1px solid var(--border)', borderRadius: 8,
               }}
             />
           </div>
@@ -887,6 +890,22 @@ export default function LoanManagement() {
   const [newLoanOpen, setNewLoanOpen] = useState(false);
   const [saveToast, setSaveToast] = useState(null);
 
+  // Global Search navigates here with ?loan=<id> to signal "open this
+  // loan's drawer." Consume the query on mount, then strip it from the
+  // URL so a browser back / refresh doesn't re-open the drawer
+  // unexpectedly.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const wantLoan = params.get('loan');
+    if (wantLoan) {
+      setLoanFor(wantLoan);
+      navigate('/loanmgmt', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Listen for column-width-changed events so the user gets a brief toast
   // confirming each click on the column +/- buttons actually fires.
   useEffect(() => {
@@ -1131,6 +1150,14 @@ export default function LoanManagement() {
     // Fire-and-forget — never block the local save on the history insert.
     if (loan && (loan.notes || '') !== (value || '')) {
       appendNotesHistory(loan.id, loan.notes || '');
+      notifyMentions({
+        oldText: loan.notes || '', newText: value || '',
+        context: {
+          borrower: loan.borrower, loan_id: loan.id,
+          dashboard_url: 'https://thekyleduketeam.netlify.app/',
+          snippet: (value || '').slice(0, 240),
+        },
+      });
     }
     if (loan) {
       loan.notes = value;

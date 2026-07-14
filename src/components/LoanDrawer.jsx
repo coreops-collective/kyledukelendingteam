@@ -4,6 +4,8 @@ import { PARTNERS } from '../data/partners.js';
 import { markLoansDirty } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
 import { audit, ACTIONS } from '../lib/audit.js';
+import { notifyMentions } from '../lib/mentions.js';
+import MentionTextarea from './MentionTextarea.jsx';
 
 // Every pipeline stage label so the Status dropdown works for both
 // pre-contract (New Lead, Applied, HOT PA, REFI Watch) and LOS stages.
@@ -309,13 +311,23 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
 
           <div style={{ marginTop: 18 }}>
             <Field label="Notes" full>
-              <textarea
+              <MentionTextarea
                 defaultValue={loan.notes || ''}
-                onBlur={(e) => set('notes', e.target.value)}
-                style={{
-                  width: '100%', minHeight: 260, padding: 12, fontFamily: 'inherit',
-                  fontSize: 13, lineHeight: 1.55, border: '1px solid #d0d0d0',
-                  borderRadius: 6, resize: 'both', boxSizing: 'border-box',
+                minHeight={260}
+                placeholder="Type @ to mention a teammate…"
+                ariaLabel="Notes"
+                onBlur={(e) => {
+                  const prev = loan.notes || '';
+                  const next = e.target.value;
+                  set('notes', next);
+                  notifyMentions({
+                    oldText: prev, newText: next,
+                    context: {
+                      borrower: loan.borrower, loan_id: loan.id,
+                      dashboard_url: 'https://thekyleduketeam.netlify.app/',
+                      snippet: next.slice(0, 240),
+                    },
+                  });
                 }}
               />
             </Field>

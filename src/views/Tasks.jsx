@@ -15,6 +15,7 @@ import {
 import { loadClientProfiles } from '../lib/clientProfiles.js';
 import { parseLocalDate } from '../lib/clientDates.js';
 import { getRoleLabel, getRoleKeysForWorkflowDropdown } from '../lib/jobRoles.js';
+import { escalateOverdueTasks } from '../lib/taskEscalation.js';
 import Tour from '../components/Tour.jsx';
 
 const TASKS_KEY = 'kdt-tasks-v1';
@@ -74,6 +75,15 @@ export default function Tasks() {
     generated.sort((a, b) => a.due_date - b.due_date);
     return generated;
   }, [workflowVersion]); // real counter — was previously the setter, which never changed identity so the memo went stale
+
+  // Auto-escalate overdue LOA tasks: any pipeline task assigned to an
+  // LOA that's past its due date fires a task.overdue notification so
+  // the LO gets a nudge. De-dupes via audit_log so we don't spam.
+  // Runs once on mount and again on any task refresh. Non-blocking.
+  useEffect(() => {
+    if (!pipelineTasks.length) return;
+    escalateOverdueTasks(pipelineTasks).catch(() => {});
+  }, [pipelineTasks]);
 
   const toggleWorkflowTask = (item) => {
     const iso = fmtIsoToday();
