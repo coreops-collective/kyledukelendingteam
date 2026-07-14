@@ -67,11 +67,19 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
 .kpi-sub{font-size:11px;color:#888;margin-top:6px}
 .kpi-sub.up{color:#2e7d32}
 .kpi-sub.down{color:#c62828}
-.section-card{background:#fff;border:1px solid var(--border);border-radius:var(--card-radius);margin-bottom:20px;box-shadow:var(--shadow-sm);overflow:hidden}
-.section-header{background:linear-gradient(135deg,var(--brand-black) 0%,#1f1f1f 100%);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-left:4px solid var(--brand-red)}
-.section-title{font-family:'Oswald',sans-serif;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px}
-.section-sub{font-size:11px;color:#aaa}
+.section-card{background:#fff;border:1px solid var(--border);border-radius:var(--card-radius);margin-bottom:18px;box-shadow:var(--shadow-sm);overflow:hidden}
+.section-header{background:linear-gradient(135deg,var(--brand-black) 0%,#1f1f1f 100%);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-left:4px solid var(--brand-red);gap:12px}
+.section-title{font-family:'Oswald',sans-serif;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;line-height:1.2}
+.section-sub{font-size:11px;color:#aaa;line-height:1.4}
 .section-body{padding:20px}
+/* Response classes — inline grids that need to collapse on mobile can
+   opt into this pattern instead of hard-coded columns. */
+.kdt-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.kdt-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:700px){
+  .kdt-grid-3{grid-template-columns:1fr}
+  .kdt-grid-2{grid-template-columns:1fr}
+}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
 .muted{color:var(--text-muted);font-size:11px}
@@ -346,7 +354,9 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
   .restricted-banner{padding:12px 14px;font-size:12px}
   .restricted-banner-title{font-size:11px}
   .lm-wrap{margin:0 -14px}
-  .lm-scroll{font-size:10px}
+  .lm-scroll{font-size:11px}
+  .lm-table th, .lm-table td{padding:8px 8px}
+  .lm-card{padding:12px}
   .wf-card{flex:0 0 100%}
   .wf-steps{flex-direction:column}
   .flow-step{max-width:100%}

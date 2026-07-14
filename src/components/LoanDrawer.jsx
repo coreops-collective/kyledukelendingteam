@@ -213,7 +213,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
               ✓ Saved · {justSaved}
             </div>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="kdt-grid-2">
             <Field label="Borrower" full>
               <I defaultValue={loan.borrower || ''} onBlur={(e) => set('borrower', e.target.value)} />
             </Field>
@@ -271,7 +271,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
             <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10, color: '#555' }}>
               Timeline
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div className="kdt-grid-3">
               <Chk value={loan.apprOrdered} onChange={(v) => set('apprOrdered', v)} label="Appraisal Ordered" />
               <Chk value={loan.apprReceived} onChange={(v) => set('apprReceived', v)} label="Appraisal Received" />
               <Chk value={loan.titleReceived} onChange={(v) => set('titleReceived', v)} label="Title Received" />
@@ -297,7 +297,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
             <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10, color: '#555' }}>
               Compliance (TRID)
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div className="kdt-grid-3">
               <Field label="Application Date">
                 <I type="date" defaultValue={loan.dateApplied || loan.applicationDate || ''} onBlur={(e) => set('dateApplied', e.target.value)} />
               </Field>

@@ -189,7 +189,7 @@ function DeadlinesPanel({ loans, onOpen }) {
         </div>
       </div>
       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+        <div className="kdt-grid-3">
           {col('Overdue', '#c62828', overdue)}
           {col('This Week', '#e65100', thisWeek)}
           {col('8–30 Days', '#666', later)}
