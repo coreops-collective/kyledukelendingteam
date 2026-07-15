@@ -109,11 +109,22 @@ export default function Sidebar({ user, open = false }) {
             </>
           )}
         </div>
-        <button className="sidebar-logout" onClick={() => {
-          const me = getCurrentUser();
-          audit(ACTIONS.AUTH_LOGOUT, 'user', me?.id, null);
-          setCurrentUser(null);
-        }}>Sign Out</button>
+        <button
+          type="button"
+          className="sidebar-logout"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const me = getCurrentUser();
+            // Fire-and-forget audit so a slow / failing RPC never blocks
+            // the actual sign-out. Then clear the session and force the
+            // URL back to root so the Login screen loads clean without
+            // any deep-link route baggage.
+            try { audit(ACTIONS.AUTH_LOGOUT, 'user', me?.id, null); } catch { /* swallow */ }
+            setCurrentUser(null);
+            try { nav('/'); } catch { /* router guard */ }
+          }}
+        >Sign Out</button>
         <div className="sidebar-fine">
           NMLS #2172565 · Valor Home Loans<br />
           Equal Housing Lender · Member FDIC<br />
