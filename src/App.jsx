@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
@@ -84,6 +84,18 @@ export default function App() {
   const [justLoggedIn, setJustLoggedIn] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  // Track the previous user value so we can detect the "just logged in"
+  // transition (null → truthy) regardless of whether the Login form's
+  // onSuccess callback ran. Firing setJustLoggedIn from a useEffect
+  // that watches `user` is more robust than the callback chain — the
+  // Welcome screen was disappearing when native-event ordering caused
+  // React to re-render past the Login screen before onSuccess ran.
+  const prevUserRef = useRef(user);
+  useEffect(() => {
+    const prev = prevUserRef.current;
+    if (!prev && user) setJustLoggedIn(true);
+    prevUserRef.current = user;
+  }, [user]);
   const meta = PAGE_META[location.pathname] || PAGE_META['/snapshot'];
 
   const [usersReady, setUsersReady] = useState(false);
