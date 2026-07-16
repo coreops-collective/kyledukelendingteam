@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { LOANS } from '../data/loans.js';
-import { STAGES, REFI_WATCH_STAGE, STAGE_TO_STATUS, stageByKey } from '../data/stages.js';
+import { STAGES, REFI_WATCH_STAGE, NURTURE_PA_STAGE, STAGE_TO_STATUS, stageByKey } from '../data/stages.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, subscribeLoans } from '../lib/loansStore.js';
@@ -148,7 +148,7 @@ export default function Pipeline() {
   const pipelineTourSteps = [
     {
       title: 'Welcome to the Pipeline board',
-      body: 'This is the Kanban view of every active loan. Each column is a stage — New Lead through Approved — and the count + volume at the top tells you where the desk is loaded.\n\nRefi Watch sits between HOT PA and New Contract for loans you\'re tracking for an opportunity.',
+      body: 'This is the Kanban view of every active loan. Each column is a stage — New Lead through Approved — and the count + volume at the top tells you where the desk is loaded.\n\nAfter HOT PA sit two "warm" columns: Nurture PA (pre-approved but not actively offering — periodic touches keep them warm) and REFI Watch (existing borrowers you\'re tracking for a rate-move opportunity).',
     },
     {
       target: '.legend',
@@ -175,7 +175,12 @@ export default function Pipeline() {
     const list = [];
     STAGES.forEach((s) => {
       list.push(s);
-      if (s.key === 'hotpa') list.push(REFI_WATCH_STAGE);
+      // Inject the two pre-contract "warm" columns after HOT PA in
+      // display order: Nurture PA (kept warm), then REFI Watch.
+      if (s.key === 'hotpa') {
+        list.push(NURTURE_PA_STAGE);
+        list.push(REFI_WATCH_STAGE);
+      }
     });
     return list;
   }, []);

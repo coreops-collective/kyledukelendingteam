@@ -437,6 +437,8 @@ function ReviewField({ clientName }) {
 //   - Legacy PAST_CLIENTS seed records: write to client_profiles
 //     override columns keyed by the original name, so display
 //     corrections stick without needing to rewrite the seed file.
+const LO_OPTIONS = ['', 'Kyle', 'Missy'];
+
 function IdentityEditor({ client, onChange }) {
   const c = client;
   const [open, setOpen] = useState(false);
@@ -449,15 +451,18 @@ function IdentityEditor({ client, onChange }) {
   const displayName = isLive ? c.name : (profile.corrected_name || c.name || '');
   const displayPhone = isLive ? c.phone : (profile.corrected_phone || c.phone || '');
   const displayEmail = isLive ? c.email : (profile.corrected_email || c.email || '');
+  const displayLo = isLive ? (c.lo || '') : (profile.corrected_lo || c.lo || '');
 
   const save = async (field, value) => {
     if (isLive) {
-      const mapping = { name: 'borrower', phone: 'phone', email: 'email' };
+      const mapping = { name: 'borrower', phone: 'phone', email: 'email', lo: 'lo' };
       loan[mapping[field] || field] = value;
       c[field] = value;
       markLoansDirty(loan);
     } else {
-      const profileField = { name: 'corrected_name', phone: 'corrected_phone', email: 'corrected_email' }[field];
+      const profileField = {
+        name: 'corrected_name', phone: 'corrected_phone', email: 'corrected_email', lo: 'corrected_lo',
+      }[field];
       if (profileField) await upsertClientProfile(c.name, { [profileField]: value || null });
     }
     onChange && onChange();
@@ -502,6 +507,19 @@ function IdentityEditor({ client, onChange }) {
               onBlur={(e) => save('email', e.target.value)}
               style={inputStyle}
             />
+          </div>
+          <div style={{ gridColumn: '1/-1' }}>
+            <div style={labelStyle}>Loan Officer</div>
+            <select
+              value={displayLo}
+              onChange={(e) => save('lo', e.target.value)}
+              style={{ ...inputStyle, background: '#fff' }}
+            >
+              {LO_OPTIONS.map((n) => <option key={n} value={n}>{n || '—'}</option>)}
+              {displayLo && !LO_OPTIONS.includes(displayLo) && (
+                <option value={displayLo}>{displayLo} (custom)</option>
+              )}
+            </select>
           </div>
         </div>
       )}
@@ -647,7 +665,26 @@ function PastClientDrawer({ client, refiRate, onClose }) {
   const c = client;
   const [, force] = useState(0);
   const [draft, setDraft] = useState('');
-  const set = (key, value) => { c[key] = value; force((n) => n + 1); };
+  // Hydrate the drawer's Follow-Up state from client_profiles so notes
+  // + last_contact survive refresh. Falls back to whatever's on the
+  // in-memory client (loan record OR PAST_CLIENTS seed).
+  const profile = getProfile(c.name) || {};
+  if (profile.last_contact && !c.lastContact) c.lastContact = profile.last_contact;
+  if (Array.isArray(profile.note_entries) && profile.note_entries.length && (!c.noteEntries || c.noteEntries.length === 0)) {
+    c.noteEntries = profile.note_entries;
+  }
+
+  // set() persists to BOTH the in-memory client (so the drawer reflects
+  // instantly) AND to client_profiles (so the change survives refresh
+  // or another user's load).
+  const set = (key, value) => {
+    c[key] = value;
+    // client_profiles column names are snake_case.
+    const columnMap = { lastContact: 'last_contact' };
+    const col = columnMap[key];
+    if (col) upsertClientProfile(c.name, { [col]: value || null });
+    force((n) => n + 1);
+  };
   const markContactedToday = () => set('lastContact', new Date().toISOString().slice(0, 10));
 
   const postNote = () => {
@@ -659,9 +696,12 @@ function PastClientDrawer({ client, refiRate, onClose }) {
       by: user?.name || user?.email || 'Unknown',
       text,
     };
-    c.noteEntries = [entry, ...(c.noteEntries || [])];
+    const nextEntries = [entry, ...(c.noteEntries || [])];
+    c.noteEntries = nextEntries;
     setDraft('');
     force((n) => n + 1);
+    // Persist to client_profiles so the note survives refresh.
+    upsertClientProfile(c.name, { note_entries: nextEntries });
   };
   const monthlyPI = (principal, ratePct) => {
     if (!principal || !ratePct) return 0;

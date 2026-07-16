@@ -554,9 +554,17 @@ export function generateTasksForClient(clientName, anchorDates) {
       const unit = TRIGGER_UNITS.includes(t.trigger_unit) ? t.trigger_unit : 'days';
       let due;
       let anchorOccurrence;
-      if (t.trigger_recurring) {
-        // Yearly recurrence — next month/day occurrence relative to
-        // today. Two cases:
+      // Anniversary anchors (Closing Anniversary, Birthday, Home
+      // Anniversary, etc.) MUST always defer to next year at minimum —
+      // otherwise a "1 year closing anniversary" card fires in the
+      // month the loan actually closed. Detect by label containing
+      // "anniversary" so this holds even when Kim forgets to check
+      // the Recurring box in the task editor.
+      const labelLc = (t.trigger_label || '').toLowerCase();
+      const isAnniversary = labelLc.includes('anniversary');
+      if (t.trigger_recurring || isAnniversary) {
+        // Yearly recurrence / anniversary — next month/day occurrence
+        // relative to today. Two cases:
         //   * Calendar-date triggers (t.trigger_calendar_date set)
         //     represent a FIXED civil date like "12-25". The next
         //     occurrence is this year's Dec 25 if it hasn't passed,

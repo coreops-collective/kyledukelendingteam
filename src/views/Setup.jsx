@@ -358,7 +358,7 @@ function WebhookSettings() {
 
   const eventLabel = (v) => (WEBHOOK_EVENTS.find((e) => e.value === v) || {}).label || v;
 
-  const STATUS_OPTIONS = ['', 'New Lead', 'Applied', 'HOT PA', 'REFI Watch', 'New Contract', 'Disclosed', 'Processing', 'Underwriting', 'CTC Required', 'CTC', 'Approved', 'Funded'];
+  const STATUS_OPTIONS = ['', 'New Lead', 'Applied', 'HOT PA', 'Nurture PA', 'REFI Watch', 'New Contract', 'Disclosed', 'Processing', 'Underwriting', 'CTC Required', 'CTC', 'Approved', 'Funded'];
 
   const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
   const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4, display: 'block' };

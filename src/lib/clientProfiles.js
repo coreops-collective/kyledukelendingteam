@@ -71,3 +71,25 @@ export async function upsertClientProfile(name, patch) {
 }
 
 export const REVIEW_SOURCES = ['Google', 'Zillow', 'Facebook', 'Yelp', 'Other'];
+
+// CFL status per client. Determines whether the client appears on the
+// Client for Life follow-up board or is quietly kept off it while
+// still counting in stats / All Loans.
+//   'active'         — visible on CFL (default)
+//   'do_not_contact' — hidden. Never reach out again unless they do.
+//   'archived'       — hidden. Paused for a benign reason (moved, sold, etc.)
+export const CFL_STATUSES = ['active', 'do_not_contact', 'archived'];
+export const CFL_STATUS_LABELS = {
+  active: 'Active',
+  do_not_contact: 'Do Not Contact',
+  archived: 'Archived',
+};
+
+export async function setClientCflStatus(name, status, reason = '') {
+  if (!CFL_STATUSES.includes(status)) return null;
+  return upsertClientProfile(name, {
+    cfl_status: status,
+    cfl_status_reason: reason || null,
+    cfl_status_changed_at: new Date().toISOString(),
+  });
+}
