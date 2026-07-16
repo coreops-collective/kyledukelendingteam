@@ -66,12 +66,15 @@ export default function Tasks() {
   // Workflow-generated tasks for loans in pre-contract stages
   // (New Lead / Applied / HOT PA / REFI Watch). Under Contract →
   // Approved is deferred to a future Loan Management task area, so
-  // it's intentionally excluded here.
+  // it's intentionally excluded here. Automated tasks are filtered
+  // out — they run without a human, so surfacing them as work items
+  // just adds noise.
   const pipelineTasks = useMemo(() => {
     const preContractLoans = LOANS.filter((l) =>
       !l.archived && PRE_CONTRACT_STAGES.includes(l.stage)
     );
-    const generated = generateStatusTasks(preContractLoans);
+    const generated = generateStatusTasks(preContractLoans)
+      .filter((it) => (it.task?.role || '').toLowerCase() !== 'automated');
     generated.sort((a, b) => a.due_date - b.due_date);
     return generated;
   }, [workflowVersion]); // real counter — was previously the setter, which never changed identity so the memo went stale

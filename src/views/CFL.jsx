@@ -18,6 +18,7 @@ import {
 } from '../lib/workflows.js';
 import {
   loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
+  CFL_STATUSES, CFL_STATUS_LABELS, setClientCflStatus,
 } from '../lib/clientProfiles.js';
 import {
   loadKeyDateTypes, getKeyDateTypes, getKeyDateTypeLabels,
@@ -101,7 +102,7 @@ export default function CFL() {
     },
     {
       title: 'Bulk complete',
-      body: 'Check the box in the section header to select every visible task in that bucket, then click "Complete selected" to mark them all done in one shot.\n\nGreat for catching up after a slow week — check all of "This Week", complete, done.',
+      body: 'Click "Select multiple" in any section header. The row checkbox switches meaning — instead of marking that task done, it selects it (black checkbox instead of red). Tap the tasks you want, then hit "✓ Complete N" in the section header to complete them all at once.\n\nGreat for catching up after a slow week — enter select mode, hit Select all, click Complete, done.',
     },
   ];
 
@@ -202,6 +203,10 @@ export default function CFL() {
     // the pipeline; keep funded loans + past clients + anyone with
     // only a client_dates entry (no loan on file).
     const funded = items.filter((it) => {
+      // Automated tasks are supposed to happen without a human — the team
+      // has repeatedly said they shouldn't clutter the human-facing task
+      // list. Filter them out of CFL entirely.
+      if ((it.task?.role || '').toLowerCase() === 'automated') return false;
       const key = (it.client_name || '').trim().toLowerCase();
       const record = seenSource.get(key);
       if (!record) return true; // dates-only entry — always CFL
@@ -211,6 +216,12 @@ export default function CFL() {
         PRE_CONTRACT_STAGES.includes(stage) ||
         LOS_STAGES.includes(stage) ||
         (stage && stage !== 'funded' && status !== 'Funded');
+      // Removed from CFL if the client's profile is set to
+      // do_not_contact or archived. Kept in stats / All Loans; just off
+      // the follow-up board.
+      const profile = getProfile(record.name || key) || {};
+      const cflStatus = profile.cfl_status || 'active';
+      if (cflStatus !== 'active') return false;
       return !isPreFunded;
     });
 
@@ -413,6 +424,10 @@ function Section({ label, items, today, onOpenClient, collapsed, onToggle }) {
 
   // Per-bucket bulk selection. Selection stays local to the section so
   // "select all" in Overdue doesn't accidentally sweep in Today too.
+  // Gated behind a Select-mode toggle so the default row shows ONE
+  // checkbox (the primary red "mark complete" action) instead of a
+  // confusing pair of bulk-select + complete side-by-side.
+  const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const selectableItems = visible.filter((it) => !it.completed && !((it.task.decision_options || []).length > 0));
   const selectableIds = selectableItems.map((it) => it.id);
@@ -437,7 +452,9 @@ function Section({ label, items, today, onOpenClient, collapsed, onToggle }) {
       return markTaskCompleted(it.task.id, it.client_name, dueIso, null, null, it.loan_id);
     }));
     setSelected(new Set());
+    setSelectMode(false);
   };
+  const exitSelectMode = () => { setSelected(new Set()); setSelectMode(false); };
 
   return (
     <div style={{ marginBottom: 14 }}>
@@ -453,27 +470,52 @@ function Section({ label, items, today, onOpenClient, collapsed, onToggle }) {
           <span style={{ display: 'inline-block', width: 12, color: '#888' }}>{collapsed ? '▸' : '▾'}</span>
           {label} ({items.length})
         </span>
-        {!collapsed && selectableIds.length > 0 && (
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 12, cursor: 'pointer', fontSize: 10 }} title={`Select all ${selectableIds.length} in ${label}`}>
-            <input
-              type="checkbox"
-              checked={allChecked}
-              ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
-              onChange={toggleAll}
-              style={{ width: 13, height: 13, accentColor: 'var(--brand-red)' }}
-            />
-            Select all
-          </label>
-        )}
-        {someChecked && (
+        {!collapsed && selectableIds.length > 0 && !selectMode && (
           <button
-            onClick={bulkComplete}
+            type="button"
+            onClick={() => setSelectMode(true)}
             style={{
-              marginLeft: 'auto', padding: '4px 10px', background: '#0A0A0A', color: '#fff',
-              border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 10,
+              marginLeft: 'auto', padding: '3px 10px', background: '#fff', color: '#0A0A0A',
+              border: '1px solid #d0d0d0', borderRadius: 4, fontWeight: 700, fontSize: 10,
               cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
+              fontFamily: "'Oswald',sans-serif",
             }}
-          >{'✓'} Complete {selected.size}</button>
+          >Select multiple</button>
+        )}
+        {selectMode && (
+          <>
+            <button
+              type="button"
+              onClick={toggleAll}
+              style={{
+                marginLeft: 12, padding: '3px 10px', background: '#fff', color: '#0A0A0A',
+                border: '1px solid #d0d0d0', borderRadius: 4, fontWeight: 700, fontSize: 10,
+                cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
+                fontFamily: "'Oswald',sans-serif",
+              }}
+            >{allChecked ? 'Deselect all' : 'Select all'}</button>
+            {someChecked && (
+              <button
+                type="button"
+                onClick={bulkComplete}
+                style={{
+                  padding: '4px 10px', background: '#0A0A0A', color: '#fff',
+                  border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 10,
+                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
+                }}
+              >{'✓'} Complete {selected.size}</button>
+            )}
+            <button
+              type="button"
+              onClick={exitSelectMode}
+              style={{
+                marginLeft: 'auto', padding: '3px 10px', background: 'transparent', color: '#555',
+                border: '1px solid #d0d0d0', borderRadius: 4, fontWeight: 700, fontSize: 10,
+                cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
+                fontFamily: "'Oswald',sans-serif",
+              }}
+            >Exit</button>
+          </>
         )}
       </div>
       {!collapsed && (
@@ -486,7 +528,8 @@ function Section({ label, items, today, onOpenClient, collapsed, onToggle }) {
               first={i === 0}
               onOpenClient={onOpenClient}
               selected={selected.has(it.id)}
-              onSelect={selectableIds.includes(it.id) ? () => toggleOne(it.id) : null}
+              selectMode={selectMode}
+              onSelect={selectMode && selectableIds.includes(it.id) ? () => toggleOne(it.id) : null}
             />
           ))}
           {hidden > 0 && (
@@ -503,7 +546,7 @@ function Section({ label, items, today, onOpenClient, collapsed, onToggle }) {
   );
 }
 
-function TaskRow({ item, today, first, onOpenClient, selected, onSelect }) {
+function TaskRow({ item, today, first, onOpenClient, selected, onSelect, selectMode }) {
   const role = item.task.role || 'lo';
   const roleColors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
   const days = Math.round((item.due_date - today) / DAY);
@@ -544,21 +587,25 @@ function TaskRow({ item, today, first, onOpenClient, selected, onSelect }) {
       background: item.completed ? '#fafafa' : selected ? '#fffce7' : isDecision ? '#f5f9ff' : '#fff',
     }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        {onSelect && !item.completed && (
+        {/* One checkbox per row. In Select mode it becomes a black
+            "add to bulk selection" checkbox; otherwise it's the red
+            primary "mark complete" checkbox. Decision-point rows show
+            the ❓ icon and never allow bulk selection. */}
+        {isDecision ? (
+          <div style={{ fontSize: 20, textAlign: 'center', color: '#0A0A0A' }} title="Decision Point">❓</div>
+        ) : selectMode && onSelect && !item.completed ? (
           <input
             type="checkbox"
             checked={!!selected}
             onChange={onSelect}
-            style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#0A0A0A' }}
+            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#0A0A0A' }}
             title="Select for bulk complete"
             aria-label="Select"
           />
-        )}
-        {isDecision ? (
-          <div style={{ fontSize: 20, textAlign: 'center', color: '#0A0A0A' }} title="Decision Point">❓</div>
         ) : (
           <input type="checkbox" checked={item.completed} onChange={onToggle}
-            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }} />
+            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)' }}
+            title="Mark complete" aria-label="Complete" />
         )}
       </div>
       <div style={{ minWidth: 0 }}>
@@ -833,12 +880,43 @@ function ClientCardDrawer({ clientName, onClose }) {
   };
 
   // Look up best-known loan + past-client records for the header.
-  const activeLoan = LOANS.find((l) => l.borrower && l.borrower.trim().toLowerCase() === clientName.trim().toLowerCase());
-  const pastClient = PAST_CLIENTS.find((c) => c.name && c.name.trim().toLowerCase() === clientName.trim().toLowerCase());
+  // Co-borrowers get their own CFL card but the loan record's borrower
+  // field is the primary borrower's name. Search across primary AND
+  // co-borrower fields so the co-borrower's card still surfaces the
+  // property address, LO, and closing details — otherwise tasks that
+  // fire for them (e.g. "send a card") have nowhere to be sent.
+  const nameKey = clientName.trim().toLowerCase();
+  const matchesCoBorrower = (l) => {
+    const co = [
+      l.coFirst && l.coLast ? `${l.coLast}, ${l.coFirst}` : '',
+      l.c2first && l.c2last ? `${l.c2last}, ${l.c2first}` : '',
+      l.coFirst && l.coLast ? `${l.coFirst} ${l.coLast}` : '',
+      l.c2first && l.c2last ? `${l.c2first} ${l.c2last}` : '',
+    ].map((s) => s.trim().toLowerCase()).filter(Boolean);
+    return co.includes(nameKey);
+  };
+  const activeLoan = LOANS.find((l) => {
+    if (!l.borrower && !l.coFirst && !l.c2first) return false;
+    if (l.borrower && l.borrower.trim().toLowerCase() === nameKey) return true;
+    return matchesCoBorrower(l);
+  });
+  const matchesCoInPast = (c) => {
+    const co = [
+      c.coFirst && c.coLast ? `${c.coLast}, ${c.coFirst}` : '',
+      c.coFirst && c.coLast ? `${c.coFirst} ${c.coLast}` : '',
+    ].map((s) => s.trim().toLowerCase()).filter(Boolean);
+    return co.includes(nameKey);
+  };
+  const pastClient = PAST_CLIENTS.find((c) => {
+    if (c.name && c.name.trim().toLowerCase() === nameKey) return true;
+    return matchesCoInPast(c);
+  });
   const closeDate = activeLoan?.closeDate || pastClient?.closeDate;
   const property = activeLoan?.property || pastClient?.property;
   const lo = activeLoan?.lo || pastClient?.lo;
   const agent = activeLoan?.agent || pastClient?.agent;
+  const isCoBorrower = !!activeLoan && matchesCoBorrower(activeLoan)
+    && activeLoan.borrower?.trim().toLowerCase() !== nameKey;
 
   // For this client, render one row per GLOBAL key-date type (from
   // key_date_types). Pre-fills with the matching client_dates row if
@@ -873,6 +951,7 @@ function ClientCardDrawer({ clientName, onClose }) {
           <div className="drawer-stage">Client Card</div>
           <div className="drawer-borrower">{clientName}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
+            {isCoBorrower && <span style={{ color: '#fbc02d', fontWeight: 700 }}>Co-borrower · </span>}
             {closeDate ? `Closed ${closeDate}` : 'No closing on file'}
             {lo ? ` · LO: ${lo}` : ''}
             {agent ? ` · Agent: ${agent}` : ''}
@@ -882,8 +961,16 @@ function ClientCardDrawer({ clientName, onClose }) {
           {property && (
             <div style={{ marginBottom: 18, padding: 10, background: '#fafafa', border: '1px solid #eee', borderRadius: 6, fontSize: 12, color: '#444' }}>
               <span style={{ fontWeight: 600 }}>Property:</span> {property}
+              {isCoBorrower && (
+                <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>
+                  Pulled from co-borrowed loan · primary: {activeLoan?.borrower}
+                </div>
+              )}
             </div>
           )}
+
+          {/* ─── CFL status (Active / Do Not Contact / Archived) ─── */}
+          <CflStatusRow profile={profile} clientName={clientName} onChanged={bump} />
 
           {/* ─── Review tracking ─── */}
           <div style={{ marginBottom: 22, padding: 14, background: reviewLeft ? '#e8f5e9' : '#fff', border: `1px solid ${reviewLeft ? '#a5d6a7' : '#e5e5e5'}`, borderRadius: 8 }}>
@@ -992,6 +1079,133 @@ function ClientCardDrawer({ clientName, onClose }) {
         </div>
       </aside>
     </>
+  );
+}
+
+// CFL status control — three pills (Active / Do Not Contact / Archived)
+// + optional reason. Setting anything other than Active removes the
+// client from the CFL follow-up board immediately (their tasks stop
+// generating), while leaving their record + stats intact.
+function CflStatusRow({ profile, clientName, onChanged }) {
+  const current = profile?.cfl_status || 'active';
+  const [saving, setSaving] = useState(null);
+  const [reasonOpen, setReasonOpen] = useState(false);
+  const [reason, setReason] = useState(profile?.cfl_status_reason || '');
+
+  const setStatus = async (nextStatus) => {
+    if (nextStatus === current && !reasonOpen) return;
+    setSaving(nextStatus);
+    await setClientCflStatus(clientName, nextStatus, reason.trim());
+    setSaving(null);
+    setReasonOpen(false);
+    onChanged?.();
+  };
+
+  const bg = {
+    active: '#e8f5e9',
+    do_not_contact: '#fdecea',
+    archived: '#f4f4f4',
+  }[current] || '#fff';
+  const border = {
+    active: '#a5d6a7',
+    do_not_contact: '#f5cccc',
+    archived: '#d0d0d0',
+  }[current] || '#e5e5e5';
+
+  return (
+    <div style={{
+      marginBottom: 18, padding: 12,
+      background: bg, border: `1px solid ${border}`, borderRadius: 8,
+    }}>
+      <div style={{
+        display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
+        marginBottom: reasonOpen ? 10 : 0,
+      }}>
+        <span style={{
+          fontFamily: "'Oswald',sans-serif", fontSize: 10, fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '.6px', color: '#555',
+          marginRight: 6,
+        }}>CFL status</span>
+        {CFL_STATUSES.map((s) => {
+          const on = s === current;
+          const isPending = saving === s;
+          return (
+            <button
+              key={s}
+              type="button"
+              disabled={!!saving}
+              onClick={() => {
+                if (s === 'active') return setStatus('active');
+                setReasonOpen(true);
+                setSaving(null);
+                // Prime the reason input; commit happens when the user
+                // clicks Save.
+              }}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 700,
+                fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px',
+                border: `1px solid ${on ? '#0A0A0A' : '#d0d0d0'}`,
+                background: on ? '#0A0A0A' : '#fff',
+                color: on ? '#fff' : '#555',
+                borderRadius: 999, cursor: saving ? 'wait' : 'pointer',
+              }}
+            >{isPending ? 'Saving…' : CFL_STATUS_LABELS[s]}</button>
+          );
+        })}
+        {current !== 'active' && profile?.cfl_status_reason && !reasonOpen && (
+          <span style={{ fontSize: 11, color: '#666', marginLeft: 4, fontStyle: 'italic' }}>
+            "{profile.cfl_status_reason}"
+          </span>
+        )}
+      </div>
+      {reasonOpen && (
+        <div style={{ marginTop: 6 }}>
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Optional reason (moved out of state, passed away, requested no contact, etc.)"
+            style={{
+              width: '100%', padding: '8px 10px', fontSize: 12,
+              border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box',
+              marginBottom: 6,
+            }}
+          />
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => { setReasonOpen(false); setReason(profile?.cfl_status_reason || ''); }}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 700,
+                fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px',
+                background: '#fff', color: '#555', border: '1px solid #d0d0d0',
+                borderRadius: 4, cursor: 'pointer',
+              }}
+            >Cancel</button>
+            <button
+              type="button"
+              onClick={() => setStatus('do_not_contact')}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 700,
+                fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px',
+                background: '#c62828', color: '#fff', border: 'none',
+                borderRadius: 4, cursor: 'pointer',
+              }}
+            >Do Not Contact</button>
+            <button
+              type="button"
+              onClick={() => setStatus('archived')}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 700,
+                fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px',
+                background: '#555', color: '#fff', border: 'none',
+                borderRadius: 4, cursor: 'pointer',
+              }}
+            >Archive</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
