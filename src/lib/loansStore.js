@@ -81,6 +81,32 @@ async function flushLoansToSupabase() {
   }
 }
 
+// Hard-delete a loan from both Supabase and the local LOANS array.
+// Used for cleaning up duplicates / accidental intakes so the loan
+// stops showing up in stats and lists. Not reversible — the row
+// really is gone. Cancels any pending upsert for that id so a
+// debounced save doesn't recreate it. Returns true on success.
+export async function deleteLoanFromSupabase(id) {
+  if (!id) return false;
+  // Cancel any pending flush for this id.
+  dirtyIds.delete(id);
+  try {
+    const { error } = await supabase.from('loans').delete().eq('id', id);
+    if (error) {
+      console.warn('[loans] delete failed:', error.message);
+      showError(`Couldn't delete loan: ${error.message}`);
+      return false;
+    }
+    const idx = LOANS.findIndex((l) => l.id === id);
+    if (idx >= 0) LOANS.splice(idx, 1);
+    return true;
+  } catch (e) {
+    console.warn('[loans] delete error:', e.message);
+    showError(`Couldn't delete loan: ${e.message}`);
+    return false;
+  }
+}
+
 export function markLoansDirty(loan) {
   if (loan && loan.id) {
     dirtyIds.add(loan.id);

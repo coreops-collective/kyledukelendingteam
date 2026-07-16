@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
+import { markLoansDirty, deleteLoanFromSupabase } from '../lib/loansStore.js';
+import { useNavigate } from 'react-router-dom';
 import { LOS_STAGES, PRE_CONTRACT_STAGES } from '../data/stages.js';
 import {
   loadClientDates, getAllDates, upsertClientDate, deleteClientDate,
@@ -972,6 +974,9 @@ function ClientCardDrawer({ clientName, onClose }) {
           {/* ─── CFL status (Active / Do Not Contact / Archived) ─── */}
           <CflStatusRow profile={profile} clientName={clientName} onChanged={bump} />
 
+          {/* ─── Loans on file (open in LM / delete duplicates) ─── */}
+          <ClientLoansRow clientName={clientName} onChanged={bump} onCloseDrawer={onClose} />
+
           {/* ─── Review tracking ─── */}
           <div style={{ marginBottom: 22, padding: 14, background: reviewLeft ? '#e8f5e9' : '#fff', border: `1px solid ${reviewLeft ? '#a5d6a7' : '#e5e5e5'}`, borderRadius: 8 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#222' }}>
@@ -1079,6 +1084,118 @@ function ClientCardDrawer({ clientName, onClose }) {
         </div>
       </aside>
     </>
+  );
+}
+
+// Loans-on-file panel — one row per matching loan (primary OR
+// co-borrower). Each row can open the loan in Loan Management (uses
+// the ?loan= deep-link the LM page consumes on mount) or hard-delete
+// it (with confirm). Deletion removes the row from stats / All Loans
+// / anywhere the loan was counted. Use for duplicates.
+function ClientLoansRow({ clientName, onChanged, onCloseDrawer }) {
+  const nav = useNavigate();
+  const nameKey = (clientName || '').trim().toLowerCase();
+  const matches = LOANS.filter((l) => {
+    if (!l) return false;
+    if (l.borrower && l.borrower.trim().toLowerCase() === nameKey) return true;
+    const cos = [
+      l.coFirst && l.coLast ? `${l.coLast}, ${l.coFirst}` : '',
+      l.c2first && l.c2last ? `${l.c2last}, ${l.c2first}` : '',
+      l.coFirst && l.coLast ? `${l.coFirst} ${l.coLast}` : '',
+      l.c2first && l.c2last ? `${l.c2first} ${l.c2last}` : '',
+    ].map((s) => s.trim().toLowerCase()).filter(Boolean);
+    return cos.includes(nameKey);
+  });
+
+  if (matches.length === 0) return null;
+
+  const openInLM = (loanId) => {
+    onCloseDrawer?.();
+    nav(`/loanmgmt?loan=${encodeURIComponent(loanId)}`);
+  };
+
+  const deleteLoan = async (loan) => {
+    if (!window.confirm(
+      `Permanently delete this loan?\n\n${loan.borrower || '(no borrower name)'}\n${loan.property || '(no property)'}\n${loan.amount ? '$' + Number(loan.amount).toLocaleString() : '(no amount)'}\n\nThis removes it from stats and All Loans. Not reversible.`
+    )) return;
+    const ok = await deleteLoanFromSupabase(loan.id);
+    if (ok) onChanged?.();
+  };
+
+  return (
+    <div style={{
+      marginBottom: 18, padding: 12,
+      background: '#fff', border: '1px solid #e5e5e5', borderRadius: 8,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+        marginBottom: 8,
+      }}>
+        <span style={{
+          fontFamily: "'Oswald',sans-serif", fontSize: 10, fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '.6px', color: '#555',
+        }}>
+          Loans on file
+          <span style={{
+            marginLeft: 6, padding: '2px 7px', fontSize: 10,
+            background: matches.length > 1 ? '#fdecea' : '#f4f4f4',
+            color: matches.length > 1 ? '#c62828' : '#555',
+            borderRadius: 999,
+          }}>
+            {matches.length}{matches.length > 1 ? ' · check for duplicates' : ''}
+          </span>
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {matches.map((l) => {
+          const isCo = l.borrower?.trim().toLowerCase() !== nameKey;
+          return (
+            <div key={l.id} style={{
+              display: 'grid', gridTemplateColumns: '1fr auto auto',
+              gap: 8, alignItems: 'center',
+              padding: '8px 10px',
+              background: '#fafafa', border: '1px solid #eee', borderRadius: 6,
+              fontSize: 12,
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, color: '#222', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {isCo && (
+                    <span style={{ fontSize: 9, background: '#fbc02d', color: '#0A0A0A', padding: '1px 5px', borderRadius: 3, marginRight: 6, fontWeight: 700 }}>CO</span>
+                  )}
+                  {l.borrower || '(no name)'}
+                </div>
+                <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
+                  {l.id} · {l.stage || '?'}{l.type ? ' · ' + l.type : ''}{l.amount ? ' · $' + Number(l.amount).toLocaleString() : ''}{l.closeDate ? ' · ' + l.closeDate : ''}{l.lo ? ' · ' + l.lo : ''}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => openInLM(l.id)}
+                title="Open this loan in Loan Management"
+                style={{
+                  padding: '4px 10px', fontSize: 10, fontWeight: 700,
+                  fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px',
+                  border: '1px solid #d0d0d0', background: '#fff', color: '#0A0A0A',
+                  borderRadius: 4, cursor: 'pointer',
+                }}
+              >Open</button>
+              <button
+                type="button"
+                onClick={() => deleteLoan(l)}
+                title="Permanently delete this loan"
+                aria-label={`Delete loan ${l.id}`}
+                style={{
+                  padding: '4px 10px', fontSize: 10, fontWeight: 700,
+                  fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px',
+                  border: '1px solid #f5cccc', background: '#fff', color: '#c62828',
+                  borderRadius: 4, cursor: 'pointer',
+                }}
+              >Delete</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

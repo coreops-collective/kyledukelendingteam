@@ -437,6 +437,8 @@ function ReviewField({ clientName }) {
 //   - Legacy PAST_CLIENTS seed records: write to client_profiles
 //     override columns keyed by the original name, so display
 //     corrections stick without needing to rewrite the seed file.
+const LO_OPTIONS = ['', 'Kyle', 'Missy'];
+
 function IdentityEditor({ client, onChange }) {
   const c = client;
   const [open, setOpen] = useState(false);
@@ -449,15 +451,18 @@ function IdentityEditor({ client, onChange }) {
   const displayName = isLive ? c.name : (profile.corrected_name || c.name || '');
   const displayPhone = isLive ? c.phone : (profile.corrected_phone || c.phone || '');
   const displayEmail = isLive ? c.email : (profile.corrected_email || c.email || '');
+  const displayLo = isLive ? (c.lo || '') : (profile.corrected_lo || c.lo || '');
 
   const save = async (field, value) => {
     if (isLive) {
-      const mapping = { name: 'borrower', phone: 'phone', email: 'email' };
+      const mapping = { name: 'borrower', phone: 'phone', email: 'email', lo: 'lo' };
       loan[mapping[field] || field] = value;
       c[field] = value;
       markLoansDirty(loan);
     } else {
-      const profileField = { name: 'corrected_name', phone: 'corrected_phone', email: 'corrected_email' }[field];
+      const profileField = {
+        name: 'corrected_name', phone: 'corrected_phone', email: 'corrected_email', lo: 'corrected_lo',
+      }[field];
       if (profileField) await upsertClientProfile(c.name, { [profileField]: value || null });
     }
     onChange && onChange();
@@ -502,6 +507,19 @@ function IdentityEditor({ client, onChange }) {
               onBlur={(e) => save('email', e.target.value)}
               style={inputStyle}
             />
+          </div>
+          <div style={{ gridColumn: '1/-1' }}>
+            <div style={labelStyle}>Loan Officer</div>
+            <select
+              value={displayLo}
+              onChange={(e) => save('lo', e.target.value)}
+              style={{ ...inputStyle, background: '#fff' }}
+            >
+              {LO_OPTIONS.map((n) => <option key={n} value={n}>{n || '—'}</option>)}
+              {displayLo && !LO_OPTIONS.includes(displayLo) && (
+                <option value={displayLo}>{displayLo} (custom)</option>
+              )}
+            </select>
           </div>
         </div>
       )}
