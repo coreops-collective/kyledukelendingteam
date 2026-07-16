@@ -377,6 +377,75 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
   .team-grid{grid-template-columns:1fr}
   .income-kpi-row{grid-template-columns:1fr}
   .cfl-grid{grid-template-columns:1fr}
+  .hub-header{padding:14px 14px 14px 62px;flex-wrap:wrap;gap:8px}
+  .page-title{font-size:16px}
+  .page-sub{font-size:10px}
+  .header-right{flex-wrap:wrap;gap:6px;width:100%}
+  .header-right .chip{font-size:10px;padding:4px 8px}
+  .hub-content{padding:14px 10px}
+  .section-header{padding:10px 12px;flex-wrap:wrap}
+  .section-title{font-size:11px}
+  .section-sub{font-size:10px}
+  .section-body{padding:12px}
+  .form-btn{padding:10px 14px;font-size:12px}
+  .lm-view-toggle button{padding:6px 10px;font-size:10px}
+  .lm-card-head{flex-wrap:wrap}
+  .lm-card-name{font-size:13px}
+  .lm-card-amount{font-size:16px}
+  .lm-card-grid{grid-template-columns:1fr 1fr;gap:6px}
+  .lm-card-grid .lbl{font-size:9px}
+  .lm-card-grid .val{font-size:11px}
+  .al-table-wrap{margin:0 -10px}
+  .kpi-value{font-size:18px}
+  .drawer-body{padding:12px}
+  .drawer-head{padding:16px 16px 12px}
+  .drawer-borrower{font-size:16px}
+  .drawer-stage{font-size:10px}
+  .drawer-actions{flex-direction:column-reverse;gap:8px;padding:12px}
+  .drawer-actions .drawer-btn{width:100%}
+  .kanban-col{flex:1 1 auto;width:100%}
+  .goal-card{padding:14px}
+  .perf-tab{padding:6px 10px;font-size:11px}
+  .flow-branches{grid-template-columns:1fr}
+}
+
+/* Universal mobile safeguards — keep the page from horizontal-scrolling
+   as a whole (individual tables/containers can still scroll internally
+   via overflow-x:auto). Applies to any width where the sidebar has
+   collapsed to the burger. */
+@media (max-width:900px){
+  html, body {overflow-x: hidden}
+  .hub-content {min-width: 0; max-width: 100vw}
+  .hub-main {min-width: 0}
+  /* Any grid pattern the app uses more than once should collapse. */
+  [style*="grid-template-columns: 1fr 1fr 1fr"],
+  [style*="gridTemplateColumns: '1fr 1fr 1fr'"],
+  [style*="grid-template-columns:1fr 1fr 1fr"]{grid-template-columns:1fr!important}
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="gridTemplateColumns: '1fr 1fr'"],
+  [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}
+  /* Any scrolling table wrapper gets the horizontal scroll enforced
+     so the page body stays inside the viewport. */
+  .lm-scroll, .al-table-wrap, .section-body table {overflow-x: auto; max-width: 100%}
+  /* Wide tables shouldn't force their parent to overflow. */
+  .al-table, .lm-table {min-width: 640px}
+  /* Section-header title + right-side content stack when the header
+     runs out of room. */
+  .section-header {flex-wrap: wrap; gap: 8px}
+  /* Kanban rows scroll horizontally when there are lots of columns
+     rather than squeezing (Pipeline, Projects). Cards keep readable width. */
+  .kanban {overflow-x: auto; padding-bottom: 12px}
+  .tk-columns {grid-template-columns: 1fr!important; gap: 12px}
+  .tk-layout {grid-template-columns: 1fr!important}
+  .tk-sidebar {position: static; width: 100%; margin-bottom: 12px}
+  /* Roles page: role list sidebar over the editor. */
+  [data-tour="role-list"] {width: 100%!important}
+  /* Filter chip bars wrap cleanly. */
+  .income-filters {flex-wrap: wrap}
+  /* Drawer overlays cover the whole viewport. */
+  .drawer {width: 100vw !important; max-width: 100vw !important}
+  /* Inputs shouldn't force a wider layout. */
+  input, select, textarea {max-width: 100%; box-sizing: border-box}
 }
 /* Calculators */
 .calc-wrap{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
