@@ -945,8 +945,8 @@ export default function LoanManagement() {
     },
     {
       target: '.income-filters',
-      title: 'Filters',
-      body: 'Filter by year, month, status, LO, loan type, and sale type. Layer as many as you need to drill into a specific slice — "all of Missy\'s CTC files closing this month," etc.\n\nReset (dark red chip) blows all filters back to All in one click.',
+      title: 'Filters + search',
+      body: 'Filter by year, month, status, LO, loan type, and sale type. Layer as many as you need to drill into a specific slice — "all of Missy\'s CTC files closing this month," etc.\n\nThe search box on the right matches on borrower name, property address, LO, agent, loan ID, or co-borrower — free-text substring.\n\nReset (dark red chip) blows all filters + search back to All in one click.',
     },
     {
       title: 'Save Now + reset columns',
@@ -990,6 +990,9 @@ export default function LoanManagement() {
   const [filters, setFilters] = useState({
     year: 'All', month: 'All', status: 'All', lo: 'All', type: 'All', saleType: 'All',
   });
+  // Free-text search across the loan list. Matches on borrower name,
+  // property, LO, agent, loan id — case-insensitive substring.
+  const [searchQ, setSearchQ] = useState('');
 
   // Adversed and Archived loans are kept available so the Status filter
   // can surface them on demand, but hidden by default. Recomputed every
@@ -1024,6 +1027,16 @@ export default function LoanManagement() {
     if (filters.lo !== 'All' && r.lo !== filters.lo) return false;
     if (filters.type !== 'All' && r.type !== filters.type) return false;
     if (filters.saleType !== 'All' && r.saleType !== filters.saleType) return false;
+    // Free-text search across the fields most useful for pulling up a
+    // specific file — borrower name, property, LO, agent, or loan id.
+    const q = searchQ.trim().toLowerCase();
+    if (q) {
+      const hay = [
+        r.borrower, r.property, r.lo, r.agent, r.id, r.loa, r.email, r.phone,
+        r.coFirst, r.coLast, r.c2first, r.c2last,
+      ].map((x) => (x == null ? '' : String(x))).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
 
@@ -1235,10 +1248,23 @@ export default function LoanManagement() {
         <div
           className="income-filter"
           style={{ background: '#5a0e1a', cursor: 'pointer' }}
-          onClick={() => setFilters({ year: 'All', month: 'All', status: 'All', lo: 'All', type: 'All', saleType: 'All' })}
+          onClick={() => { setFilters({ year: 'All', month: 'All', status: 'All', lo: 'All', type: 'All', saleType: 'All' }); setSearchQ(''); }}
         >
           <span className="income-filter-label" style={{ color: '#fbb' }}>Reset</span>
         </div>
+        <input
+          type="search"
+          value={searchQ}
+          onChange={(e) => setSearchQ(e.target.value)}
+          placeholder="Search borrower, property, LO, agent, ID…"
+          aria-label="Search loans"
+          style={{
+            flex: '1 1 240px', minWidth: 200,
+            padding: '6px 10px', fontSize: 12,
+            border: '1px solid #d0d0d0', borderRadius: 6,
+            background: '#fff',
+          }}
+        />
         <div className="muted" style={{ marginLeft: 'auto' }}>
           {filtered.length} of {losLoans.length} loans
         </div>

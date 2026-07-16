@@ -88,7 +88,28 @@ export default function AllLoans() {
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return fundedAll.filter((c) => {
+    // Hydrate each client with any client_profiles overrides so the
+    // outside card / row surfaces the last saved value — Last Contact,
+    // notes, corrected LO, past_client_overrides fields, etc.
+    return fundedAll.map((c) => {
+      const profile = getProfile(c.name);
+      if (!profile) return c;
+      const isLive = c._source === 'loans';
+      const merged = { ...c };
+      if (profile.last_contact && !merged.lastContact) merged.lastContact = profile.last_contact;
+      if (Array.isArray(profile.note_entries) && profile.note_entries.length && !merged.noteEntries?.length) {
+        merged.noteEntries = profile.note_entries;
+      }
+      if (!isLive && profile.past_client_overrides && typeof profile.past_client_overrides === 'object') {
+        for (const [k, v] of Object.entries(profile.past_client_overrides)) {
+          if (v !== null && v !== undefined && v !== '') merged[k] = v;
+        }
+      }
+      // corrected_lo takes precedence for legacy records so Kim's LO
+      // edit surfaces on the outside card too.
+      if (!isLive && profile.corrected_lo) merged.lo = profile.corrected_lo;
+      return merged;
+    }).filter((c) => {
       if (filters.year !== 'All' && String(c.year || '') !== filters.year) return false;
       if (filters.month !== 'All' && c.month !== filters.month) return false;
       if (filters.lo !== 'All' && c.lo !== filters.lo) return false;
@@ -663,26 +684,53 @@ function CoBorrowerEditor({ client, onChange }) {
 
 function PastClientDrawer({ client, refiRate, onClose }) {
   const c = client;
+  const isLive = c._source === 'loans';
   const [, force] = useState(0);
   const [draft, setDraft] = useState('');
-  // Hydrate the drawer's Follow-Up state from client_profiles so notes
-  // + last_contact survive refresh. Falls back to whatever's on the
-  // in-memory client (loan record OR PAST_CLIENTS seed).
+  // Hydrate the drawer from client_profiles so edits made previously
+  // survive refresh. Follow-Up fields (last_contact, note_entries) have
+  // their own columns. Everything else lives in past_client_overrides
+  // (jsonb) so we don't need a column per field.
   const profile = getProfile(c.name) || {};
   if (profile.last_contact && !c.lastContact) c.lastContact = profile.last_contact;
   if (Array.isArray(profile.note_entries) && profile.note_entries.length && (!c.noteEntries || c.noteEntries.length === 0)) {
     c.noteEntries = profile.note_entries;
   }
+  const overrides = (profile.past_client_overrides && typeof profile.past_client_overrides === 'object')
+    ? profile.past_client_overrides
+    : {};
+  // Apply legacy-record overrides so the drawer displays the last
+  // saved value. Live loans skip this — they own their own storage.
+  if (!isLive) {
+    for (const [k, v] of Object.entries(overrides)) {
+      if (v !== null && v !== undefined && v !== '' && (c[k] == null || c[k] === '')) {
+        c[k] = v;
+      }
+    }
+  }
 
   // set() persists to BOTH the in-memory client (so the drawer reflects
-  // instantly) AND to client_profiles (so the change survives refresh
-  // or another user's load).
+  // instantly) AND to Supabase. For live loans that means the loans
+  // row; for legacy records that means client_profiles overrides.
+  const NORMALIZE = { lastContact: 'last_contact' };
   const set = (key, value) => {
     c[key] = value;
-    // client_profiles column names are snake_case.
-    const columnMap = { lastContact: 'last_contact' };
-    const col = columnMap[key];
-    if (col) upsertClientProfile(c.name, { [col]: value || null });
+    if (isLive) {
+      const loan = LOANS.find((l) => l.id === c.id);
+      if (loan) {
+        // Client-name → borrower on the loan row.
+        const loanField = key === 'name' ? 'borrower' : key;
+        loan[loanField] = value;
+        markLoansDirty(loan);
+      }
+    } else if (key === 'lastContact') {
+      // Legacy record — Follow-Up date has its own column.
+      upsertClientProfile(c.name, { last_contact: value || null });
+    } else {
+      // Everything else → past_client_overrides jsonb blob.
+      const nextOverrides = { ...overrides, [key]: value === '' ? null : value };
+      upsertClientProfile(c.name, { past_client_overrides: nextOverrides });
+    }
     force((n) => n + 1);
   };
   const markContactedToday = () => set('lastContact', new Date().toISOString().slice(0, 10));
@@ -712,12 +760,56 @@ function PastClientDrawer({ client, refiRate, onClose }) {
   const newPI = refiRate ? monthlyPI(c.amount, refiRate) : null;
   const savings = newPI != null ? currentPI - newPI : null;
 
-  const Row = ({ label, value }) => (
+  // Inline-editable field. Blur to save. Persists via set() which
+  // routes to loans (live) or client_profiles.past_client_overrides
+  // (legacy). Numeric fields parse on save so "$425,000" typed into
+  // the amount field stores as 425000.
+  const inputStyle = {
+    width: '100%', padding: '6px 8px', fontSize: 13, color: '#222',
+    border: '1px solid #eee', borderRadius: 6, background: '#fff',
+    boxSizing: 'border-box',
+  };
+  const labelStyle = {
+    fontSize: 10, fontWeight: 700, color: '#888',
+    textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4,
+  };
+  const Field = ({ label, k, type = 'text', options }) => (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 13, color: '#222' }}>{value || '—'}</div>
+      <div style={labelStyle}>{label}</div>
+      {options ? (
+        <select
+          defaultValue={c[k] ?? ''}
+          onChange={(e) => set(k, e.target.value)}
+          style={inputStyle}
+        >
+          <option value="">—</option>
+          {options.map((o) => <option key={o} value={o}>{o}</option>)}
+          {c[k] && !options.includes(c[k]) && (
+            <option value={c[k]}>{c[k]} (custom)</option>
+          )}
+        </select>
+      ) : (
+        <input
+          type={type}
+          defaultValue={c[k] ?? ''}
+          onBlur={(e) => {
+            const raw = e.target.value;
+            if (type === 'number') {
+              const cleaned = String(raw).replace(/[^0-9.\-]/g, '');
+              const parsed = cleaned === '' ? null : Number(cleaned);
+              set(k, Number.isFinite(parsed) ? parsed : null);
+            } else {
+              set(k, raw);
+            }
+          }}
+          style={inputStyle}
+        />
+      )}
     </div>
   );
+  const TYPES = ['CONV', 'FHA', 'VA', 'Jumbo'];
+  const SALE_TYPES = ['PURCHASE', 'REFINANCE'];
+  const LOS = ['Kyle', 'Missy'];
 
   return (
     <>
@@ -731,16 +823,19 @@ function PastClientDrawer({ client, refiRate, onClose }) {
         </div>
         <div className="drawer-body">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Row label="Close Date" value={c.closeDate} />
-            <Row label="Sale Type" value={c.saleType} />
-            <Row label="Loan Amount" value={fmt$(c.amount)} />
-            <Row label="Purchase Price" value={c.price ? fmt$(c.price) : null} />
-            <Row label="Type" value={c.type} />
-            <Row label="Rate" value={c.rate ? c.rate + '%' : null} />
-            <Row label="LO" value={c.lo} />
-            <Row label="Agent" value={c.agent} />
-            <Row label="Phone" value={c.phone} />
-            <Row label="Email" value={c.email} />
+            <div style={{ gridColumn: '1/-1' }}>
+              <Field label="Property" k="property" />
+            </div>
+            <Field label="Close Date" k="closeDate" type="date" />
+            <Field label="Sale Type" k="saleType" options={SALE_TYPES} />
+            <Field label="Loan Amount" k="amount" type="number" />
+            <Field label="Purchase Price" k="price" type="number" />
+            <Field label="Type" k="type" options={TYPES} />
+            <Field label="Rate (%)" k="rate" type="number" />
+            <Field label="LO" k="lo" options={LOS} />
+            <Field label="Agent" k="agent" />
+            <Field label="Phone" k="phone" type="tel" />
+            <Field label="Email" k="email" type="email" />
           </div>
 
           <IdentityEditor client={c} onChange={() => force((n) => n + 1)} />
