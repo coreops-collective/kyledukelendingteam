@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import { getCurrentUser } from '../lib/auth.js';
 import { LOANS } from '../data/loans.js';
+import { PARTNERS } from '../data/partners.js';
 import { getAllFunded } from '../lib/fundedLoans.js';
 import { subscribeLoans, markLoansDirty } from '../lib/loansStore.js';
 import {
@@ -699,9 +700,16 @@ function PastClientDrawer({ client, refiRate, onClose }) {
   const overrides = (profile.past_client_overrides && typeof profile.past_client_overrides === 'object')
     ? profile.past_client_overrides
     : {};
-  // Apply legacy-record overrides so the drawer displays the last
+  // Apply legacy-record hydration so the drawer displays the last
   // saved value. Live loans skip this — they own their own storage.
+  // Name/phone/email/lo persist to dedicated corrected_* columns so
+  // consumers like fundedLoans.js pick them up on their read pass.
+  // Everything else in past_client_overrides.
   if (!isLive) {
+    if (profile.corrected_name) c.name = profile.corrected_name;
+    if (profile.corrected_phone) c.phone = profile.corrected_phone;
+    if (profile.corrected_email) c.email = profile.corrected_email;
+    if (profile.corrected_lo) c.lo = profile.corrected_lo;
     for (const [k, v] of Object.entries(overrides)) {
       if (v !== null && v !== undefined && v !== '' && (c[k] == null || c[k] === '')) {
         c[k] = v;
@@ -709,10 +717,18 @@ function PastClientDrawer({ client, refiRate, onClose }) {
     }
   }
 
+  // Field-key → legacy client_profiles column for name/phone/email/lo.
+  // Everything else legacy goes into the past_client_overrides jsonb.
+  const LEGACY_CORRECTED = {
+    name: 'corrected_name',
+    phone: 'corrected_phone',
+    email: 'corrected_email',
+    lo: 'corrected_lo',
+  };
+
   // set() persists to BOTH the in-memory client (so the drawer reflects
   // instantly) AND to Supabase. For live loans that means the loans
-  // row; for legacy records that means client_profiles overrides.
-  const NORMALIZE = { lastContact: 'last_contact' };
+  // row; for legacy records that means client_profiles.
   const set = (key, value) => {
     c[key] = value;
     if (isLive) {
@@ -724,10 +740,11 @@ function PastClientDrawer({ client, refiRate, onClose }) {
         markLoansDirty(loan);
       }
     } else if (key === 'lastContact') {
-      // Legacy record — Follow-Up date has its own column.
       upsertClientProfile(c.name, { last_contact: value || null });
+    } else if (LEGACY_CORRECTED[key]) {
+      // Corrected column — same field the outside cards read.
+      upsertClientProfile(c.name, { [LEGACY_CORRECTED[key]]: value || null });
     } else {
-      // Everything else → past_client_overrides jsonb blob.
       const nextOverrides = { ...overrides, [key]: value === '' ? null : value };
       upsertClientProfile(c.name, { past_client_overrides: nextOverrides });
     }
@@ -760,10 +777,11 @@ function PastClientDrawer({ client, refiRate, onClose }) {
   const newPI = refiRate ? monthlyPI(c.amount, refiRate) : null;
   const savings = newPI != null ? currentPI - newPI : null;
 
-  // Inline-editable field. Blur to save. Persists via set() which
-  // routes to loans (live) or client_profiles.past_client_overrides
-  // (legacy). Numeric fields parse on save so "$425,000" typed into
-  // the amount field stores as 425000.
+  // Editable inline field. Blur to save. Only used for contact-side
+  // fields (name / phone / email / LO / agent) — the loan-financial
+  // fields (amount / price / rate / type / close date / sale type /
+  // property) stay read-only via <Row>. The team edits those in Loan
+  // Management, not here.
   const inputStyle = {
     width: '100%', padding: '6px 8px', fontSize: 13, color: '#222',
     border: '1px solid #eee', borderRadius: 6, background: '#fff',
@@ -792,24 +810,23 @@ function PastClientDrawer({ client, refiRate, onClose }) {
         <input
           type={type}
           defaultValue={c[k] ?? ''}
-          onBlur={(e) => {
-            const raw = e.target.value;
-            if (type === 'number') {
-              const cleaned = String(raw).replace(/[^0-9.\-]/g, '');
-              const parsed = cleaned === '' ? null : Number(cleaned);
-              set(k, Number.isFinite(parsed) ? parsed : null);
-            } else {
-              set(k, raw);
-            }
-          }}
+          onBlur={(e) => set(k, e.target.value)}
           style={inputStyle}
         />
       )}
     </div>
   );
-  const TYPES = ['CONV', 'FHA', 'VA', 'Jumbo'];
-  const SALE_TYPES = ['PURCHASE', 'REFINANCE'];
+  const Row = ({ label, value }) => (
+    <div style={{ marginBottom: 12 }}>
+      <div style={labelStyle}>{label}</div>
+      <div style={{ fontSize: 13, color: '#222' }}>{value || '—'}</div>
+    </div>
+  );
   const LOS = ['Kyle', 'Missy'];
+  const agentOptions = useMemo(
+    () => [...PARTNERS].map((p) => p.name).sort((a, b) => a.localeCompare(b)),
+    []
+  );
 
   return (
     <>
@@ -822,23 +839,38 @@ function PastClientDrawer({ client, refiRate, onClose }) {
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{c.property || ''}</div>
         </div>
         <div className="drawer-body">
+          {/* Read-only loan-financial rows. Edit these in Loan
+              Management, not here. */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div style={{ gridColumn: '1/-1' }}>
-              <Field label="Property" k="property" />
+              <Row label="Property" value={c.property} />
             </div>
-            <Field label="Close Date" k="closeDate" type="date" />
-            <Field label="Sale Type" k="saleType" options={SALE_TYPES} />
-            <Field label="Loan Amount" k="amount" type="number" />
-            <Field label="Purchase Price" k="price" type="number" />
-            <Field label="Type" k="type" options={TYPES} />
-            <Field label="Rate (%)" k="rate" type="number" />
-            <Field label="LO" k="lo" options={LOS} />
-            <Field label="Agent" k="agent" />
-            <Field label="Phone" k="phone" type="tel" />
-            <Field label="Email" k="email" type="email" />
+            <Row label="Close Date" value={c.closeDate} />
+            <Row label="Sale Type" value={c.saleType} />
+            <Row label="Loan Amount" value={fmt$(c.amount)} />
+            <Row label="Purchase Price" value={c.price ? fmt$(c.price) : null} />
+            <Row label="Type" value={c.type} />
+            <Row label="Rate" value={c.rate ? c.rate + '%' : null} />
           </div>
 
-          <IdentityEditor client={c} onChange={() => force((n) => n + 1)} />
+          {/* Editable contact / assignment fields — Kim edits these
+              directly from the past-client card without needing the
+              old Fix name/phone/email toggle. */}
+          <div style={{ marginTop: 4, padding: 12, background: '#fafafa', border: '1px solid #e5e5e5', borderRadius: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>
+              Contact details
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ gridColumn: '1/-1' }}>
+                <Field label="Client Name" k="name" />
+              </div>
+              <Field label="LO" k="lo" options={LOS} />
+              <Field label="Agent" k="agent" options={agentOptions} />
+              <Field label="Phone" k="phone" type="tel" />
+              <Field label="Email" k="email" type="email" />
+            </div>
+          </div>
+
           <BirthdayField clientName={c.name} />
           <ReviewField clientName={c.name} />
           <CoBorrowerEditor client={c} onChange={() => force((n) => n + 1)} />
