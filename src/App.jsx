@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import ToasterStack from './components/ToasterStack.jsx';
 import GlobalSearch from './components/GlobalSearch.jsx';
+import ReportIssueButton from './components/ReportIssueButton.jsx';
 import Pipeline from './views/Pipeline.jsx';
 import NewLoan from './views/NewLoan.jsx';
 import Placeholder from './views/Placeholder.jsx';
@@ -212,6 +213,11 @@ export default function App() {
                 aria-label="Start guided tour of this page"
               >📖 Take a tour</button>
             )}
+            {/* Global "Report an issue" chip — visible on every page so
+                anyone (Kim especially) can flag something weird without
+                needing to hunt for a support channel. Opens a modal that
+                emails Lauren with the current URL + browser context. */}
+            <ReportIssueButton />
             <span className="chip" id="todayChip">{todayString()}</span>
           </div>
         </header>

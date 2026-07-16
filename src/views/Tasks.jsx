@@ -251,7 +251,7 @@ export default function Tasks() {
     },
     {
       title: 'Knock out many tasks at once',
-      body: 'To complete a batch: click the "Select multiple" button in the filter bar. Each row grows a second smaller checkbox for selection, plus a Select-all and Complete-N toolbar appears above the list.\n\nWhen you\'re done, click Cancel or hit Complete to send them all through in one shot.',
+      body: 'To complete a batch: click the "Select multiple" button in the filter bar. The row checkbox switches meaning — instead of marking that task done, it selects it (black checkbox instead of red). Tap the tasks you want, then hit "✓ Complete N" in the toolbar to complete them all in one shot.\n\nExit any time — the checkboxes go back to their normal "mark complete" behavior.',
     },
     {
       target: '[data-tour="tracker-tabs"]',
@@ -752,30 +752,40 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
         </div>
       </div>
 
-      {/* Bulk selection toolbar — only visible while the user is in
-          Select mode. Default view keeps the row lean with a single
-          "complete" checkbox per task. */}
+      {/* Bulk selection toolbar — only visible in Select mode. The
+          per-row checkbox switches meaning in this mode (selection
+          instead of completion), so there's still exactly one
+          checkbox per row — no side-by-side pair. */}
       {selectMode && visibleIds.size > 0 && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '8px 14px', background: someChecked ? '#fff3cd' : '#f7f9fc',
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          padding: '8px 14px', background: someChecked ? '#fff3cd' : '#eef4fb',
           borderBottom: '1px solid #e5e5e5', fontSize: 12,
         }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={allChecked}
-              ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
-              onChange={toggleAll}
-              style={{ width: 16, height: 16, accentColor: 'var(--brand-red)' }}
-            />
-            <span style={{ color: '#666', fontWeight: 600 }}>
-              {someChecked ? `${selected.size} selected` : 'Select all visible'}
-            </span>
-          </label>
+          <span style={{
+            fontFamily: "'Oswald',sans-serif", fontSize: 10, fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '.6px',
+            color: '#0A0A0A',
+            background: '#fff', border: '1px solid #d0d0d0',
+            padding: '3px 8px', borderRadius: 999,
+          }}>Selection mode</span>
+          <span style={{ color: '#666', fontWeight: 600 }}>
+            {someChecked ? `${selected.size} selected` : 'Tap a task checkbox to select it'}
+          </span>
+          <button
+            onClick={toggleAll}
+            type="button"
+            style={{
+              padding: '4px 10px', background: '#fff', color: '#0A0A0A',
+              border: '1px solid #d0d0d0', borderRadius: 4, fontWeight: 700,
+              fontSize: 11, cursor: 'pointer', textTransform: 'uppercase',
+              letterSpacing: '.4px', fontFamily: "'Oswald',sans-serif",
+            }}
+          >{allChecked ? 'Deselect all' : 'Select all'}</button>
           {someChecked && (
             <button
               onClick={doBulk}
+              type="button"
               style={{
                 padding: '5px 14px', background: '#0A0A0A', color: '#fff',
                 border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 11,
@@ -785,6 +795,7 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
           )}
           <button
             onClick={exitSelectMode}
+            type="button"
             style={{
               marginLeft: 'auto',
               padding: '4px 10px', background: 'transparent', color: '#555',
@@ -792,7 +803,7 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
               fontSize: 11, cursor: 'pointer', textTransform: 'uppercase',
               letterSpacing: '.4px', fontFamily: "'Oswald',sans-serif",
             }}
-          >Cancel</button>
+          >Exit</button>
         </div>
       )}
 
@@ -829,24 +840,30 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
                 background: it.completed ? '#fafafa' : isSelected ? '#fffce7' : (overdue ? '#fff5f5' : '#fff'),
               }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {selectMode && !it.completed && (
+                  {/* Single checkbox per row. Its meaning depends on
+                      mode: normal → "mark this task complete" (red).
+                      Select mode → "add to bulk selection" (black).
+                      Same slot, same visual footprint — no
+                      side-by-side pair. */}
+                  {selectMode && !it.completed ? (
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleOne(it.id)}
-                      style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#0A0A0A' }}
+                      style={{ width: 20, height: 20, cursor: 'pointer', accentColor: '#0A0A0A' }}
                       title="Select for bulk complete"
                       aria-label="Select"
                     />
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={it.completed}
+                      onChange={() => onToggle(it)}
+                      style={{ width: 20, height: 20, cursor: 'pointer', accentColor: 'var(--brand-red)' }}
+                      title="Mark complete"
+                      aria-label="Complete"
+                    />
                   )}
-                  <input
-                    type="checkbox"
-                    checked={it.completed}
-                    onChange={() => onToggle(it)}
-                    style={{ width: 20, height: 20, cursor: 'pointer', accentColor: 'var(--brand-red)' }}
-                    title="Mark complete"
-                    aria-label="Complete"
-                  />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: it.completed ? '#aaa' : '#222', textDecoration: it.completed ? 'line-through' : 'none' }}>
