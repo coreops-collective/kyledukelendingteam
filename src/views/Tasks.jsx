@@ -675,6 +675,7 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
     { key: 'new', label: 'New Lead' },
     { key: 'applied', label: 'Applied' },
     { key: 'hotpa', label: 'HOT PA' },
+    { key: 'nurturepa', label: 'Nurture PA' },
     { key: 'refiwatch', label: 'REFI Watch' },
   ];
   const anyFilter = filters.role !== 'All' || filters.stage !== 'All' || filters.client.trim() || filters.showDone;

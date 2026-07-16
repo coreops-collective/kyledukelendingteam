@@ -1399,7 +1399,7 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
   // Available loan statuses for status-triggered tasks. Sourced from
   // src/data/stages.js; keeps the picker in lockstep with the actual
   // status values loans can take on.
-  const STATUS_OPTIONS = ['New Lead', 'Applied', 'HOT PA', 'REFI Watch', 'New Contract', 'Disclosed', 'Processing', 'Underwriting', 'CTC Required', 'CTC', 'Approved', 'Funded'];
+  const STATUS_OPTIONS = ['New Lead', 'Applied', 'HOT PA', 'Nurture PA', 'REFI Watch', 'New Contract', 'Disclosed', 'Processing', 'Underwriting', 'CTC Required', 'CTC', 'Approved', 'Funded'];
 
   const effectiveDays = mode === 'on' ? 0 : mode === 'before' ? -Math.abs(magnitude) : Math.abs(magnitude);
 
