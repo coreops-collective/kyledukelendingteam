@@ -17,6 +17,7 @@ import Roles from './views/Roles.jsx';
 import LeadSources from './views/LeadSources.jsx';
 import Workflows from './views/Workflows.jsx';
 import Tasks from './views/Tasks.jsx';
+import Projects from './views/Projects.jsx';
 import MortgageCalc from './views/MortgageCalc.jsx';
 import ClosingCalc from './views/ClosingCalc.jsx';
 import Snapshot from './views/Snapshot.jsx';
@@ -45,6 +46,7 @@ const PAGE_META = {
   '/workflows':     { title: 'Workflows & SOPs' },
   '/clientforlife': { title: 'Client for Life' },
   '/tasks':         { title: 'Pipeline Tasks' },
+  '/projects':      { title: 'Projects' },
   '/partners':      { title: 'Realtor Partners' },
   '/team':          { title: 'Team Members' },
   '/roles':         { title: 'Roles & Responsibilities' },
@@ -204,7 +206,7 @@ export default function App() {
                 routes that have a tour registered. Fires an event the
                 page component listens for so we don't need a
                 global-tour registry / context wired here. */}
-            {['/workflows', '/pipeline', '/snapshot', '/loanmgmt', '/clientforlife', '/cfl', '/partners', '/newloan', '/roles', '/loans', '/ratelocks', '/tasks', '/performance', '/setup', '/income', '/netincome', '/leadsources'].includes(location.pathname) && (
+            {['/workflows', '/pipeline', '/snapshot', '/loanmgmt', '/clientforlife', '/cfl', '/partners', '/newloan', '/roles', '/loans', '/ratelocks', '/tasks', '/projects', '/performance', '/setup', '/income', '/netincome', '/leadsources'].includes(location.pathname) && (
               <button
                 className="chip"
                 style={{ cursor: 'pointer', border: '1px solid #d0d0d0', background: '#fff', color: 'var(--brand-red, #c62828)', fontWeight: 700 }}
@@ -233,6 +235,7 @@ export default function App() {
             <Route path="/clientforlife" element={<CFL />} />
             <Route path="/cfl" element={<CFL />} />
             <Route path="/tasks" element={<Tasks />} />
+            <Route path="/projects" element={<Projects />} />
             <Route path="/partners" element={<Partners />} />
             <Route path="/team" element={<Team />} />
             <Route path="/roles" element={<Roles />} />

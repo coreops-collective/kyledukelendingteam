@@ -21,11 +21,6 @@ import Tour from '../components/Tour.jsx';
 const TASKS_KEY = 'kdt-tasks-v1';
 const PROJECTS_KEY = 'kdt-projects-v1';
 
-const fmtIsoToday = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
 function loadStored(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -37,12 +32,19 @@ function loadStored(key, fallback) {
   }
 }
 
-// Port of renderTasks() from legacy/index.html. Tasks + projects persist
-// to localStorage so deletes/edits actually stick across refreshes —
-// the previous version was state-only (useState(TASKS_SEED)) and any
-// deletion silently reset on reload. Cross-user sync would require a
-// real Supabase table; for now this at least makes the page behave.
+const fmtIsoToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+// Pipeline Tasks page — workflow-generated tasks for loans in
+// pre-contract stages (New Lead / Applied / HOT PA / Nurture PA /
+// REFI Watch). The manual project Kanban formerly on this page has
+// moved to its own /projects route.
 export default function Tasks() {
+  // Tracker state kept here for backward compat with anything else
+  // that reads it from localStorage — the /projects page owns the UI
+  // now, but wiping this state would strip the seed row on first load.
   const [tasks, setTasks] = useState(() => loadStored(TASKS_KEY, TASKS_SEED));
   const [projects, setProjects] = useState(() => loadStored(PROJECTS_KEY, PROJECTS_SEED));
   const [workflowVersion, setWorkflowVersion] = useState(0);
@@ -88,13 +90,15 @@ export default function Tasks() {
     escalateOverdueTasks(pipelineTasks).catch(() => {});
   }, [pipelineTasks]);
 
-  const toggleWorkflowTask = (item) => {
+  const toggleWorkflowTask = (item, outcome) => {
     const iso = fmtIsoToday();
     // item.loan_id is populated by generateStatusTasks when the task is
     // tied to a specific loan — passing it scopes the completion to that
     // loan so two loans sharing a borrower name don't double-complete.
+    // outcome is passed for decision-point tasks so downstream branches
+    // populate on the next render.
     if (item.completed) unmarkTaskCompleted(item.task.id, item.client_name, iso, item.loan_id);
-    else markTaskCompleted(item.task.id, item.client_name, iso, null, null, item.loan_id);
+    else markTaskCompleted(item.task.id, item.client_name, iso, null, outcome || null, item.loan_id);
     bumpWorkflow();
   };
 
@@ -257,18 +261,8 @@ export default function Tasks() {
       body: 'To complete a batch: click the "Select multiple" button in the filter bar. The row checkbox switches meaning — instead of marking that task done, it selects it (black checkbox instead of red). Tap the tasks you want, then hit "✓ Complete N" in the toolbar to complete them all in one shot.\n\nExit any time — the checkboxes go back to their normal "mark complete" behavior.',
     },
     {
-      target: '[data-tour="tracker-tabs"]',
-      title: 'Tasks vs Projects sub-tabs',
-      body: '"Tasks" shows the Kanban board grouped by status (To Do, In Progress, Blocked, Done).\n\n"Projects" shows every project you\'ve created (Q2 Marketing, Recruiting, etc.) so you can rename them, change their colors, and see task counts per project.',
-    },
-    {
-      target: '.tk-add-row',
-      title: 'Quick add + drawer',
-      body: 'Type a task title, pick the project, hit Enter or Add. It lands in the To Do column.\n\nClick any card to open the drawer and set assignee, due date, priority, notes. Due dates in the past show a red \u26A0 overdue chip.',
-    },
-    {
-      title: 'Siri (Kyle + Missy only)',
-      body: 'The \u{1F399}\uFE0F Siri setup link near the top walks you through wiring up an iPhone Shortcut that lets you say "Hey Siri, new task" and dictate \u2014 Claude parses it into a structured task and it lands right here.\n\nOnly enabled for Kyle + Missy; costs pennies per dictation.',
+      title: 'Your own tasks live on the Projects page',
+      body: 'This page is only for auto-generated workflow tasks tied to loans. For your own Kanban board \u2014 recruiting, marketing, tech stack, quarterly initiatives \u2014 go to the Projects tab in the sidebar.',
     },
   ];
 
@@ -286,198 +280,6 @@ export default function Tasks() {
           showDone: pfShowDone, setShowDone: setPfShowDone,
         }}
       />
-
-      <div className="section-card" style={{ marginBottom: 20 }}>
-        <div className="section-header">
-          <div>
-            <div className="section-title">
-              {tasks.filter(t => t.status !== 'done').length} Open Tasks
-            </div>
-            <div className="section-sub">
-              {projects.length} projects
-            </div>
-          </div>
-          <div data-tour="tracker-tabs" style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,.12)', padding: 4, borderRadius: 8 }}>
-            <button
-              onClick={() => setActiveTab('tasks')}
-              style={{
-                padding: '6px 14px', fontSize: 12, fontWeight: 700,
-                background: activeTab === 'tasks' ? '#fff' : 'transparent',
-                color: activeTab === 'tasks' ? '#0A0A0A' : '#fff',
-                border: 'none', borderRadius: 6, cursor: 'pointer',
-                boxShadow: activeTab === 'tasks' ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-              }}
-            >Tasks</button>
-            <button
-              onClick={() => setActiveTab('projects')}
-              style={{
-                padding: '6px 14px', fontSize: 12, fontWeight: 700,
-                background: activeTab === 'projects' ? '#fff' : 'transparent',
-                color: activeTab === 'projects' ? '#0A0A0A' : '#fff',
-                border: 'none', borderRadius: 6, cursor: 'pointer',
-                boxShadow: activeTab === 'projects' ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-              }}
-            >Projects</button>
-          </div>
-        </div>
-
-        <div className="section-body" style={{ padding: 16 }}>
-          {activeTab === 'projects' ? (
-            <ProjectsTab
-              projects={projects}
-              tasks={tasks}
-              onAdd={addProject}
-              onRename={(id, name) => setProjects((prev) => prev.map((p) => p.id === id ? { ...p, name } : p))}
-              onRecolor={(id, color) => setProjects((prev) => prev.map((p) => p.id === id ? { ...p, color } : p))}
-              onDelete={(id) => {
-                const p = projects.find((x) => x.id === id);
-                if (!window.confirm(`Delete project "${p?.name || 'this project'}"? Tasks inside it stay put but move to no project.`)) return;
-                setProjects((prev) => prev.filter((x) => x.id !== id));
-                setTasks((prev) => prev.map((t) => t.projectId === id ? { ...t, projectId: null } : t));
-              }}
-              onOpenProject={(id) => { setActiveProjectId(id); setActiveTab('tasks'); }}
-            />
-          ) : null}
-
-          <div className="tk-layout" style={{ display: activeTab === 'tasks' ? undefined : 'none' }}>
-        <div className="tk-sidebar">
-          <h3>Projects</h3>
-          <div className={`tk-project ${activeProjectId==='all'?'active':''}`} onClick={() => setActiveProjectId('all')}>
-            <div className="tk-project-dot" style={{background:'#333'}} />
-            <span>All Tasks</span>
-            <span className="tk-project-count">{allCount}</span>
-          </div>
-          {projects.map(p => {
-            const openCount = tasks.filter(t => t.projectId === p.id && t.status !== 'done').length;
-            return (
-              <div key={p.id} className={`tk-project ${activeProjectId===p.id?'active':''}`} onClick={() => setActiveProjectId(p.id)}>
-                <div className="tk-project-dot" style={{background:p.color}} />
-                <span>{p.name}</span>
-                <span className="tk-project-count">{openCount}</span>
-              </div>
-            );
-          })}
-          <button className="form-btn" onClick={addProject} style={{width:'100%',marginTop:10,background:'#fafafa',color:'#666',border:'1px dashed var(--border)'}}>+ New Project</button>
-        </div>
-        <div className="tk-main">
-          <div className="tk-add-row">
-            <input
-              id="newTaskInput"
-              placeholder="Quick add a task... (press Enter)"
-              value={quickTitle}
-              onChange={(e) => setQuickTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addTrackerTaskQuick(); }}
-            />
-            <select id="newTaskProject" value={quickProject} onChange={(e) => setQuickProject(e.target.value)}>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <button onClick={addTrackerTaskQuick}>Add Task</button>
-          </div>
-          {trackerSelected.size > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '8px 14px', background: '#fff3cd', border: '1px solid #f5c518', borderRadius: 8,
-              fontSize: 12, marginBottom: 8,
-            }}>
-              <span style={{ color: '#666', fontWeight: 600 }}>{trackerSelected.size} selected</span>
-              <button
-                onClick={trackerBulkComplete}
-                style={{
-                  padding: '5px 14px', background: '#0A0A0A', color: '#fff',
-                  border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 11,
-                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
-                }}
-              >{'\u2713'} Complete {trackerSelected.size}</button>
-              <button
-                onClick={() => setTrackerSelected(new Set())}
-                style={{ padding: '5px 10px', background: '#fff', color: '#666', border: '1px solid #ccc', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
-              >Clear</button>
-            </div>
-          )}
-          <div className="tk-columns">
-            {TASK_STATUSES.map(st => {
-              const list = visibleTasks.filter(t => t.status === st.key);
-              return (
-                <div key={st.key} className="tk-col" style={{borderTopColor:st.color}}>
-                  <div className="tk-col-head">
-                    <span style={{color:st.color}}>{st.label}</span>
-                    <span className="tk-col-count">{list.length}</span>
-                  </div>
-                  {list.length ? list.map(t => {
-                    const proj = projects.find(p => p.id === t.projectId);
-                    const pri = TASK_PRIORITIES.find(p => p.key === t.priority) || TASK_PRIORITIES[1];
-                    const dueObj = t.due ? parseLocalDate(t.due) : null;
-                    const today = new Date(); today.setHours(0,0,0,0);
-                    const overdue = dueObj && dueObj < today && t.status !== 'done';
-                    const dueLabel = dueObj ? dueObj.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
-                    const selected = trackerSelected.has(t.id);
-                    return (
-                      <div
-                        key={t.id}
-                        className="tk-card"
-                        onClick={() => setOpenTaskId(t.id)}
-                        style={selected ? { background: '#fffce7', borderColor: '#f5c518' } : undefined}
-                      >
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                          {t.status !== 'done' && (
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={() => toggleTrackerSelected(t.id)}
-                              style={{ width: 14, height: 14, marginTop: 2, cursor: 'pointer', accentColor: '#0A0A0A' }}
-                              aria-label="Select for bulk complete"
-                            />
-                          )}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div className="tk-card-title">{t.title}</div>
-                            <div className="tk-card-meta">
-                              <span className="tk-card-pri" style={{background:pri.color+'20',color:pri.color}}>{pri.label}</span>
-                              {proj ? (
-                                <span style={{display:'inline-flex',alignItems:'center',gap:4}}>
-                                  <span style={{width:7,height:7,borderRadius:'50%',background:proj.color}} />
-                                  {proj.name}
-                                </span>
-                              ) : null}
-                              {dueLabel ? (
-                                <span style={{color:overdue?'#c8102e':'#888',fontWeight:overdue?700:500}}>
-                                  {overdue ? '\u26A0 ' : ''}Due {dueLabel}
-                                </span>
-                              ) : null}
-                              {t.assignee ? <span>{'\u00b7 '}{t.assignee}</span> : null}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }) : (
-                    <div style={{padding:20,textAlign:'center',color:'#bbb',fontSize:11,fontStyle:'italic'}}>Nothing here</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-        </div>
-      </div>
-
-      {openTask ? (
-        <TaskDrawer
-          task={openTask}
-          projects={projects}
-          onClose={() => setOpenTaskId(null)}
-          onSave={saveTask}
-          onDelete={deleteTask}
-        />
-      ) : null}
-
-      {toastMsg ? (
-        <div style={{position:'fixed',bottom:20,right:20,background:'#222',color:'#fff',padding:'10px 16px',borderRadius:8,zIndex:1000,boxShadow:'0 4px 12px rgba(0,0,0,.2)'}}>
-          <div style={{fontSize:11,textTransform:'uppercase',letterSpacing:'.6px',color:'#bbb'}}>{toastMsg.title}</div>
-          <div style={{fontSize:13,fontWeight:600}}>{toastMsg.body}</div>
-        </div>
-      ) : null}
       {tourOpen && <Tour steps={TASKS_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </>
   );
@@ -835,20 +637,22 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
             const today = new Date(); today.setHours(0, 0, 0, 0);
             const overdue = it.due_date && it.due_date < today && !it.completed;
             const isSelected = selected.has(it.id);
+            const decisionOptions = Array.isArray(it.task.decision_options) ? it.task.decision_options : [];
+            const isDecision = decisionOptions.length > 0;
             return (
               <div key={it.id} style={{
                 display: 'grid', gridTemplateColumns: '60px 1fr 100px 90px', gap: 10,
                 padding: '10px 18px', borderTop: i === 0 ? 'none' : '1px solid #f1f1f1',
-                alignItems: 'center',
-                background: it.completed ? '#fafafa' : isSelected ? '#fffce7' : (overdue ? '#fff5f5' : '#fff'),
+                alignItems: isDecision ? 'flex-start' : 'center',
+                background: it.completed ? '#fafafa' : isSelected ? '#fffce7' : isDecision ? '#f5f9ff' : (overdue ? '#fff5f5' : '#fff'),
               }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {/* Single checkbox per row. Its meaning depends on
-                      mode: normal → "mark this task complete" (red).
-                      Select mode → "add to bulk selection" (black).
-                      Same slot, same visual footprint — no
-                      side-by-side pair. */}
-                  {selectMode && !it.completed ? (
+                  {/* Decision-point rows show the ❓ marker instead of a
+                      checkbox — you have to answer with one of the
+                      buttons below to complete them. */}
+                  {isDecision ? (
+                    <div style={{ fontSize: 20, textAlign: 'center', color: '#0A0A0A', width: 20 }} title="Decision Point">❓</div>
+                  ) : selectMode && !it.completed ? (
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -870,6 +674,7 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: it.completed ? '#aaa' : '#222', textDecoration: it.completed ? 'line-through' : 'none' }}>
+                    {isDecision && <span style={{ fontSize: 10, background: '#0A0A0A', color: '#fff', padding: '2px 6px', borderRadius: 4, marginRight: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>Decision</span>}
                     {it.task.title}
                   </div>
                   <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
@@ -878,6 +683,26 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
                     {' · '}{it.workflow.name}
                     {it.task.notes ? ` · ${it.task.notes}` : ''}
                   </div>
+                  {isDecision && !it.completed && (
+                    <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {decisionOptions.map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onToggle(it, opt); }}
+                          style={{
+                            padding: '6px 12px', borderRadius: 999, border: '1px solid #0A0A0A',
+                            background: '#0A0A0A', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                          }}
+                        >{opt}</button>
+                      ))}
+                    </div>
+                  )}
+                  {isDecision && it.completed && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#2e7d32', fontWeight: 600 }}>
+                      Answered
+                    </div>
+                  )}
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   {dueLabel && (
