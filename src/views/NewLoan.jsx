@@ -488,7 +488,7 @@ export default function NewLoan() {
           )}
 
           <div className="form-field full"><label>Other Notes</label><textarea value={form.notes} onChange={set('notes')} /></div>
-        </form>
+
         {missingFields.length > 0 && (
           <div
             id="new-loan-error-banner"
@@ -513,10 +513,15 @@ export default function NewLoan() {
         )}
         <div className="form-actions">
           <button className="form-btn secondary" type="button" onClick={() => { setMissingFields([]); setForm(f => ({ ...f, lo: '', kind: '', existingId: '', status: '' })); }}>Cancel</button>
-          <button className="form-btn primary" type="button" onClick={submit}>
+          {/* type="submit" so browser-native form submission fires the
+              form's onSubmit even if onClick gets swallowed by anything
+              (stale bundle, ad-blocker extension, overlay etc.). onClick
+              stays for the fast path. */}
+          <button className="form-btn primary" type="submit" onClick={submit}>
             {form.status === 'fresh' ? 'Submit & Notify LOA' : 'Submit'}
           </button>
         </div>
+        </form>
       </div>
       {toast && (
         <div className="toast" onClick={() => setToast(null)}>
