@@ -5,6 +5,7 @@ import UpdateBanner from './components/UpdateBanner.jsx';
 import ToasterStack from './components/ToasterStack.jsx';
 import GlobalSearch from './components/GlobalSearch.jsx';
 import ReportIssueButton from './components/ReportIssueButton.jsx';
+import FlashBanner from './components/FlashBanner.jsx';
 import Pipeline from './views/Pipeline.jsx';
 import NewLoan from './views/NewLoan.jsx';
 import Placeholder from './views/Placeholder.jsx';
@@ -254,6 +255,7 @@ export default function App() {
       <div id="drawerRoot"></div>
       <div id="loginRoot"></div>
       <ToasterStack />
+      <FlashBanner />
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   );

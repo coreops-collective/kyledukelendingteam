@@ -353,15 +353,13 @@ export default function NewLoan() {
     }
 
     const isFresh = stageKey === 'fresh';
-    setToast({
-      title: 'New Loan Intake',
-      msg: isFresh
-        ? `${form.first} ${form.last} added — LOA notified`
-        : `${form.first} ${form.last} added to pipeline`,
-    });
     try { await sbInsert('loan_intakes', row); } catch { /* non-fatal — table may not exist */ }
-    // Fire the notification for New Contract intakes BEFORE navigating.
-    // Fire-and-forget so slow SMTP doesn't hold up the redirect.
+    // Fire the notification for New Contract intakes. Fire-and-forget so
+    // slow SMTP doesn't hold up the redirect. Context passes stage_key
+    // AND label so notification_rules with a stage_filter (which stores
+    // stage KEYS like 'fresh', not labels) match correctly. Prior versions
+    // passed only the label, so a rule filtered on stage_key 'fresh' would
+    // never match and no email ever fired.
     if (isFresh) {
       const notifCaller = getCurrentUser()?.email || '';
       fetch('/.netlify/functions/send-notification', {
@@ -375,21 +373,24 @@ export default function NewLoan() {
           event_type: 'loan.created',
           context: {
             ...row,
-            stage: STAGE_TO_STATUS[row.stage] || row.stage,
+            stage: STAGE_TO_STATUS[row.stage] || row.stage, // label ("New Contract")
+            stage_key: row.stage,        // key ("fresh") — matches rule filter
+            new_stage_key: row.stage,    // same, for filter compatibility
             dashboard_url: 'https://thekyleduketeam.netlify.app/',
           },
         }),
       }).catch(() => { /* silent */ });
     }
-    // Reset the form to blank state and route the user to the page
-    // where they can see the loan they just created. Fresh (New
-    // Contract) files live in Loan Management; everything else lives
-    // in the Pipeline board. This is the "close the intake form" the
-    // user was asking for — same effect, cleaner UX than a modal close.
+    // Reset the form and route to the destination page. Flash a clean
+    // success banner via location.state so the destination page shows a
+    // single-line "Success — X added" bar instead of the old dark toast.
+    const flash = isFresh
+      ? `Success — ${form.first} ${form.last} submitted (New Contract) · LOA notified`
+      : `Success — ${form.first} ${form.last} submitted to pipeline`;
     setForm(EMPTY_FORM);
     setMissingFields([]);
     setSubmitDebug({ at: null, error: null });
-    navigate(isFresh ? '/loanmgmt' : '/pipeline');
+    navigate(isFresh ? '/loanmgmt' : '/pipeline', { state: { flash } });
   }
 
   return (
@@ -597,7 +598,11 @@ export default function NewLoan() {
         </div>
         </form>
       </div>
-      {toast && (
+      {/* Success confirmations now render as a clean centered banner
+          on the destination page via location.state.flash — see
+          FlashBanner in App.jsx. Kept the toast slot in case anything
+          else on this page wants an inline error toast in the future. */}
+      {toast && toast.error && (
         <div className="toast" onClick={() => setToast(null)}>
           <div className="toast-title">{toast.title}</div>
           <div>{toast.msg}</div>
