@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { STAGES, REFI_WATCH_STAGE, NURTURE_PA_STAGE, PRE_CONTRACT_STAGES, stageByKey, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
@@ -14,20 +15,23 @@ import {
 
 const LO_OPTIONS = ['Kyle Duke', 'Missy'];
 
+const EMPTY_FORM = {
+  lo: '', kind: '', existingId: '', status: '',
+  first: '', last: '', phone: '', email: '', bday: '',
+  hasCo: 'No',
+  coFirst: '', coLast: '', coPhone: '', coEmail: '', coBday: '',
+  type: 'VA', purpose: 'Purchase', amt: '', fico: '', preapp: '',
+  agent: '', src: '',
+  estClose: '',
+  addr: '', locked: '', apprNow: '', apprContact: '', apprNotes: '',
+  titleCo: '', titleContact: '', hoi: '', closeDate: '', uwPath: '', story: '',
+  addrPost: '',
+  notes: '',
+};
+
 export default function NewLoan() {
-  const [form, setForm] = useState({
-    lo: '', kind: '', existingId: '', status: '',
-    first: '', last: '', phone: '', email: '', bday: '',
-    hasCo: 'No',
-    coFirst: '', coLast: '', coPhone: '', coEmail: '', coBday: '',
-    type: 'VA', purpose: 'Purchase', amt: '', fico: '', preapp: '',
-    agent: '', src: '',
-    estClose: '',
-    addr: '', locked: '', apprNow: '', apprContact: '', apprNotes: '',
-    titleCo: '', titleContact: '', hoi: '', closeDate: '', uwPath: '', story: '',
-    addrPost: '',
-    notes: '',
-  });
+  const navigate = useNavigate();
+  const [form, setForm] = useState(EMPTY_FORM);
   const [toast, setToast] = useState(null);
   const [tourOpen, setTourOpen] = useState(false);
   // Persistent list of missing required fields — sticks around until
@@ -356,25 +360,36 @@ export default function NewLoan() {
         : `${form.first} ${form.last} added to pipeline`,
     });
     try { await sbInsert('loan_intakes', row); } catch { /* non-fatal — table may not exist */ }
-    if (!isFresh) return; // Skip notification unless this is a New Contract.
-    // Fire-and-forget notification (email rules configured in Setup).
-    const notifCaller = getCurrentUser()?.email || '';
-    fetch('/.netlify/functions/send-notification', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(notifCaller ? { 'x-kdt-user-email': notifCaller } : {}),
-      },
-      body: JSON.stringify({
-        callerEmail: notifCaller,
-        event_type: 'loan.created',
-        context: {
-          ...row,
-          stage: STAGE_TO_STATUS[row.stage] || row.stage,
-          dashboard_url: 'https://thekyleduketeam.netlify.app/',
+    // Fire the notification for New Contract intakes BEFORE navigating.
+    // Fire-and-forget so slow SMTP doesn't hold up the redirect.
+    if (isFresh) {
+      const notifCaller = getCurrentUser()?.email || '';
+      fetch('/.netlify/functions/send-notification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(notifCaller ? { 'x-kdt-user-email': notifCaller } : {}),
         },
-      }),
-    }).catch(() => { /* silent */ });
+        body: JSON.stringify({
+          callerEmail: notifCaller,
+          event_type: 'loan.created',
+          context: {
+            ...row,
+            stage: STAGE_TO_STATUS[row.stage] || row.stage,
+            dashboard_url: 'https://thekyleduketeam.netlify.app/',
+          },
+        }),
+      }).catch(() => { /* silent */ });
+    }
+    // Reset the form to blank state and route the user to the page
+    // where they can see the loan they just created. Fresh (New
+    // Contract) files live in Loan Management; everything else lives
+    // in the Pipeline board. This is the "close the intake form" the
+    // user was asking for — same effect, cleaner UX than a modal close.
+    setForm(EMPTY_FORM);
+    setMissingFields([]);
+    setSubmitDebug({ at: null, error: null });
+    navigate(isFresh ? '/loanmgmt' : '/pipeline');
   }
 
   return (
@@ -554,20 +569,20 @@ export default function NewLoan() {
             {missingFields.join(' · ')}
           </div>
         )}
-        {submitDebug.at && (
+        {submitDebug.error && (
           <div style={{
             margin: '0 16px 8px',
-            padding: '6px 10px',
-            background: submitDebug.error ? '#fdecea' : '#e8f5e9',
-            border: `1px solid ${submitDebug.error ? '#f5cccc' : '#c8e6c9'}`,
+            padding: '10px 12px',
+            background: '#fdecea',
+            border: '1px solid #f5cccc',
+            borderLeft: '4px solid #c62828',
             borderRadius: 6,
-            color: submitDebug.error ? '#c62828' : '#1b5e20',
-            fontSize: 11,
-            fontFamily: 'ui-monospace, Menlo, monospace',
+            color: '#c62828',
+            fontSize: 12,
+            lineHeight: 1.5,
           }}>
-            {submitDebug.error
-              ? `Last submit ${submitDebug.at} — error: ${submitDebug.error}`
-              : `Last submit ${submitDebug.at} — click received. If nothing else happens, an async step is silently failing.`}
+            <div style={{ fontWeight: 700, marginBottom: 2 }}>Submit failed</div>
+            {submitDebug.error}
           </div>
         )}
         <div className="form-actions">
