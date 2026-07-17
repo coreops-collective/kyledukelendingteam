@@ -18,25 +18,41 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-const loBpsFor = (lo) => (lo === 'Missy' ? 1.2 : 1.3);
-// Branch gross bumps from 10 bps → 30 bps for loans closing Apr 2026 and later.
-// Branch gross schedule:
+// Branch gross date breakpoints:
 //   before 2025-06-01       → 0 bps (no branch revenue)
-//   2025-06-01 … 2026-03-31 → 10 bps
-//   2026-04-01 onward       → 30 bps
+//   2025-06-01 … 2026-03-31 → pre-bump rate (default 10 bps)
+//   2026-04-01 onward       → post-bump rate (default 30 bps)
 const BRANCH_GROSS_START = parseLocalDate('2025-06-01');
 const BRANCH_GROSS_BUMP = parseLocalDate('2026-04-01');
-const KYLE_OVERRIDE_BPS = 0.1;
-function branchGrossBpsFor(closeDate) {
+
+// Default BPS assumptions. Kept as user-editable state in IncomeInner so
+// Kyle can model different splits without a rebuild. All values are the
+// classic mortgage "bps as integer" — 130 bps = 1.30% of loan amount.
+const DEFAULT_BPS = {
+  kyle: 130,
+  missy: 120,
+  override: 10,          // Kyle's override on Missy's loans
+  branchGrossPre: 10,    // branch gross for closings before 2026-04-01
+  branchGrossPost: 30,   // branch gross for closings on/after 2026-04-01
+};
+const BPS_STORAGE_KEY = 'kdt-income-bps';
+
+// bps-as-integer → decimal fraction. 130 bps → 0.013.
+const asFrac = (bps) => (Number.isFinite(+bps) ? +bps / 10000 : 0);
+
+const loBpsFor = (lo, bps = DEFAULT_BPS) =>
+  lo === 'Missy' ? +bps.missy / 100 : +bps.kyle / 100;
+
+function branchGrossBpsFor(closeDate, bps = DEFAULT_BPS) {
   if (!closeDate) return 0;
   const d = parseLocalDate(closeDate);
   if (!d) return 0;
   if (d < BRANCH_GROSS_START) return 0;
-  if (d >= BRANCH_GROSS_BUMP) return 0.3;
-  return 0.1;
+  if (d >= BRANCH_GROSS_BUMP) return +bps.branchGrossPost / 100;
+  return +bps.branchGrossPre / 100;
 }
-const computeBranchGross = (amt, closeDate) =>
-  Math.round(((amt || 0) * branchGrossBpsFor(closeDate)) / 100 * 100) / 100;
+const computeBranchGross = (amt, closeDate, bps = DEFAULT_BPS) =>
+  Math.round(((amt || 0) * branchGrossBpsFor(closeDate, bps)) / 100 * 100) / 100;
 
 const RATE_BUCKETS = [
   { label: 'All', min: null, max: null },
@@ -105,9 +121,9 @@ const getIncomeNet = (r) =>
 const isGrossManual = (r) => r.loGross != null;
 const isNetManual = (r) => r.loNet != null;
 const incomeRate = (r) => r.rate;
-const getBranchMgrOverride = (r) => {
+const getBranchMgrOverride = (r, bps = DEFAULT_BPS) => {
   if (r.lo !== 'Missy') return 0;
-  return Math.round(((r.amount || 0) * KYLE_OVERRIDE_BPS) / 100 * 100) / 100;
+  return Math.round(((r.amount || 0) * (+bps.override / 100)) / 100 * 100) / 100;
 };
 
 function IncomeBlocked() {
@@ -130,6 +146,24 @@ function IncomeInner() {
   const [rows, setRows] = useState(buildIncome);
   const rebuildRows = useCallback(() => setRows(buildIncome()), []);
   useEffect(() => subscribeLoans(rebuildRows), [rebuildRows]);
+
+  // Editable BPS assumptions. Persisted per browser so Kyle's what-if
+  // splits survive reload. Drives BOTH the top three monthly tiles and
+  // the per-loan pipeline breakdowns below — one lever to pull.
+  const [bpsSettings, setBpsSettings] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(BPS_STORAGE_KEY) || '{}');
+      return { ...DEFAULT_BPS, ...saved };
+    } catch { return { ...DEFAULT_BPS }; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(BPS_STORAGE_KEY, JSON.stringify(bpsSettings)); } catch { /* full storage, fine */ }
+  }, [bpsSettings]);
+  const setBps = (key, value) => {
+    const n = parseFloat(value);
+    setBpsSettings((s) => ({ ...s, [key]: Number.isFinite(n) ? n : 0 }));
+  };
+  const resetBps = () => setBpsSettings({ ...DEFAULT_BPS });
   const [tourOpen, setTourOpen] = useState(false);
   useEffect(() => {
     const startTour = () => setTourOpen(true);
@@ -142,16 +176,25 @@ function IncomeInner() {
       body: 'This is the compensation ledger. Every funded loan shows LO gross, LOA fee, concessions, LO net, and (for Kyle only) the branch-manager override on Missy\'s loans.\n\nRestricted to Branch Manager — Admin and LO can\'t see this page.',
     },
     {
+      target: '[data-tour="bps-assumptions"]',
+      title: 'BPS assumptions — one lever for everything',
+      body: 'Every basis-point value the page uses lives in this bar. Change Kyle, Missy, the Kyle override on Missy, or either branch gross tier and every number below re-flows immediately — the three monthly tiles AND the per-loan pipeline breakdowns.\n\nYour edits are saved to your browser, so they stick between sessions. Hit ↻ Reset to snap back to the standard split (Kyle 130 / Missy 120 / Override 10 / Branch 10 → 30).',
+    },
+    {
       title: 'How the numbers are computed',
-      body: 'LO Gross = loan amount × BPS (130 for Kyle, 120 for Missy).\n\nBranch Gross is scaled by close date:\n  • Before Jun 2025 → 0 bps\n  • Jun 2025 to Mar 2026 → 10 bps\n  • Apr 2026 onward → 30 bps\n\nKyle\'s override on Missy\'s loans is a flat 10 bps.',
+      body: 'LO Gross = loan amount × BPS (default 130 for Kyle, 120 for Missy — editable up top).\n\nBranch Gross is scaled by close date:\n  • Before Jun 2025 → 0 bps\n  • Jun 2025 to Mar 2026 → your "Branch Gross (< Apr)" value\n  • Apr 2026 onward → your "Branch Gross (Apr+)" value\n\nKyle\'s override on Missy\'s loans uses your "Kyle Override on Missy" value.',
     },
     {
       title: 'This month + next month + pipeline',
-      body: 'The tiles at the top compare this month, last month, next month, and pipeline gross for both LOs — so you know at a glance whether the desk is on pace or not.',
+      body: 'The tiles at the top compare last / this / next month for both LOs — so you know at a glance whether the desk is on pace. Change any BPS above and the tile totals recompute instantly.',
     },
     {
-      title: 'Per-row editing',
-      body: 'You can override LO gross, LOA fee, and concessions on any row (useful when a real check comes in different from what BPS predicts). These edits are ephemeral — they reset when the ledger rebuilds. For lasting comp adjustments, edit the loan directly.',
+      title: 'Per-loan pipeline breakdowns',
+      body: 'The three collapsible sections show every loan closing that month, grouped by LO with per-group subtotals. In-flight loans come from the pipeline; Funded ones come from the funded ledger. Est. LO Gross, Branch Gross, and Branch Mgr Override columns all track the BPS bar at the top.',
+    },
+    {
+      title: 'Per-row editing (bottom table)',
+      body: 'The bottom table lets you override LO gross, LOA fee, and concessions on any row (useful when a real check comes in different from what BPS predicts). These per-row edits are ephemeral — they reset when the ledger rebuilds. For lasting comp adjustments, edit the loan directly.',
     },
     {
       title: 'Pair with Net Income Calculator',
@@ -194,7 +237,7 @@ function IncomeInner() {
   const sumLONet = filtered.reduce((a, r) => a + getIncomeNet(r), 0);
   const sumBranchGross = filtered.reduce((a, r) => a + (r.branchGross || 0), 0);
   const sumBranchMgrOverride = filtered.reduce(
-    (a, r) => a + getBranchMgrOverride(r),
+    (a, r) => a + getBranchMgrOverride(r, bpsSettings),
     0
   );
   const sumBranchNet = filtered.reduce((a, r) => a + (r.branchNet || 0), 0);
@@ -241,8 +284,8 @@ function IncomeInner() {
     const missy = all.filter((r) => r.lo === 'Missy');
     const volume = kyle.reduce((a, r) => a + r.amount, 0);
     const missyVolume = missy.reduce((a, r) => a + r.amount, 0);
-    const loGross = volume * 0.013;
-    const override = missyVolume * 0.001;
+    const loGross = volume * asFrac(bpsSettings.kyle);
+    const override = missyVolume * asFrac(bpsSettings.override);
     return {
       volume,
       units: kyle.length,
@@ -301,15 +344,48 @@ function IncomeInner() {
         </div>
       </div>
 
-      <div className="grid-3" style={{ marginBottom: 20 }}>
-        <KyleTile label="Last Month" dt={prev} s={last} projected={false} />
-        <KyleTile label="This Month" dt={now} s={cur} projected={false} />
-        <KyleTile label="Next Month" dt={next} s={nxt} projected={true} />
+      <div
+        data-tour="bps-assumptions"
+        style={{
+          background: '#fff',
+          border: '1px solid #e5e5e8',
+          borderLeft: '4px solid var(--brand-red)',
+          borderRadius: 8,
+          padding: '10px 14px',
+          marginBottom: 14,
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
+        <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: 'var(--brand-black)' }}>
+          BPS Assumptions
+        </div>
+        <BpsInput label="Kyle" value={bpsSettings.kyle} onChange={(v) => setBps('kyle', v)} title="Kyle's LO gross basis points (default 130 = 1.30%). Drives Kyle's tile Volume × BPS and Kyle rows in the pipeline breakdown below." />
+        <BpsInput label="Missy" value={bpsSettings.missy} onChange={(v) => setBps('missy', v)} title="Missy's LO gross basis points (default 120). Drives Missy rows in the pipeline breakdown below." />
+        <BpsInput label="Kyle Override on Missy" value={bpsSettings.override} onChange={(v) => setBps('override', v)} title="Kyle's branch manager override on Missy's loans (default 10 bps). Feeds Kyle's override tile + override column in the breakdown." />
+        <BpsInput label={`Branch Gross (< Apr ${BRANCH_GROSS_BUMP.getFullYear()})`} value={bpsSettings.branchGrossPre} onChange={(v) => setBps('branchGrossPre', v)} title="Branch-level gross for closings before Apr 2026 (default 10 bps)." />
+        <BpsInput label={`Branch Gross (Apr ${BRANCH_GROSS_BUMP.getFullYear()}+)`} value={bpsSettings.branchGrossPost} onChange={(v) => setBps('branchGrossPost', v)} title="Branch-level gross for closings Apr 2026 and after (default 30 bps)." />
+        <button
+          type="button"
+          onClick={resetBps}
+          style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid #d0d0d0', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px', color: '#666', cursor: 'pointer' }}
+          title="Reset all BPS values back to the standard split (Kyle 130 / Missy 120 / Override 10 / Branch 10→30)"
+        >
+          ↻ Reset
+        </button>
       </div>
 
-      <PipelineMonth label={`Last Month · ${MONTH_NAMES[prev.getMonth()]} ${prev.getFullYear()}`} mIdx={prev.getMonth()} yr={prev.getFullYear()} />
-      <PipelineMonth label={`This Month · ${MONTH_NAMES[thisM]} ${thisY}`} mIdx={thisM} yr={thisY} />
-      <PipelineMonth label={`Next Month · ${MONTH_NAMES[next.getMonth()]} ${next.getFullYear()}`} mIdx={next.getMonth()} yr={next.getFullYear()} />
+      <div className="grid-3" style={{ marginBottom: 20 }}>
+        <KyleTile label="Last Month" dt={prev} s={last} overrideBps={bpsSettings.override} projected={false} />
+        <KyleTile label="This Month" dt={now} s={cur} overrideBps={bpsSettings.override} projected={false} />
+        <KyleTile label="Next Month" dt={next} s={nxt} overrideBps={bpsSettings.override} projected={true} />
+      </div>
+
+      <PipelineMonth label={`Last Month · ${MONTH_NAMES[prev.getMonth()]} ${prev.getFullYear()}`} mIdx={prev.getMonth()} yr={prev.getFullYear()} bpsSettings={bpsSettings} />
+      <PipelineMonth label={`This Month · ${MONTH_NAMES[thisM]} ${thisY}`} mIdx={thisM} yr={thisY} bpsSettings={bpsSettings} />
+      <PipelineMonth label={`Next Month · ${MONTH_NAMES[next.getMonth()]} ${next.getFullYear()}`} mIdx={next.getMonth()} yr={next.getFullYear()} bpsSettings={bpsSettings} />
 
       <div className="income-filters">
         <FilterDropdown label="Year" value={filters.year} options={['All', ...years.map(String)]} onChange={(v) => setFilter('year', v)} />
@@ -403,14 +479,15 @@ function IncomeInner() {
           Comp Formulas
         </summary>
         <div style={{ padding: '0 14px 12px' }}>
-          <strong>LO Gross</strong> = Loan Amount × BPs% (Kyle 130 bps · Missy 120 bps) — editable.{' '}
+          <strong>LO Gross</strong> = Loan Amount × BPS% — Kyle and Missy BPS are set in the assumptions bar
+          at the top of the page (defaults: Kyle 130 · Missy 120). Per-row LO Gross is also editable.{' '}
           <strong>LO Net</strong> = LO Gross − LOA Fee − Concessions.
           <br />
-          <strong>Branch Gross</strong> = 10 bps × Loan Amount (30 bps for closings on/after Apr 2026; branch-level revenue, <em>not</em>{' '}
-          Kyle's personal pay).{' '}
+          <strong>Branch Gross</strong> = Branch Gross BPS × Loan Amount (defaults: 10 bps before Apr 2026, 30 bps after;
+          both editable at the top). Branch-level revenue — <em>not</em> Kyle's personal pay.{' '}
           <strong style={{ color: '#1976d2' }}>Branch Mgr Override</strong> ={' '}
-          <strong>Kyle's personal pay</strong>, 10 bps × Missy's loan amount (not paid on his own
-          loans). Separate from Branch Gross / Branch Net.
+          <strong>Kyle's personal pay</strong>, "Kyle Override on Missy" BPS × Missy's loan amount
+          (default 10 bps; not paid on Kyle's own loans). Separate from Branch Gross / Branch Net.
           <br />
           <span style={{ color: '#1976d2' }}>■ Auto (blue italic)</span> = formula-driven.{' '}
           <span style={{ color: '#7a6300' }}>■ Manual (bold yellow)</span> = you typed a value
@@ -582,7 +659,7 @@ function IncomeInner() {
   );
 }
 
-function KyleTile({ label, dt, s, projected }) {
+function KyleTile({ label, dt, s, projected, overrideBps = DEFAULT_BPS.override }) {
   return (
     <div className="kpi" style={projected ? { borderTopColor: '#1976d2' } : undefined}>
       <div className="kpi-label">
@@ -680,7 +757,7 @@ function KyleTile({ label, dt, s, projected }) {
               fontWeight: 700,
             }}
           >
-            Branch Mgr Override (10 bps)
+            Branch Mgr Override ({overrideBps} bps)
           </div>
           <div
             style={{
@@ -728,7 +805,7 @@ function KyleTile({ label, dt, s, projected }) {
 // the month plus everything that's already funded for the month from the
 // canonical funded ledger (LOANS-funded + PAST_CLIENTS historical, deduped).
 // Grouped by LO with per-group subtotals and a grand total.
-function PipelineMonth({ label, mIdx, yr, defaultOpen = false }) {
+function PipelineMonth({ label, mIdx, yr, bpsSettings = DEFAULT_BPS, defaultOpen = false }) {
   const matchesMonth = (closeDate) => {
     if (!closeDate) return false;
     const d = parseLocalDate(closeDate);
@@ -774,10 +851,10 @@ function PipelineMonth({ label, mIdx, yr, defaultOpen = false }) {
     return ad - bd;
   });
 
-  const loGrossBps = (r) => (r.lo === 'Missy' ? 0.012 : 0.013);
+  const loGrossBps = (r) => (r.lo === 'Missy' ? asFrac(bpsSettings.missy) : asFrac(bpsSettings.kyle));
   const loGross = (r) => (r.amount || 0) * loGrossBps(r);
-  const branchGross = (r) => computeBranchGross(r.amount, r.closeDate);
-  const branchMgrOverride = (r) => (r.lo === 'Missy' ? (r.amount || 0) * 0.001 : 0);
+  const branchGross = (r) => computeBranchGross(r.amount, r.closeDate, bpsSettings);
+  const branchMgrOverride = (r) => (r.lo === 'Missy' ? (r.amount || 0) * asFrac(bpsSettings.override) : 0);
 
   const sumGroup = (rows) => rows.reduce(
     (acc, r) => ({
@@ -907,5 +984,45 @@ function PipelineMonth({ label, mIdx, yr, defaultOpen = false }) {
         )}
       </div>
     </details>
+  );
+}
+
+function BpsInput({ label, value, onChange, title }) {
+  return (
+    <label
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 11,
+        color: '#555',
+        fontFamily: "'Oswald',sans-serif",
+        textTransform: 'uppercase',
+        letterSpacing: '.4px',
+      }}
+    >
+      <span>{label}</span>
+      <input
+        type="number"
+        step="1"
+        min="0"
+        inputMode="numeric"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: 62,
+          padding: '5px 6px',
+          border: '1px solid #d0d0d0',
+          borderRadius: 5,
+          fontSize: 13,
+          fontFamily: "'Oswald',sans-serif",
+          fontWeight: 700,
+          textAlign: 'right',
+          color: 'var(--brand-black)',
+        }}
+      />
+      <span style={{ color: '#888', fontSize: 10 }}>bps</span>
+    </label>
   );
 }
