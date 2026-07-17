@@ -60,5 +60,10 @@ export function audit(action, entityType, entityId, details, overrides) {
     p_details: details && typeof details === 'object' ? details : (details != null ? { value: details } : null),
   };
   if (!payload.p_action) return;
-  supabase.rpc('audit_write', payload).catch(() => {});
+  // supabase.rpc() returns a PostgrestFilterBuilder (thenable, not a
+  // Promise) — .catch is undefined on it. Wrap in Promise.resolve()
+  // so a genuine .catch is available and the fire-and-forget stays
+  // truly fire-and-forget instead of throwing a "catch is not a
+  // function" TypeError up the call stack.
+  Promise.resolve(supabase.rpc('audit_write', payload)).catch(() => {});
 }
