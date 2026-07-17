@@ -117,6 +117,21 @@ export function markLoansDirty(loan) {
   }
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(flushLoansToSupabase, DEBOUNCE_MS);
+  // Notify local subscribers immediately. Without this, Pipeline /
+  // Loan Management / All Loans wouldn't re-render until the Supabase
+  // realtime echo came back — but the echo handler dedupes on id, so
+  // a locally-created loan (pushed to LOANS + dirty flagged before
+  // the flush) would never re-render the subscribing views.
+  notifyLoansChanged();
+}
+
+// Local pub/sub for LOANS. Complements subscribeLoans which is wired
+// to Supabase realtime. Anything that mutates LOANS in-place should
+// call notifyLoansChanged() so subscribers re-render immediately
+// without waiting for a Supabase round-trip.
+const LOCAL_LISTENERS = new Set();
+export function notifyLoansChanged() {
+  LOCAL_LISTENERS.forEach((fn) => { try { fn(); } catch { /* swallow */ } });
 }
 
 export function saveLoansNow() {
@@ -142,6 +157,10 @@ if (typeof window !== 'undefined') {
 // the next debounced flush will send the latest state and the echo from
 // THAT save will be applied safely.
 export function subscribeLoans(onChange) {
+  // Local listener — fires when any client-side code mutates LOANS
+  // and calls notifyLoansChanged() (e.g. NewLoan intake, LoanDrawer
+  // save, Pipeline drag).
+  if (onChange) LOCAL_LISTENERS.add(onChange);
   const channel = supabase
     .channel('loans-changes')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'loans' }, ({ new: row }) => {
@@ -171,5 +190,8 @@ export function subscribeLoans(onChange) {
       }
     })
     .subscribe();
-  return () => { supabase.removeChannel(channel); };
+  return () => {
+    if (onChange) LOCAL_LISTENERS.delete(onChange);
+    supabase.removeChannel(channel);
+  };
 }
