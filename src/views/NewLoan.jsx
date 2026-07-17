@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
-import { STAGES, REFI_WATCH_STAGE, PRE_CONTRACT_STAGES, stageByKey, STAGE_TO_STATUS } from '../data/stages.js';
+import { STAGES, REFI_WATCH_STAGE, NURTURE_PA_STAGE, PRE_CONTRACT_STAGES, stageByKey, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { sbInsert } from '../lib/supabase.js';
-import { markLoansDirty } from '../lib/loansStore.js';
+import { markLoansDirty, saveLoansNow } from '../lib/loansStore.js';
 import { getCurrentUser } from '../lib/auth.js';
 import { audit, ACTIONS } from '../lib/audit.js';
 import { upsertClientDate } from '../lib/clientDates.js';
@@ -107,10 +107,20 @@ export default function NewLoan() {
   const isContract = form.status === 'fresh';
   const isPost = form.status && !isPre && !isContract;
 
-  const allStatusOptions = useMemo(
-    () => [...STAGES, REFI_WATCH_STAGE],
-    []
-  );
+  const allStatusOptions = useMemo(() => {
+    // Insert Nurture PA + REFI Watch after HOT PA in the display order,
+    // matching the Pipeline column layout so the intake dropdown
+    // reflects every stage a loan can actually live in.
+    const list = [];
+    STAGES.forEach((s) => {
+      list.push(s);
+      if (s.key === 'hotpa') {
+        list.push(NURTURE_PA_STAGE);
+        list.push(REFI_WATCH_STAGE);
+      }
+    });
+    return list;
+  }, []);
 
   const existingOptions = useMemo(() => {
     if (form.kind !== 'existing') return [];
@@ -308,6 +318,17 @@ export default function NewLoan() {
     }
 
     markLoansDirty(touchedLoan);
+    // Force the flush now instead of waiting for the 1500ms debounce.
+    // If the user navigates away before the debounce expires, the
+    // in-memory push would be lost. saveLoansNow() awaits the write so
+    // if it fails, the toaster surfaces it — no more silent "loan is
+    // nowhere" outcome.
+    try {
+      await saveLoansNow();
+    } catch (e) {
+      // saveLoansNow already surfaces its own error toast; nothing to add here.
+      console.warn('[new-loan] immediate save failed:', e?.message || e);
+    }
 
     // Birthdays go straight into client_dates so both the borrower and
     // any co-borrower each become their own Client for Life card with
