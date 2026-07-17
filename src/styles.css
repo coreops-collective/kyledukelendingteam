@@ -401,8 +401,10 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
   .drawer-head{padding:16px 16px 12px}
   .drawer-borrower{font-size:16px}
   .drawer-stage{font-size:10px}
-  .drawer-actions{flex-direction:column-reverse;gap:8px;padding:12px}
-  .drawer-actions .drawer-btn{width:100%}
+  .drawer-actions{flex-direction:column-reverse;gap:10px;padding:14px 14px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -6px 14px rgba(0,0,0,.08)}
+  .drawer-actions .drawer-btn{width:100%;padding:14px 16px;font-size:13px;border-width:2px}
+  .drawer-actions .drawer-btn[style*="#c62828"]{background:#fdecea;border-color:#c62828}
+  .drawer-actions .drawer-btn[style*="#1a6b4a"]{background:#e6f4ec;border-color:#1a6b4a}
   .kanban-col{flex:1 1 auto;width:100%}
   .goal-card{padding:14px}
   .perf-tab{padding:6px 10px;font-size:11px}
