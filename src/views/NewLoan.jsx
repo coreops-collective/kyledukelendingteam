@@ -30,6 +30,12 @@ export default function NewLoan() {
   });
   const [toast, setToast] = useState(null);
   const [tourOpen, setTourOpen] = useState(false);
+  // Persistent list of missing required fields — sticks around until
+  // the next submit attempt so the user has time to actually read what's
+  // wrong. The toast auto-dismisses in 3s which is easy to miss on
+  // mobile, so this banner is the primary "here's why the button didn't
+  // do anything" surface.
+  const [missingFields, setMissingFields] = useState([]);
 
   // Auto-dismiss toasts after 3s.
   useEffect(() => {
@@ -154,9 +160,16 @@ export default function NewLoan() {
       if (!form.coLast) missing.push('Co-borrower last name');
     }
     if (missing.length) {
+      setMissingFields(missing);
       setToast({ title: 'Missing required fields', msg: missing.join(', ') });
+      // Scroll the banner into view so mobile users see it — the toast
+      // (bottom right) is easy to miss on a small screen.
+      setTimeout(() => {
+        document.getElementById('new-loan-error-banner')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 20);
       return;
     }
+    setMissingFields([]);
     // "+ Add new agent" is a UI-only placeholder — persisting the
     // literal string "__new__" onto the loan would leak into every
     // realtor-lookup and agent-milestone view. Treat it as blank so
@@ -476,8 +489,30 @@ export default function NewLoan() {
 
           <div className="form-field full"><label>Other Notes</label><textarea value={form.notes} onChange={set('notes')} /></div>
         </form>
+        {missingFields.length > 0 && (
+          <div
+            id="new-loan-error-banner"
+            role="alert"
+            style={{
+              margin: '0 16px 12px',
+              padding: '12px 14px',
+              background: '#fdecea',
+              border: '1px solid #f5cccc',
+              borderLeft: '4px solid #c62828',
+              borderRadius: 8,
+              color: '#c62828',
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 4, fontFamily: "'Oswald',sans-serif", textTransform: 'uppercase', letterSpacing: '.5px', fontSize: 12 }}>
+              Fix these before submitting:
+            </div>
+            {missingFields.join(' · ')}
+          </div>
+        )}
         <div className="form-actions">
-          <button className="form-btn secondary" type="button" onClick={() => setForm(f => ({ ...f, lo: '', kind: '', existingId: '', status: '' }))}>Cancel</button>
+          <button className="form-btn secondary" type="button" onClick={() => { setMissingFields([]); setForm(f => ({ ...f, lo: '', kind: '', existingId: '', status: '' })); }}>Cancel</button>
           <button className="form-btn primary" type="button" onClick={submit}>
             {form.status === 'fresh' ? 'Submit & Notify LOA' : 'Submit'}
           </button>
