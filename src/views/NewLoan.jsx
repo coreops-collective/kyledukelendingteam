@@ -36,6 +36,10 @@ export default function NewLoan() {
   // mobile, so this banner is the primary "here's why the button didn't
   // do anything" surface.
   const [missingFields, setMissingFields] = useState([]);
+  // Debug indicator — timestamp + fatal-error message. If Submit is
+  // firing but silently failing (browser extension, JS throw, whatever)
+  // the operator can now see it in-page instead of hunting DevTools.
+  const [submitDebug, setSubmitDebug] = useState({ at: null, error: null });
 
   // Auto-dismiss toasts after 3s.
   useEffect(() => {
@@ -143,6 +147,24 @@ export default function NewLoan() {
 
   async function submit(e) {
     e?.preventDefault?.();
+    // Stamp the moment click fires so the operator can see it — the
+    // most common "button doesn't work" cause is a swallowed onClick,
+    // not a broken handler. If they click and this timestamp doesn't
+    // update, we know the click never reached React.
+    setSubmitDebug({ at: new Date().toLocaleTimeString([], { hour12: false }), error: null });
+    try {
+      return await submitInner(e);
+    } catch (err) {
+      const msg = err?.message || String(err);
+      // eslint-disable-next-line no-console
+      console.error('[new-loan] submit threw:', err);
+      setSubmitDebug({ at: new Date().toLocaleTimeString([], { hour12: false }), error: msg });
+      setToast({ title: 'Submit failed', msg });
+      return;
+    }
+  }
+
+  async function submitInner(e) {
     // Real required-field validation. The submit button is
     // type="button" so HTML `required` attributes on the inputs
     // don't run — we have to check ourselves. Missing any of these
@@ -511,8 +533,24 @@ export default function NewLoan() {
             {missingFields.join(' · ')}
           </div>
         )}
+        {submitDebug.at && (
+          <div style={{
+            margin: '0 16px 8px',
+            padding: '6px 10px',
+            background: submitDebug.error ? '#fdecea' : '#e8f5e9',
+            border: `1px solid ${submitDebug.error ? '#f5cccc' : '#c8e6c9'}`,
+            borderRadius: 6,
+            color: submitDebug.error ? '#c62828' : '#1b5e20',
+            fontSize: 11,
+            fontFamily: 'ui-monospace, Menlo, monospace',
+          }}>
+            {submitDebug.error
+              ? `Last submit ${submitDebug.at} — error: ${submitDebug.error}`
+              : `Last submit ${submitDebug.at} — click received. If nothing else happens, an async step is silently failing.`}
+          </div>
+        )}
         <div className="form-actions">
-          <button className="form-btn secondary" type="button" onClick={() => { setMissingFields([]); setForm(f => ({ ...f, lo: '', kind: '', existingId: '', status: '' })); }}>Cancel</button>
+          <button className="form-btn secondary" type="button" onClick={() => { setMissingFields([]); setSubmitDebug({ at: null, error: null }); setForm(f => ({ ...f, lo: '', kind: '', existingId: '', status: '' })); }}>Cancel</button>
           {/* type="submit" so browser-native form submission fires the
               form's onSubmit even if onClick gets swallowed by anything
               (stale bundle, ad-blocker extension, overlay etc.). onClick
