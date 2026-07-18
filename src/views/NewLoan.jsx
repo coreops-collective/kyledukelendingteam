@@ -381,16 +381,14 @@ export default function NewLoan() {
         }),
       }).catch(() => { /* silent */ });
     }
-    // Reset the form and route to the destination page. Flash a clean
-    // success banner via location.state so the destination page shows a
-    // single-line "Success — X added" bar instead of the old dark toast.
-    const flash = isFresh
-      ? `Success — ${form.first} ${form.last} submitted (New Contract) · LOA notified`
-      : `Success — ${form.first} ${form.last} submitted to pipeline`;
+    // Reset the form and route back to Pipeline. Flash a clean success
+    // banner via location.state so Pipeline shows a single-line
+    // "Success — X submitted to pipeline" bar instead of the old dark toast.
+    const flash = `Success — ${form.first} ${form.last} submitted to pipeline`;
     setForm(EMPTY_FORM);
     setMissingFields([]);
     setSubmitDebug({ at: null, error: null });
-    navigate(isFresh ? '/loanmgmt' : '/pipeline', { state: { flash } });
+    navigate('/pipeline', { state: { flash } });
   }
 
   return (

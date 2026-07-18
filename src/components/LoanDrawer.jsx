@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
-import { getCurrentUser } from '../lib/auth.js';
 import { PARTNERS } from '../data/partners.js';
 import { markLoansDirty } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
@@ -61,57 +60,6 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     loan.archivedAt = null;
     markLoansDirty(loan);
     onSaved?.();
-  };
-
-  // Re-send the loan.created notification for THIS loan. Same context
-  // shape as the intake fetch — stage_key + label so notification_rules
-  // with stage filters match correctly. Fire-and-forget from the UI
-  // side, but the "Notified" pill sticks around briefly as feedback.
-  const [notifyState, setNotifyState] = useState({ sending: false, message: null });
-  const handleNotifyLOA = async () => {
-    if (notifyState.sending) return;
-    setNotifyState({ sending: true, message: null });
-    const caller = getCurrentUser()?.email || '';
-    const stageKey = loan.stage || STATUS_TO_STAGE[loan.status] || '';
-    try {
-      const res = await fetch('/.netlify/functions/send-notification', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(caller ? { 'x-kdt-user-email': caller } : {}),
-        },
-        body: JSON.stringify({
-          callerEmail: caller,
-          event_type: 'loan.created',
-          context: {
-            loan_id: loan.id,
-            borrower: loan.borrower,
-            phone: loan.phone,
-            email: loan.email,
-            agent: loan.agent,
-            lo: loan.lo,
-            property: loan.property,
-            amount: loan.amount,
-            close_date: loan.closeDate,
-            stage: STAGE_TO_STATUS[stageKey] || stageKey,
-            stage_key: stageKey,
-            new_stage_key: stageKey,
-            dashboard_url: 'https://thekyleduketeam.netlify.app/',
-          },
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.sent > 0) {
-        setNotifyState({ sending: false, message: `Sent to ${data.sent} recipient${data.sent === 1 ? '' : 's'}` });
-      } else if (res.ok && data.sent === 0) {
-        setNotifyState({ sending: false, message: `Sent to 0 recipients (${data.reason || 'no matching rules'})` });
-      } else {
-        setNotifyState({ sending: false, message: data.error || `HTTP ${res.status}` });
-      }
-    } catch (err) {
-      setNotifyState({ sending: false, message: err?.message || 'Failed to send' });
-    }
-    setTimeout(() => setNotifyState((s) => ({ ...s, message: null })), 5000);
   };
 
   // Co-borrower field aliases — different views ended up writing to
@@ -388,35 +336,13 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
 
           <CommentThread loanId={loan.id} borrower={loan.borrower} />
         </div>
-        <div className="drawer-actions" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div className="drawer-actions">
           {loan.archived ? (
             <button className="drawer-btn" onClick={handleUnarchive} style={{ color: '#1a6b4a' }}>Unarchive</button>
           ) : (
             <button className="drawer-btn" onClick={handleArchive} style={{ color: '#c62828' }}>Archive</button>
           )}
-          <button
-            type="button"
-            className="drawer-btn"
-            onClick={handleNotifyLOA}
-            disabled={notifyState.sending}
-            style={{ color: '#0A0A0A', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            title="Re-send the loan.created email notification for this loan without touching the intake form."
-          >
-            {notifyState.sending ? 'Sending…' : '✉ Notify LOA'}
-          </button>
-          {notifyState.message && (
-            <span
-              style={{
-                fontSize: 11,
-                color: notifyState.message.startsWith('Sent to') && !notifyState.message.includes('0 recipients') ? '#1a6b4a' : '#c62828',
-                fontWeight: 600,
-                alignSelf: 'center',
-              }}
-            >
-              {notifyState.message}
-            </span>
-          )}
-          <button className="drawer-btn primary" onClick={onClose} style={{ marginLeft: 'auto' }}>Done</button>
+          <button className="drawer-btn primary" onClick={onClose}>Done</button>
         </div>
       </aside>
     </>
