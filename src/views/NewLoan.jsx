@@ -23,7 +23,7 @@ const EMPTY_FORM = {
   type: 'VA', purpose: 'Purchase', amt: '', fico: '', preapp: '',
   agent: '', src: '',
   estClose: '',
-  addr: '', locked: '', apprNow: '', apprContact: '', apprNotes: '',
+  addr: '', locked: '', lockExp: '', rate: '', apprNow: '', apprContact: '', apprNotes: '',
   titleCo: '', titleContact: '', hoi: '', closeDate: '', uwPath: '', story: '',
   addrPost: '',
   notes: '',
@@ -231,6 +231,8 @@ export default function NewLoan() {
       status_notes: form.notes || '',
       stage: form.status || 'new',
       is_locked: isContract ? (form.locked || null) : null,
+      lock_expiration_date: (isContract && form.locked === 'Yes') ? (form.lockExp || null) : null,
+      interest_rate: (isContract && form.locked === 'Yes') ? num(form.rate) : null,
       order_appraisal_now: isContract ? (form.apprNow || null) : null,
       appraisal_contact: isContract ? (form.apprContact || null) : null,
       appraisal_notes: isContract ? (form.apprNotes || null) : null,
@@ -263,6 +265,13 @@ export default function NewLoan() {
         if (cleanAgent) ex.agent = cleanAgent;
         if (form.notes) ex.notes = form.notes;
         if (form.closeDate) ex.closeDate = form.closeDate;
+        // Rate-lock intake answers → the same fields Loan Management,
+        // LoanDrawer, and the rate-lock exposure dashboard already read.
+        if (isContract && form.locked === 'Yes') {
+          if (form.lockExp) ex.lockExp = form.lockExp;
+          const rateNum = num(form.rate);
+          if (rateNum) ex.rate = rateNum;
+        }
         if (form.hasCo === 'Yes') {
           // Dual-write co-borrower fields so both legacy (c2*) and
           // canonical (co*) consumers see the update.
@@ -309,6 +318,10 @@ export default function NewLoan() {
         coLast: form.hasCo === 'Yes' ? form.coLast : '',
         coPhone: form.hasCo === 'Yes' ? form.coPhone : '',
         coEmail: form.hasCo === 'Yes' ? form.coEmail : '',
+        // Rate-lock intake answers → the same fields Loan Management,
+        // LoanDrawer, and the rate-lock exposure dashboard already read.
+        lockExp: (isContract && form.locked === 'Yes') ? (form.lockExp || '') : '',
+        rate: (isContract && form.locked === 'Yes') ? (num(form.rate) || null) : null,
       };
       LOANS.push(newLoan);
       touchedLoan = newLoan;
@@ -521,6 +534,31 @@ export default function NewLoan() {
                 <div className="form-field"><label>Is it locked?</label>
                   <select value={form.locked} onChange={set('locked')}><option value="">—</option><option>Yes</option><option>No</option></select>
                 </div>
+                {form.locked === 'Yes' && (
+                  <>
+                    <div className="form-field">
+                      <label>Rate Lock Expiration</label>
+                      <input
+                        type="date"
+                        value={form.lockExp}
+                        onChange={set('lockExp')}
+                        title="Saved to the Lock Expires column in Loan Management + LoanDrawer."
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Interest Rate (%)</label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        placeholder="e.g. 5.875"
+                        value={form.rate}
+                        onChange={set('rate')}
+                        title="Saved to the Rate column in Loan Management + LoanDrawer."
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="form-field"><label>Order appraisal right away?</label>
                   <select value={form.apprNow} onChange={set('apprNow')}><option value="">—</option><option>Yes</option><option>No</option></select>
                 </div>
