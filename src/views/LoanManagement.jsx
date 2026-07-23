@@ -101,6 +101,91 @@ const TYPES = ['All','CONV','FHA','VA','Jumbo'];
 const SALE_TYPES = ['All','PURCHASE','REFINANCE'];
 const LEAD_SOURCES = ['Realtor Referral','Self-Generated','Past Client','Veteran Network','Zillow','Other'];
 
+// ── Abel funding-date onboarding banner ─────────────────────────
+// One-time nudge added when the Funding Date column shipped so the LOA
+// team notices the new column and starts filling it in. Dismissible per
+// browser — once Abel/Kim close it, it stays gone. Bumping BANNER_VERSION
+// makes it show again for a follow-up notice.
+const ABEL_BANNER_KEY = 'kdt-abel-funding-banner-dismissed-v1';
+function AbelFundingDateBanner() {
+  const [hidden, setHidden] = useState(() => {
+    try { return localStorage.getItem(ABEL_BANNER_KEY) === '1'; }
+    catch { return false; }
+  });
+  if (hidden) return null;
+  const dismiss = () => {
+    setHidden(true);
+    try { localStorage.setItem(ABEL_BANNER_KEY, '1'); } catch {}
+  };
+  return (
+    <div
+      role="status"
+      data-tour="abel-funding-banner"
+      style={{
+        marginBottom: 14,
+        padding: '12px 14px 12px 18px',
+        background: 'linear-gradient(135deg, #fff8e1 0%, #ffe58a 100%)',
+        border: '1px solid #f5c518',
+        borderLeft: '5px solid #C8102E',
+        borderRadius: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        boxShadow: '0 4px 12px rgba(0,0,0,.08)',
+      }}
+    >
+      <div
+        aria-hidden
+        style={{
+          fontSize: 26,
+          lineHeight: 1,
+          filter: 'drop-shadow(0 1px 0 rgba(0,0,0,.15))',
+        }}
+      >📣</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: "'Oswald',sans-serif",
+            fontSize: 15,
+            fontWeight: 700,
+            color: '#0A0A0A',
+            letterSpacing: '.5px',
+            lineHeight: 1.15,
+          }}
+        >
+          HEY ABEL — PLEASE MAKE SURE YOU SEE THE NEW COLUMN
+        </div>
+        <div style={{ fontSize: 12, color: '#5a4a1a', marginTop: 4, lineHeight: 1.35 }}>
+          The <strong>Funding Date</strong> column (right of Closing Date) needs to be filled in
+          on every file so the lock-expiration trigger tracks properly. If the lock expires
+          before the funding date, the Lock Expires cell will turn <strong style={{ color: '#c62828' }}>bold red</strong> so
+          we can extend or reprice before it hurts us.
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss reminder"
+        title="Got it — hide this reminder"
+        style={{
+          background: '#0A0A0A',
+          color: '#fff',
+          border: 0,
+          padding: '9px 14px',
+          borderRadius: 6,
+          fontFamily: "'Oswald',sans-serif",
+          fontSize: 11,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '.5px',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >Got it</button>
+    </div>
+  );
+}
+
 // ── Deadlines panel ─────────────────────────────────────────────
 // Only files that can still HIT a deadline show up here. Archived,
 // adversed, cancelled, funded, and dead (cold stage) files are excluded
@@ -673,12 +758,23 @@ function ResizableHeader({ colKey, label, width, onAdjustWidth }) {
 // Default starting width for every column in the Loan Management table.
 // User-edited widths layer on top of these via localStorage.
 const COL_DEFAULTS = {
-  borrower: 180, closeDate: 130, status: 150, notes: 500, lo: 100, loa: 110,
+  borrower: 180, closeDate: 130, fundingDate: 130, status: 150, notes: 500, lo: 100, loa: 110,
   saleType: 140, apprOrdered: 80, apprDeadline: 140, apprReceived: 80, titleReceived: 80,
   lockExp: 140, icdDeadline: 140, icdSent: 80, icdSigned: 80, property: 280,
   price: 140, amount: 140, type: 100, rate: 100, agent: 200, leadSource: 160,
   phone: 150, email: 220, coFirst: 140, coLast: 140, coPhone: 150,
 };
+
+// Lock has to be good through funding. Most of the time funding == close,
+// so if fundingDate isn't filled in yet we fall back to closeDate. If the
+// lock expires BEFORE funding, that's a live problem — call it out with
+// the .lock-risk class (bold red text + red border) on the lockExp cell.
+function lockExpiresBeforeFund(l) {
+  const lockD = parseDate(l.lockExp);
+  const fundD = parseDate(l.fundingDate || l.closeDate);
+  if (!lockD || !fundD) return false;
+  return lockD < fundD;
+}
 
 
 function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort, onSort }) {
@@ -748,7 +844,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
   // reliable cross-browser anchor for table-layout: fixed) in addition
   // to the th width. Direct DOM updates during drag target both.
   const COL_ORDER = [
-    'borrower', 'closeDate', 'status', 'notes', 'lo', 'loa', 'saleType',
+    'borrower', 'closeDate', 'fundingDate', 'status', 'notes', 'lo', 'loa', 'saleType',
     'apprOrdered', 'apprDeadline', 'apprReceived', 'titleReceived',
     'lockExp', 'icdDeadline', 'icdSent', 'icdSigned',
     'property', 'price', 'amount', 'type', 'rate', 'agent', 'leadSource',
@@ -782,6 +878,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
             <tr>
               {SH('borrower', 'Client')}
               {SH('closeDate', 'Closing Date')}
+              {SH('fundingDate', 'Funding Date')}
               {SH('status', 'Status')}
               {RH('notes', 'Notes')}
               {SH('lo', 'LO')}
@@ -818,6 +915,9 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                   <td className={`date ${dateClass(l.closeDate)}`}>
                     <EditInput type="date" value={l.closeDate} onChange={(v) => onEdit(l.id, 'closeDate', v)} />
                   </td>
+                  <td className="date" data-tour="funding-date-cell">
+                    <EditInput type="date" value={l.fundingDate} onChange={(v) => onEdit(l.id, 'fundingDate', v)} />
+                  </td>
                   <td>
                     <EditSelect value={l.status || ''} options={STATUSES.filter(s => s !== 'All')} onChange={(v) => onEditStatus(l.id, v)} />
                   </td>
@@ -837,7 +937,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                   <td className={`date ${dateClass(l.apprDeadline, l.apprReceived)}`}><EditInput type="date" value={l.apprDeadline} onChange={(v) => onEdit(l.id, 'apprDeadline', v)} /></td>
                   <td className="cb"><EditCheck value={l.apprReceived} onChange={(v) => onEdit(l.id, 'apprReceived', v)} /></td>
                   <td className="cb"><EditCheck value={l.titleReceived} onChange={(v) => onEdit(l.id, 'titleReceived', v)} /></td>
-                  <td className={`date ${dateClass(l.lockExp, l.stage === 'funded' || l.status === 'Funded')}`}><EditInput type="date" value={l.lockExp} onChange={(v) => onEdit(l.id, 'lockExp', v)} /></td>
+                  <td className={`date ${dateClass(l.lockExp, l.stage === 'funded' || l.status === 'Funded')} ${lockExpiresBeforeFund(l) ? 'lock-risk' : ''}`.trim()} title={lockExpiresBeforeFund(l) ? `Lock expires ${l.lockExp} — before funding date ${l.fundingDate || l.closeDate}. Extend the lock or move funding.` : undefined}><EditInput type="date" value={l.lockExp} onChange={(v) => onEdit(l.id, 'lockExp', v)} /></td>
                   <td className={`date ${dateClass(l.icdDeadline, l.icdSigned)}`}><EditInput type="date" value={l.icdDeadline} onChange={(v) => onEdit(l.id, 'icdDeadline', v)} /></td>
                   <td className="cb"><EditCheck value={l.icdSent} onChange={(v) => onEdit(l.id, 'icdSent', v)} /></td>
                   <td className="cb"><EditCheck value={l.icdSigned} onChange={(v) => onEdit(l.id, 'icdSigned', v)} /></td>
@@ -892,6 +992,7 @@ function CardsView({ loans, onOpenNotes, onOpenLoan }) {
         const status = statusOf(l);
         const apprCls = dateStatus(l.apprDeadline, l.apprReceived);
         const lockCls = dateStatus(l.lockExp, l.stage === 'funded');
+        const lockRisk = lockExpiresBeforeFund(l);
         const icdCls = dateStatus(l.icdDeadline, l.icdSigned);
         return (
           <div key={l.id} className={`lm-card ${statusSlug(status)}`} onClick={() => onOpenLoan(l.id)} style={{ cursor: 'pointer' }}>
@@ -907,11 +1008,24 @@ function CardsView({ loans, onOpenNotes, onOpenLoan }) {
             </div>
             <div className="lm-card-grid">
               <div><div className="lbl">Closing</div><div className="val">{l.closeDate || '—'}</div></div>
+              <div><div className="lbl">Funding</div><div className="val">{l.fundingDate || <span style={{ color: '#c62828', fontWeight: 700 }}>+ needed</span>}</div></div>
               <div><div className="lbl">Sale / Type</div><div className="val">{(l.saleType || '—') + ' · ' + (l.type || '—')}</div></div>
               <div><div className="lbl">LO</div><div className="val"><span className="lm-card-lo-pill">{l.lo || '—'}</span></div></div>
               <div><div className="lbl">Rate</div><div className="val">{l.rate ? l.rate + '%' : '—'}</div></div>
               <div><div className="lbl">Agent</div><div className="val">{l.agent || '—'}</div></div>
-              <div><div className="lbl">Lock Expires</div><div className="val" style={{ color: lockCls === 'overdue' ? '#c62828' : lockCls === 'soon' ? '#e65100' : '#222' }}>{l.lockExp || '—'}</div></div>
+              <div>
+                <div className="lbl">Lock Expires</div>
+                <div
+                  className="val"
+                  style={{
+                    color: lockRisk ? '#c62828' : lockCls === 'overdue' ? '#c62828' : lockCls === 'soon' ? '#e65100' : '#222',
+                    fontWeight: lockRisk ? 800 : undefined,
+                  }}
+                  title={lockRisk ? `Lock ${l.lockExp} expires before funding ${l.fundingDate || l.closeDate}` : undefined}
+                >
+                  {l.lockExp || '—'}{lockRisk ? ' ⚠' : ''}
+                </div>
+              </div>
             </div>
             <div className="lm-card-checks">
               <span className={`lm-card-check ${l.apprOrdered ? 'done' : ''}`}>{l.apprOrdered ? '✓' : '○'} Appr Ordered</span>
@@ -988,9 +1102,14 @@ export default function LoanManagement() {
       body: 'Every active loan in LOS — New Contract through Approved / Funded. This is where the team lives day to day: deadlines, appraisal + title status, ICD workflow, lock expiration, and notes all in one place.',
     },
     {
+      target: '[data-tour="funding-date-cell"]',
+      title: 'Funding Date column (new)',
+      body: 'Right next to Closing Date. Most of the time funding date == closing date, but not always — fill this in on every file. The Lock Expires cell turns bold red as soon as it expires BEFORE the funding date so we can extend the lock or move funding before it costs us. Same red highlight shows on the loan cards too.',
+    },
+    {
       target: '[data-tour="deadlines-panel"]',
       title: 'Deadlines panel',
-      body: 'Highlights every Appraisal Deadline, Lock Expiration, ICD Deadline, LE (TRID 3-day) Deadline, and TRID 7-day-wait violation in the next 30 days.\n\nOverdue = red · This Week = orange · Later = green. Click any row to jump straight to the loan. LE and CD/ICD are TRID rules — missing them is a re-disclosure event.',
+      body: 'Highlights every Appraisal Deadline, Lock Expiration, ICD Deadline, LE (TRID 3-day) Deadline, and TRID 7-day-wait violation in the next 30 days.\n\nOverdue = red · This Week = orange · Later = green. Click any row to jump straight to the loan. LE and CD/ICD are TRID rules — missing them is a re-disclosure event.\n\nDefaults collapsed — tap the header to expand.',
     },
     {
       target: '.lm-view-toggle',
@@ -1243,6 +1362,7 @@ export default function LoanManagement() {
 
   return (
     <div>
+      <AbelFundingDateBanner />
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginBottom: 18, padding: '14px 18px', background: '#fff',

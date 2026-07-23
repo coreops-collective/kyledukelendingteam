@@ -281,6 +281,10 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
 .lm-table td.date input{font-family:Menlo,monospace;font-size:11px;letter-spacing:.3px}
 .lm-table td.date.overdue{background:#ffebee}
 .lm-table td.date.overdue input{color:#c62828;font-weight:700}
+.lm-table td.date.lock-risk{background:#ffebee;box-shadow:inset 0 0 0 2px #c62828}
+.lm-table td.date.lock-risk input{color:#c62828;font-weight:800;letter-spacing:.4px}
+.lm-table td.date.lock-risk::after{content:'⚠';position:absolute;right:6px;top:50%;transform:translateY(-50%);color:#c62828;font-size:14px;font-weight:700;pointer-events:none}
+.lm-table td.date.lock-risk{position:relative}
 .lm-table td.date.soon{background:#fff8e1}
 .lm-table td.date.soon input{color:#e65100;font-weight:700}
 .lm-table td.date.done{background:#fff8e1}

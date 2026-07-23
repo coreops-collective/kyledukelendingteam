@@ -278,6 +278,9 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
               <Field label="Appr Deadline">
                 <I type="date" defaultValue={loan.apprDeadline || ''} onBlur={(e) => set('apprDeadline', e.target.value)} />
               </Field>
+              <Field label="Funding Date">
+                <I type="date" defaultValue={loan.fundingDate || ''} onBlur={(e) => set('fundingDate', e.target.value)} />
+              </Field>
               <Field label="Lock Expires">
                 <I type="date" defaultValue={loan.lockExp || ''} onBlur={(e) => set('lockExp', e.target.value)} />
               </Field>
