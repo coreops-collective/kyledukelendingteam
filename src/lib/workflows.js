@@ -352,8 +352,16 @@ export async function unmarkTaskCompleted(taskId, clientName, dueDate, loanId) {
 
 // Available client-profile fields a task can gate on. Keep this list
 // in sync with the conditional UI in the task editor.
+// Condition fields the "Only generate this task if…" picker can gate a
+// task on. `source: 'profile'` = pulled from the CFL client profile.
+// `source: 'loan'` = pulled from the loan record itself, which is
+// where the intake form's answers land (isLocked, orderAppraisalNow,
+// hasCoBorrower, etc.) alongside the existing loan-level fields.
 export const CONDITION_FIELDS = [
-  { value: 'review_left', label: 'Review left', type: 'bool' },
+  { value: 'review_left',        label: 'Review left',              type: 'bool', source: 'profile' },
+  { value: 'isLocked',           label: 'Rate is locked (intake)',  type: 'bool', source: 'loan' },
+  { value: 'orderAppraisalNow',  label: 'Order appraisal right away (intake)', type: 'bool', source: 'loan' },
+  { value: 'hasCoBorrower',      label: 'Has co-borrower (intake)', type: 'bool', source: 'loan' },
 ];
 
 export const CONDITION_OPS = {
@@ -363,13 +371,20 @@ export const CONDITION_OPS = {
   ],
 };
 
-// True when a task's condition (if any) matches the client's profile.
-// Tasks with no condition_field always match.
-function matchesCondition(task, profile) {
+// True when a task's condition (if any) matches the client's profile
+// AND / OR the loan record. Tasks with no condition_field always match.
+// The condition picker's source flag decides which side to read:
+//   source='profile' → CFL profile row
+//   source='loan'    → the LOANS record (intake answers land here)
+function matchesCondition(task, profile, loan) {
   const field = task.condition_field;
   const op = task.condition_op;
   if (!field || field === 'none' || !op) return true;
-  const raw = profile ? profile[field] : null;
+  const def = CONDITION_FIELDS.find((f) => f.value === field);
+  const source = def?.source || 'profile';
+  const raw = source === 'loan'
+    ? (loan ? loan[field] : null)
+    : (profile ? profile[field] : null);
   switch (op) {
     case 'is_true': return raw === true;
     case 'is_false': return !raw;
@@ -632,7 +647,7 @@ export function generateStatusTasks(loans) {
         if (status !== wantedStatus) continue;
         if (!l.borrower) continue;
         const profile = getProfile(l.borrower) || {};
-        if (!matchesCondition(t, profile)) continue;
+        if (!matchesCondition(t, profile, l)) continue;
         // Same decision-branch gating as date-triggered tasks: don't
         // emit a status-triggered branch task until its upstream
         // decision has been answered with the matching outcome for

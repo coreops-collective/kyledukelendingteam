@@ -177,7 +177,9 @@ The body has a full rich text editor — bold, italic, underline, bulleted / num
 
 1. A client-profile field. Example: "Only generate if Review Left is NO" — so the "Ask again in 2 weeks" task only fires for clients who still haven't left a review.
 
-2. A Decision Point answer. Example: "Only generate after Credit Review answered Denied" — the picker lists every Decision Point in the current workflow, and their answers.
+2. A loan-intake answer. The picker now pulls the yes/no questions the LO answers on the loan intake form: "Rate is locked", "Order appraisal right away", "Has co-borrower". Example: "Only generate if Rate is locked is YES" — so a "Send lock confirmation to borrower" task fires only for files that came in with a locked rate.
+
+3. A Decision Point answer. Example: "Only generate after Credit Review answered Denied" — the picker lists every Decision Point in the current workflow, and their answers.
 
 For non-decision tasks that should follow a specific Decision Point outcome, use "Depends on" further down in the editor to wire the dependency.
 

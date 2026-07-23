@@ -272,6 +272,13 @@ export default function NewLoan() {
           const rateNum = num(form.rate);
           if (rateNum) ex.rate = rateNum;
         }
+        // Intake bool answers exposed to the "Only generate this task
+        // if…" picker via CONDITION_FIELDS' source: 'loan' entries.
+        // Only overwrite when the intake actually collected an answer
+        // so re-submitting an existing loan doesn't clear a prior state.
+        if (form.locked) ex.isLocked = form.locked === 'Yes';
+        if (form.apprNow) ex.orderAppraisalNow = form.apprNow === 'Yes';
+        if (form.hasCo) ex.hasCoBorrower = form.hasCo === 'Yes';
         if (form.hasCo === 'Yes') {
           // Dual-write co-borrower fields so both legacy (c2*) and
           // canonical (co*) consumers see the update.
@@ -322,6 +329,11 @@ export default function NewLoan() {
         // LoanDrawer, and the rate-lock exposure dashboard already read.
         lockExp: (isContract && form.locked === 'Yes') ? (form.lockExp || '') : '',
         rate: (isContract && form.locked === 'Yes') ? (num(form.rate) || null) : null,
+        // Bool intake answers exposed to the "Only generate this task if…"
+        // condition picker via CONDITION_FIELDS' `source: 'loan'` entries.
+        isLocked: form.locked === 'Yes',
+        orderAppraisalNow: form.apprNow === 'Yes',
+        hasCoBorrower: form.hasCo === 'Yes',
       };
       LOANS.push(newLoan);
       touchedLoan = newLoan;
