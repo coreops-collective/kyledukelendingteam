@@ -355,17 +355,17 @@ function MonthlyTargets() {
           <div className="kpi" style={kpiStyle}>
             <div className="kpi-label">Volume Target</div>
             <div className="kpi-value">{fmtMoney(t.volume)}</div>
-            <div className="kpi-sub">{pct(volumeFunded, t.volume)}% to target \u00b7 {fmtMoney(volumeFunded)} funded</div>
+            <div className="kpi-sub">{pct(volumeFunded, t.volume)}% to target ·{fmtMoney(volumeFunded)} funded</div>
           </div>
           <div className="kpi" style={kpiStyle}>
             <div className="kpi-label">Units Target</div>
             <div className="kpi-value">{t.units}</div>
-            <div className="kpi-sub">{unitsFunded} funded \u00b7 {Math.max(0, t.units - unitsFunded)} to go</div>
+            <div className="kpi-sub">{unitsFunded} funded · {Math.max(0, t.units - unitsFunded)} to go</div>
           </div>
           <div className="kpi" style={kpiStyle}>
             <div className="kpi-label">New Apps Target</div>
             <div className="kpi-value">{t.newApps}</div>
-            <div className="kpi-sub">{newAppsCount} pipeline \u00b7 {pct(newAppsCount, t.newApps)}% pace</div>
+            <div className="kpi-sub">{newAppsCount} pipeline · {pct(newAppsCount, t.newApps)}% pace</div>
           </div>
         </div>
       </div>

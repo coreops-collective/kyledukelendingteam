@@ -261,9 +261,10 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
    sticky header has a scroll context to stick against. Vertical scroll
    happens inside the table; the page itself doesn't grow with the row
    count. */
-.lm-scroll{overflow:auto;max-width:100%;max-height:calc(100vh - 280px);min-height:400px}
+.lm-scroll{overflow:auto;max-width:100%;max-height:calc(100vh - 220px);min-height:400px;position:relative}
 .lm-table{border-collapse:separate;border-spacing:0;font-size:12px}
-.lm-table th{background:linear-gradient(135deg,#0A0A0A,#2d0d0d);color:#fff;font-family:'Oswald',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:14px 12px;text-align:left;border-right:1px solid #333;border-bottom:3px solid var(--brand-red);position:sticky;top:0;z-index:5;white-space:nowrap;min-width:60px}
+.lm-table thead{position:sticky;top:0;z-index:6}
+.lm-table th{background:linear-gradient(135deg,#0A0A0A,#2d0d0d);color:#fff;font-family:'Oswald',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:14px 12px;text-align:left;border-right:1px solid #333;border-bottom:3px solid var(--brand-red);position:sticky;top:0;z-index:5;white-space:nowrap;min-width:60px;box-shadow:0 4px 10px rgba(0,0,0,.15)}
 .lm-col-resizer{position:absolute;top:0;right:0;bottom:0;width:6px;cursor:col-resize;user-select:none;z-index:6}
 .lm-col-resizer:hover,.lm-col-resizer.active{background:var(--brand-red)}
 .lm-table th:first-child{position:sticky;left:0;z-index:6;border-right:2px solid var(--brand-red)}
