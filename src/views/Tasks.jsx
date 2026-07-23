@@ -8,7 +8,7 @@ import {
 } from '../data/tasks.js';
 import { USERS } from '../data/users.js';
 import { LOANS } from '../data/loans.js';
-import { PRE_CONTRACT_STAGES, STAGE_TO_STATUS } from '../data/stages.js';
+import { PRE_CONTRACT_STAGES, LOS_STAGES, STAGE_TO_STATUS } from '../data/stages.js';
 import {
   loadWorkflows, generateStatusTasks, markTaskCompleted, unmarkTaskCompleted, ROLE_LABELS,
 } from '../lib/workflows.js';
@@ -65,30 +65,41 @@ export default function Tasks() {
     };
   }, []);
 
-  // Workflow-generated tasks for loans in pre-contract stages
-  // (New Lead / Applied / HOT PA / REFI Watch). Under Contract →
-  // Approved is deferred to a future Loan Management task area, so
-  // it's intentionally excluded here. Automated tasks are filtered
-  // out — they run without a human, so surfacing them as work items
-  // just adds noise.
-  const pipelineTasks = useMemo(() => {
-    const preContractLoans = LOANS.filter((l) =>
-      !l.archived && PRE_CONTRACT_STAGES.includes(l.stage)
+  // Workflow-generated tasks split into two buckets:
+  //   - Pipeline: pre-contract stages (New Lead / Applied / HOT PA /
+  //     Nurture PA / REFI Watch)
+  //   - Loan: post-contract LOS stages (New Contract / Disclosed /
+  //     Processing / Underwriting / CTC Required / CTC / Approved)
+  // Same generator underneath — each loan's stage decides which panel
+  // it lands in. Automated tasks are filtered out (they run without a
+  // human, so surfacing them as work items just adds noise).
+  const { pipelineTasks, loanTasks } = useMemo(() => {
+    const activeLoans = LOANS.filter((l) =>
+      !l.archived &&
+      (PRE_CONTRACT_STAGES.includes(l.stage) || LOS_STAGES.includes(l.stage))
     );
-    const generated = generateStatusTasks(preContractLoans)
+    const generated = generateStatusTasks(activeLoans)
       .filter((it) => (it.task?.role || '').toLowerCase() !== 'automated');
     generated.sort((a, b) => a.due_date - b.due_date);
-    return generated;
-  }, [workflowVersion]); // real counter — was previously the setter, which never changed identity so the memo went stale
+    const pipeline = [];
+    const loanBucket = [];
+    for (const it of generated) {
+      const loan = LOANS.find((l) => l.id === it.loan_id);
+      if (loan && LOS_STAGES.includes(loan.stage)) loanBucket.push(it);
+      else pipeline.push(it);
+    }
+    return { pipelineTasks: pipeline, loanTasks: loanBucket };
+  }, [workflowVersion]);
 
-  // Auto-escalate overdue LOA tasks: any pipeline task assigned to an
-  // LOA that's past its due date fires a task.overdue notification so
-  // the LO gets a nudge. De-dupes via audit_log so we don't spam.
-  // Runs once on mount and again on any task refresh. Non-blocking.
+  // Auto-escalate overdue LOA tasks across both buckets: any workflow
+  // task assigned to an LOA that's past its due date fires a
+  // task.overdue notification so the LO gets a nudge. De-dupes via
+  // audit_log so we don't spam.
   useEffect(() => {
-    if (!pipelineTasks.length) return;
-    escalateOverdueTasks(pipelineTasks).catch(() => {});
-  }, [pipelineTasks]);
+    const all = [...pipelineTasks, ...loanTasks];
+    if (!all.length) return;
+    escalateOverdueTasks(all).catch(() => {});
+  }, [pipelineTasks, loanTasks]);
 
   const toggleWorkflowTask = (item, outcome) => {
     const iso = fmtIsoToday();
@@ -226,9 +237,9 @@ export default function Tasks() {
     return () => window.removeEventListener('kdt-start-tour', startTour);
   }, []);
 
-  const filteredPipelineTasks = useMemo(() => {
+  const applyFilters = (bucket) => {
     const needle = pfClient.trim().toLowerCase();
-    return pipelineTasks.filter((it) => {
+    return bucket.filter((it) => {
       if (!pfShowDone && it.completed) return false;
       if (pfRole !== 'All' && (it.task.role || '') !== pfRole) return false;
       if (pfStage !== 'All') {
@@ -239,12 +250,25 @@ export default function Tasks() {
       if (needle && !(it.client_name || '').toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [pipelineTasks, pfRole, pfStage, pfClient, pfShowDone]);
+  };
+  const filteredPipelineTasks = useMemo(
+    () => applyFilters(pipelineTasks),
+    [pipelineTasks, pfRole, pfStage, pfClient, pfShowDone]
+  );
+  const filteredLoanTasks = useMemo(
+    () => applyFilters(loanTasks),
+    [loanTasks, pfRole, pfStage, pfClient, pfShowDone]
+  );
 
   const TASKS_TOUR_STEPS = [
     {
-      title: 'Pipeline Tasks',
-      body: 'This is your day-of work list. The top panel shows every workflow-generated task that fires for a loan currently in New Lead / Applied / HOT PA / REFI Watch \u2014 auto-generated, no manual entry.\n\nThe bottom section is your own tracker for non-workflow work: recruiting, marketing, tech stack, etc.',
+      title: 'Tasks',
+      body: 'Every workflow-generated task tied to a live loan, split into two panels:\n\n\u2022 Pipeline Tasks \u2014 pre-contract stages (New Lead / Applied / HOT PA / Nurture PA / REFI Watch).\n\u2022 Loan Tasks \u2014 post-contract LOS stages (New Contract \u2192 Approved).\n\nBoth panels share the same filter bar so you can slice across the whole desk. Automated tasks are hidden \u2014 they run without a human.',
+    },
+    {
+      target: '[data-tour="loan-panel"]',
+      title: 'Loan Tasks panel',
+      body: 'Under Contract \u2192 Approved workflow tasks show here. Same UX as the Pipeline panel: click \u2713 to complete, \u2753 decision points ask a question and route the file down the matching branch, bulk-complete via the Select multiple toolbar.',
     },
     {
       target: '[data-tour="pipeline-filters"]',
@@ -266,19 +290,49 @@ export default function Tasks() {
     },
   ];
 
+  const ALL_STAGES = [
+    { key: 'new', label: 'New Lead' },
+    { key: 'applied', label: 'Applied' },
+    { key: 'hotpa', label: 'HOT PA' },
+    { key: 'nurturepa', label: 'Nurture PA' },
+    { key: 'refiwatch', label: 'REFI Watch' },
+    { key: 'fresh', label: 'New Contract' },
+    { key: 'disclosed', label: 'Disclosed' },
+    { key: 'processing', label: 'Processing' },
+    { key: 'uw', label: 'Underwriting' },
+    { key: 'ctcreq', label: 'CTC Required' },
+    { key: 'ctc', label: 'CTC' },
+    { key: 'approved', label: 'Approved' },
+  ];
+  const sharedFilters = {
+    role: pfRole, setRole: setPfRole,
+    stage: pfStage, setStage: setPfStage,
+    client: pfClient, setClient: setPfClient,
+    showDone: pfShowDone, setShowDone: setPfShowDone,
+  };
   return (
     <>
       <PipelineTasksPanel
+        title="Pipeline Tasks · pre-contract stages"
+        subtitle="Workflow-generated tasks for loans in New Lead / Applied / HOT PA / Nurture PA / REFI Watch."
+        stagesList={ALL_STAGES}
+        tourAttr="pipeline-panel"
         items={filteredPipelineTasks}
         totalCount={pipelineTasks.length}
         onToggle={toggleWorkflowTask}
         onBulkComplete={bulkCompleteWorkflowTasks}
-        filters={{
-          role: pfRole, setRole: setPfRole,
-          stage: pfStage, setStage: setPfStage,
-          client: pfClient, setClient: setPfClient,
-          showDone: pfShowDone, setShowDone: setPfShowDone,
-        }}
+        filters={sharedFilters}
+      />
+      <PipelineTasksPanel
+        title="Loan Tasks · post-contract stages"
+        subtitle="Workflow-generated tasks for loans in New Contract → Approved (LOS)."
+        stagesList={ALL_STAGES}
+        tourAttr="loan-panel"
+        items={filteredLoanTasks}
+        totalCount={loanTasks.length}
+        onToggle={toggleWorkflowTask}
+        onBulkComplete={bulkCompleteWorkflowTasks}
+        filters={sharedFilters}
       />
       {tourOpen && <Tour steps={TASKS_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </>
@@ -435,7 +489,13 @@ function TaskDrawer({ task, projects, onClose, onSave, onDelete }) {
 //
 // Filter bar lets the user narrow by role, stage, client, and
 // whether to include already-completed items.
-function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filters }) {
+function PipelineTasksPanel({
+  items, totalCount, onToggle, onBulkComplete, filters,
+  title = 'Pipeline Tasks · from your workflows',
+  subtitle = 'Auto-generated for every loan in New Lead / Applied / HOT PA / Nurture PA / REFI Watch.',
+  stagesList,
+  tourAttr = 'pipeline-panel',
+}) {
   // Selection state for bulk completion. Only tracks IDs currently in
   // the filtered list — resetting filters clears selections that would
   // no longer be visible. Selection UI is gated behind a Select mode
@@ -476,7 +536,7 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
   };
   const roleColors = { lo: '#555', loa: '#f5c518', admin: '#2e7d32', automated: '#C8102E' };
   const roles = getRoleKeysForWorkflowDropdown();
-  const stages = [
+  const stages = stagesList || [
     { key: 'new', label: 'New Lead' },
     { key: 'applied', label: 'Applied' },
     { key: 'hotpa', label: 'HOT PA' },
@@ -489,12 +549,12 @@ function PipelineTasksPanel({ items, totalCount, onToggle, onBulkComplete, filte
     filters.setClient(''); filters.setShowDone(false);
   };
   return (
-    <div className="section-card" data-tour="pipeline-panel" style={{ marginBottom: 20 }}>
+    <div className="section-card" data-tour={tourAttr} style={{ marginBottom: 20 }}>
       <div className="section-header">
         <div>
-          <div className="section-title">Pipeline Tasks · from your workflows</div>
+          <div className="section-title">{title}</div>
           <div className="section-sub">
-            Auto-generated for every loan in New Lead / Applied / HOT PA / REFI Watch.
+            {subtitle}
           </div>
         </div>
       </div>

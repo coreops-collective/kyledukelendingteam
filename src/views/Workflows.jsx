@@ -299,12 +299,23 @@ export default function Workflows() {
   // Decision Point creation seeds decision_options with two starter
   // answers so the editor drawer opens in decision-point mode
   // (taskType is inferred from decision_options being non-empty).
-  // The user renames the question + adjusts the answers from there.
+  //
+  // We default trigger_kind='status' because decision points almost
+  // always mean "when the loan hits this pipeline status, ask this
+  // question." createTask's default is trigger_kind='date' with a
+  // 'Closing' anchor, which is the wrong shape for a decision point
+  // and meant Kim's New Lead / Applied decisions were never emitting
+  // to Pipeline Tasks even though HOT PA was (HOT PA had been manually
+  // switched to status). trigger_label starts blank so the editor
+  // forces the user to pick which status (there's no reliable way to
+  // guess it from the workflow itself).
   const handleAddDecisionPoint = async () => {
     if (!wf) return;
     const t = await createTask(wf.id, {
       title: 'What was the outcome?',
       decision_options: ['Yes', 'No'],
+      trigger_kind: 'status',
+      trigger_label: '',
     });
     if (t) setEditingTask(t);
     bump();
