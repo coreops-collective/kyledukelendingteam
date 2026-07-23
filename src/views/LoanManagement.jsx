@@ -102,10 +102,36 @@ const SALE_TYPES = ['All','PURCHASE','REFINANCE'];
 const LEAD_SOURCES = ['Realtor Referral','Self-Generated','Past Client','Veteran Network','Zillow','Other'];
 
 // ── Deadlines panel ─────────────────────────────────────────────
+// Only files that can still HIT a deadline show up here. Archived,
+// adversed, cancelled, funded, and dead (cold stage) files are excluded
+// no matter what the Status filter is — nothing to chase on a deal that
+// isn't live any more.
+const isLiveForDeadlines = (l) => {
+  if (l.archived) return false;
+  const status = (l.status || '').toLowerCase();
+  if (status === 'adversed') return false;
+  if (status === 'cancelled' || status === 'canceled') return false;
+  if (status === 'funded') return false;
+  const stage = (l.stage || '').toLowerCase();
+  if (stage === 'funded') return false;
+  if (stage === 'cold') return false;
+  return true;
+};
+
+const DEADLINES_OPEN_KEY = 'kdt-deadlines-open';
+
 function DeadlinesPanel({ loans, onOpen }) {
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem(DEADLINES_OPEN_KEY) === '1'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(DEADLINES_OPEN_KEY, open ? '1' : '0'); } catch {}
+  }, [open]);
+
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const items = [];
-  loans.forEach((l) => {
+  loans.filter(isLiveForDeadlines).forEach((l) => {
     // Regulatory clocks (TRID / Reg Z). LE and CD both trip UDAAP if
     // missed, so they show up in the same panel as the operational
     // deadlines and count against overdue counts.
@@ -182,19 +208,47 @@ function DeadlinesPanel({ loans, onOpen }) {
 
   return (
     <div className="card" data-tour="deadlines-panel" style={{ marginBottom: 18 }}>
-      <div className="section-header">
-        <div className="section-title">Deadlines</div>
-        <div className="section-sub">
-          {overdue.length} overdue · {thisWeek.length} this week · {later.length} upcoming
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls="deadlines-body"
+        title={open ? 'Collapse deadlines' : 'Expand deadlines'}
+        style={{
+          width: '100%', background: 'transparent', border: 0, padding: 0,
+          textAlign: 'left', cursor: 'pointer',
+        }}
+      >
+        <div className="section-header" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span
+            aria-hidden
+            style={{
+              display: 'inline-block',
+              transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform .15s ease',
+              color: '#fff', fontSize: 14, lineHeight: 1, width: 14,
+            }}
+          >▶</span>
+          <div style={{ flex: 1 }}>
+            <div className="section-title">Deadlines</div>
+            <div className="section-sub">
+              {overdue.length} overdue · {thisWeek.length} this week · {later.length} upcoming
+              {!open && (overdue.length + thisWeek.length + later.length > 0) && (
+                <span style={{ marginLeft: 8, color: '#f5c518', fontWeight: 700 }}>· Tap to expand</span>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-      <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-        <div className="kdt-grid-3">
-          {col('Overdue', '#c62828', overdue)}
-          {col('This Week', '#e65100', thisWeek)}
-          {col('8–30 Days', '#666', later)}
+      </button>
+      {open && (
+        <div id="deadlines-body" style={{ maxHeight: 320, overflowY: 'auto' }}>
+          <div className="kdt-grid-3">
+            {col('Overdue', '#c62828', overdue)}
+            {col('This Week', '#e65100', thisWeek)}
+            {col('8–30 Days', '#666', later)}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
