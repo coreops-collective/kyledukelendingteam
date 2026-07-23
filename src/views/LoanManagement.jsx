@@ -121,23 +121,24 @@ function AbelFundingDateBanner() {
     <div
       role="status"
       data-tour="abel-funding-banner"
+      className="kdt-abel-banner"
       style={{
         marginBottom: 14,
         padding: '12px 14px 12px 18px',
         background: 'linear-gradient(135deg, #fff8e1 0%, #ffe58a 100%)',
-        border: '1px solid #f5c518',
+        border: '2px solid #f5c518',
         borderLeft: '5px solid #C8102E',
         borderRadius: 10,
         display: 'flex',
         alignItems: 'center',
         gap: 14,
-        boxShadow: '0 4px 12px rgba(0,0,0,.08)',
       }}
     >
       <div
         aria-hidden
+        className="kdt-abel-icon"
         style={{
-          fontSize: 26,
+          fontSize: 28,
           lineHeight: 1,
           filter: 'drop-shadow(0 1px 0 rgba(0,0,0,.15))',
         }}
@@ -1050,7 +1051,16 @@ function CardsView({ loans, onOpenNotes, onOpenLoan }) {
 
 // ── Main component ──────────────────────────────────────────────
 export default function LoanManagement() {
-  const [layout, setLayout] = useState('cards');
+  // Layout preference persists per browser. Default is Spreadsheet — most
+  // day-to-day work is inline-edit on multiple loans, which is what the
+  // spreadsheet view is optimized for. Cards view is one click away.
+  const [layout, setLayout] = useState(() => {
+    try { return localStorage.getItem('kdt-lm-layout') || 'table'; }
+    catch { return 'table'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('kdt-lm-layout', layout); } catch {}
+  }, [layout]);
   const [, force] = useState(0);
   const bump = useCallback(() => force((n) => n + 1), []);
   const [notesFor, setNotesFor] = useState(null);
