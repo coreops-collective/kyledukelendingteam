@@ -127,6 +127,49 @@ export default function Tasks() {
     bumpWorkflow();
   };
 
+  // "Clear ancient tasks" — safety valve for the workflow generator
+  // piling up items for loans that have been stuck in a stage for a
+  // long time (a Nurture PA lead that never advances, an Applied file
+  // that stalled, etc.). Bulk-completes every open workflow task —
+  // across both panels — whose due date is older than the chosen
+  // cutoff. The generator will re-emit those tasks on subsequent days
+  // if the loan is still in the same stage, so this is a "give me a
+  // clean slate today" reset, not a permanent suppression. The loan
+  // itself is untouched.
+  const clearAncientTasks = async () => {
+    const raw = window.prompt(
+      'Clear every open workflow task older than how many days?\n\n' +
+      'Type a number (e.g. 30). Anything older than that many days is bulk-completed on both panels. Loans and their stages are not touched.',
+      '30'
+    );
+    if (raw == null) return;
+    const days = parseInt(raw, 10);
+    if (!Number.isFinite(days) || days < 1) {
+      alert('Please enter a whole number ≥ 1.');
+      return;
+    }
+    const cutoff = new Date(); cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - days);
+    const all = [...pipelineTasks, ...loanTasks];
+    const targets = all.filter((it) => !it.completed && it.due_date && it.due_date < cutoff);
+    if (targets.length === 0) {
+      alert(`No open workflow tasks are older than ${days} days.`);
+      return;
+    }
+    if (!window.confirm(
+      `Clear ${targets.length} task${targets.length === 1 ? '' : 's'} older than ${days} days?\n\n` +
+      `This bulk-completes them across the Pipeline and Loan panels. ` +
+      `The underlying loans are not modified — if a loan is still in the same stage tomorrow, ` +
+      `today's workflow will emit fresh tasks for it.`
+    )) return;
+    const iso = fmtIsoToday();
+    await Promise.all(targets.map((it) =>
+      markTaskCompleted(it.task.id, it.client_name, iso, null, null, it.loan_id)
+    ));
+    bumpWorkflow();
+    toast(`${targets.length} task${targets.length === 1 ? '' : 's'} cleared`, 'Ancient tasks');
+  };
+
   // Persist on every change. JSON-stringifying ~200 small task objects
   // is cheap; not worth debouncing.
   useEffect(() => {
@@ -263,7 +306,11 @@ export default function Tasks() {
   const TASKS_TOUR_STEPS = [
     {
       title: 'Tasks',
-      body: 'Every workflow-generated task tied to a live loan, split into two panels:\n\n\u2022 Pipeline Tasks \u2014 pre-contract stages (New Lead / Applied / HOT PA / Nurture PA / REFI Watch).\n\u2022 Loan Tasks \u2014 post-contract LOS stages (New Contract \u2192 Approved).\n\nBoth panels share the same filter bar so you can slice across the whole desk. Automated tasks are hidden \u2014 they run without a human.',
+      body: 'Every workflow-generated task tied to a live loan, split into two panels:\n\n\u2022 Pipeline Tasks \u2014 pre-contract stages (New Lead / Applied / HOT PA / Nurture PA / REFI Watch).\n\u2022 Loan Tasks \u2014 post-contract LOS stages (New Contract \u2192 Approved).\n\nBoth panels share the same filter bar so you can slice across the whole desk. Automated tasks are hidden \u2014 they run without a human.\n\nClients tagged Do Not Contact on their client card get zero workflow tasks anywhere in the app.',
+    },
+    {
+      title: 'Clear ancient tasks',
+      body: 'Top-right button. Bulk-completes every open workflow task older than a chosen cutoff (default 30 days) across both panels. Useful when a Nurture PA lead has sat for months and its daily task is just noise. The loan itself is not touched \u2014 if it stays in the same stage tomorrow, fresh tasks emit for it.',
     },
     {
       target: '[data-tour="loan-panel"]',
@@ -312,6 +359,25 @@ export default function Tasks() {
   };
   return (
     <>
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10,
+          marginBottom: 12,
+        }}
+      >
+        <button
+          type="button"
+          onClick={clearAncientTasks}
+          title="Bulk-complete every open workflow task older than a chosen number of days across both panels. Loans and their stages are not touched."
+          style={{
+            background: '#0A0A0A', color: '#fff', border: 0, padding: '8px 14px',
+            borderRadius: 6, fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '.5px', cursor: 'pointer',
+          }}
+        >
+          🧹 Clear ancient tasks
+        </button>
+      </div>
       <PipelineTasksPanel
         title="Pipeline Tasks · pre-contract stages"
         subtitle="Workflow-generated tasks for loans in New Lead / Applied / HOT PA / Nurture PA / REFI Watch."
