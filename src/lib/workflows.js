@@ -48,7 +48,7 @@ export const ROLE_LABELS = { lo: 'LO', loa: 'LOA', admin: 'Admin', automated: 'A
 // Predefined workflow categories. Custom values added via
 // addWorkflowCategory() persist to localStorage and are appended to
 // this list at read time via allWorkflowCategories().
-export const WORKFLOW_CATEGORIES = ['Client for Life', 'Loan', 'Lead Nurture'];
+export const WORKFLOW_CATEGORIES = ['Client for Life', 'Agent for Life', 'Loan', 'Lead Nurture'];
 
 const CUSTOM_CATS_KEY = 'kdt-workflow-categories';
 
@@ -538,7 +538,7 @@ function nextCalendarOccurrence(str) {
 //   due_date: Date,
 //   completed: boolean,
 // }
-export function generateTasksForClient(clientName, anchorDates) {
+export function generateTasksForClient(clientName, anchorDates, opts = {}) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const out = [];
   const profile = getProfile(clientName) || {};
@@ -547,8 +547,14 @@ export function generateTasksForClient(clientName, anchorDates) {
   // in All Loans / lists, but nothing routes to the LO or LOA about
   // outreach, key-date follow-ups, or workflow steps.
   if (profile.cfl_status === 'do_not_contact') return out;
+  // Optional workflow-category filter — Client for Life passes 'Client
+  // for Life' (or leaves it open to see everything), Agent for Life
+  // passes 'Agent for Life' so agent-scoped workflows don't fire on
+  // borrower generators and vice-versa.
+  const categoryFilter = opts.category || null;
   for (const wf of WORKFLOWS) {
     if (wf.active === false) continue;
+    if (categoryFilter && wf.category !== categoryFilter) continue;
     const tasks = TASKS_BY_WORKFLOW.get(wf.id) || [];
     for (const t of tasks) {
       if (!matchesCondition(t, profile)) continue;
