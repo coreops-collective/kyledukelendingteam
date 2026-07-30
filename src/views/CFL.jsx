@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
+import { PARTNERS } from '../data/partners.js';
 import { markLoansDirty, deleteLoanFromSupabase } from '../lib/loansStore.js';
 import { useNavigate } from 'react-router-dom';
 import { LOS_STAGES, PRE_CONTRACT_STAGES } from '../data/stages.js';
@@ -41,6 +42,16 @@ export default function CFL() {
   const [filterRole, setFilterRole] = useState('All');
   const [filterStatus, setFilterStatus] = useState('Open');
   const [openClient, setOpenClient] = useState(null); // client name string or null
+  // Top-level tab: 'client' (borrowers, default) or 'agent' (realtor
+  // partners). Persisted per browser so a user who lives on Agent for
+  // Life stays there between visits.
+  const [cflTab, setCflTab] = useState(() => {
+    try { return localStorage.getItem('kdt-cfl-tab') === 'agent' ? 'agent' : 'client'; }
+    catch { return 'client'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('kdt-cfl-tab', cflTab); } catch {}
+  }, [cflTab]);
   // Bump every time underlying data changes so memos that read from
   // module-level stores (getAllDates / getWorkflows / getProfile /
   // getKeyDateTypes) re-run. Previously the task list cached its
@@ -285,8 +296,52 @@ export default function CFL() {
     return out.sort((a, b) => a.daysAway - b.daysAway);
   }, [dataVersion]);
 
+  const cflTabBar = (
+    <div style={{ display: 'flex', gap: 4, borderBottom: '2px solid var(--border)', marginBottom: 14 }}>
+      {[
+        { key: 'client', label: 'Client for Life' },
+        { key: 'agent',  label: 'Agent for Life' },
+      ].map((tab) => {
+        const isActive = cflTab === tab.key;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setCflTab(tab.key)}
+            style={{
+              background: 'transparent',
+              border: 0,
+              padding: '10px 18px 12px',
+              fontFamily: "'Oswald',sans-serif",
+              fontSize: 12,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '.8px',
+              color: isActive ? 'var(--brand-red)' : '#555',
+              borderBottom: `3px solid ${isActive ? 'var(--brand-red)' : 'transparent'}`,
+              marginBottom: -2,
+              cursor: 'pointer',
+            }}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  if (cflTab === 'agent') {
+    return (
+      <div>
+        {cflTabBar}
+        <AgentForLifeView onOpenClient={setOpenClient} />
+      </div>
+    );
+  }
+
   return (
     <div>
+      {cflTabBar}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, padding: '14px 18px', background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.8px' }}>
@@ -2103,5 +2158,125 @@ export function TaskEditDrawer({ task, triggerLabels, onClose, onDelete }) {
         </div>
       </aside>
     </>
+  );
+}
+
+// ── Agent for Life view ─────────────────────────────────────────
+// Mirror of Client for Life but scoped to realtor partners. Each
+// agent is treated as a "client" by the workflow generator, and
+// only workflows in the "Agent for Life" category emit for them.
+// Anchors are derived from LOANS where agent === partner.name — most
+// recent close date becomes "Last Deal" so date-triggered agent
+// workflows (e.g. "3 months after last deal, send a check-in text")
+// have something to hang off of. Plus any client_dates rows keyed by
+// the agent's name flow through the same anchor builder.
+function AgentForLifeView({ onOpenClient }) {
+  const agentTasks = useMemo(() => {
+    const items = [];
+    // Sort agents by deal count desc so heavier producers are first —
+    // same ordering the Partners page uses.
+    const agents = [...PARTNERS]
+      .filter((p) => p.name && p.name.trim() && p.name !== 'Self-Generated')
+      .sort((a, b) => (b.deals || 0) - (a.deals || 0));
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    for (const p of agents) {
+      const agentName = p.name;
+      const agentLoans = LOANS.filter((l) => (l.agent || '').trim() === agentName);
+      // "Last Deal" anchor = closeDate of the most recent loan for
+      // this agent. Falls back to null if the agent has no closed
+      // deals in the current LOANS set (they might have deals in
+      // PAST_CLIENTS with the agent recorded there — future work).
+      let lastDealDate = null;
+      for (const l of agentLoans) {
+        if (!l.closeDate) continue;
+        const d = parseLocalDate(l.closeDate);
+        if (!d) continue;
+        if (!lastDealDate || d > lastDealDate) lastDealDate = d;
+      }
+      const anchors = new Map();
+      if (lastDealDate) anchors.set('Last Deal', lastDealDate);
+      // Bring through any client_dates rows keyed to this agent name
+      // — that lets Kim set an agent birthday, anniversary of first
+      // deal, etc. from the Partners → Dates panel and the workflow
+      // engine picks it up automatically.
+      getAllDates().forEach((row) => {
+        if ((row.client_name || '').trim().toLowerCase() !== agentName.toLowerCase()) return;
+        const d = parseLocalDate(row.date_value);
+        if (d) anchors.set(row.date_label, d);
+      });
+      const emitted = generateTasksForClient(agentName, anchors, { category: 'Agent for Life' });
+      emitted.forEach((it) => items.push({ ...it, agent: p }));
+    }
+    items.sort((a, b) => a.due_date - b.due_date);
+    return items;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const openItems = agentTasks.filter((it) => !it.completed);
+  const doneItems = agentTasks.filter((it) => it.completed);
+  const agentsWithTasks = new Set(agentTasks.map((it) => it.client_name)).size;
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, padding: '14px 18px', background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.8px' }}>
+            Agent for Life · Task List
+          </div>
+          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+            Auto-generated from workflows in the <strong>Agent for Life</strong> category.
+            {' '}Anchors: last-deal close date + any date rows keyed to the agent.
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>
+          Build agent workflows on the Workflows &amp; SOPs tab (pick "Agent for Life" category).
+        </div>
+      </div>
+      {agentTasks.length === 0 ? (
+        <div style={{ padding: 32, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 15, fontWeight: 700, color: 'var(--brand-black)', marginBottom: 6 }}>
+            No agent tasks yet.
+          </div>
+          <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
+            To populate this list:
+            <br />1. Open <strong>Workflows &amp; SOPs</strong> and add a workflow whose Category is set to <strong>Agent for Life</strong>.
+            <br />2. Add task(s) with a Date trigger anchored on <em>Last Deal</em> or a custom date label you assign to each agent.
+            <br />3. Any active agent with a matching anchor date will show up here.
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{ padding: '10px 14px', background: '#f7f9fc', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, fontSize: 12, color: '#555' }}>
+            {openItems.length} open · {doneItems.length} done · across {agentsWithTasks} agent{agentsWithTasks === 1 ? '' : 's'}
+          </div>
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+            {openItems.map((it) => (
+              <div
+                key={it.id}
+                onClick={() => onOpenClient && onOpenClient(it.client_name)}
+                style={{
+                  display: 'grid', gridTemplateColumns: '80px 1fr auto', gap: 12,
+                  padding: '12px 16px', borderTop: '1px solid #f1f1f1', alignItems: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                  {it.anchor_label || 'Task'}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--brand-black)' }}>{it.task.title}</div>
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                    <strong style={{ color: 'var(--brand-red)' }}>{it.client_name}</strong>
+                    {' · '}{it.workflow?.name}
+                    {it.agent?.deals ? ` · ${it.agent.deals} deals` : ''}
+                    {it.agent?.state ? ` · ${it.agent.state}` : ''}
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: '#888' }}>
+                  Due {it.due_date ? it.due_date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
