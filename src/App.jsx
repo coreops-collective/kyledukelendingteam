@@ -10,6 +10,7 @@ import Pipeline from './views/Pipeline.jsx';
 import NewLoan from './views/NewLoan.jsx';
 import Placeholder from './views/Placeholder.jsx';
 import CFL from './views/CFL.jsx';
+import AgentForLife from './views/AgentForLife.jsx';
 import LoanManagement from './views/LoanManagement.jsx';
 import AllLoans from './views/AllLoans.jsx';
 import Partners from './views/Partners.jsx';
@@ -46,6 +47,7 @@ const PAGE_META = {
   '/ratelocks':     { title: 'Rate Locks' },
   '/workflows':     { title: 'Workflows & SOPs' },
   '/clientforlife': { title: 'Client for Life' },
+  '/agentforlife':  { title: 'Agent for Life' },
   '/tasks':         { title: 'Tasks' },
   '/projects':      { title: 'Projects' },
   '/partners':      { title: 'Realtor Partners' },
@@ -207,7 +209,7 @@ export default function App() {
                 routes that have a tour registered. Fires an event the
                 page component listens for so we don't need a
                 global-tour registry / context wired here. */}
-            {['/workflows', '/pipeline', '/snapshot', '/loanmgmt', '/clientforlife', '/cfl', '/partners', '/newloan', '/roles', '/loans', '/ratelocks', '/tasks', '/projects', '/performance', '/setup', '/income', '/netincome', '/leadsources'].includes(location.pathname) && (
+            {['/workflows', '/pipeline', '/snapshot', '/loanmgmt', '/clientforlife', '/cfl', '/agentforlife', '/partners', '/newloan', '/roles', '/loans', '/ratelocks', '/tasks', '/projects', '/performance', '/setup', '/income', '/netincome', '/leadsources'].includes(location.pathname) && (
               <button
                 className="chip"
                 style={{ cursor: 'pointer', border: '1px solid #d0d0d0', background: '#fff', color: 'var(--brand-red, #c62828)', fontWeight: 700 }}
@@ -234,6 +236,7 @@ export default function App() {
             <Route path="/ratelocks" element={<RateLocks />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/clientforlife" element={<CFL />} />
+            <Route path="/agentforlife" element={<AgentForLife />} />
             <Route path="/cfl" element={<CFL />} />
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/projects" element={<Projects />} />

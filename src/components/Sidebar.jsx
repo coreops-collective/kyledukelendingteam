@@ -21,6 +21,7 @@ const NAV_GROUPS = [
   ]},
   { label: 'Partners', className: '', items: [
     { view: 'partners', path: '/partners', text: 'Realtor Partners' },
+    { view: 'agentforlife', path: '/agentforlife', text: 'Agent for Life' },
     { view: 'leadsources', path: '/leadsources', text: 'Lead Sources' },
   ]},
   { label: 'Team', className: '', items: [
