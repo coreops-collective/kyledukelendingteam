@@ -565,13 +565,37 @@ function PartnerDrawer({ partner, onClose }) {
   };
 
   const p = partner;
+  // Every partner field is stored under BOTH a short UI alias
+  // (bday / addr / coffee / restaurant / social / src / primaryLo) and
+  // the canonical Supabase column name (birthday / mailing_address /
+  // coffee_shop / favorite_restaurant / social_handle / lead_source /
+  // primary_lo). partnerToRow reads the canonical name first, so an
+  // edit that only touches the short alias would get overwritten by
+  // the stale canonical value on the next debounced save — the input
+  // then reverts to its pre-edit value. Fix: every write mirrors to
+  // both names so partnerToRow sees the fresh value regardless of
+  // which side it prefers.
+  const FIELD_ALIASES = {
+    bday: 'birthday', birthday: 'bday',
+    addr: 'mailing_address', mailing_address: 'addr',
+    coffee: 'coffee_shop', coffee_shop: 'coffee',
+    restaurant: 'favorite_restaurant', favorite_restaurant: 'restaurant',
+    social: 'social_handle', social_handle: 'social',
+    src: 'lead_source', lead_source: 'src',
+    primaryLo: 'primary_lo', primary_lo: 'primaryLo',
+  };
   // update — capture every keystroke into the partner object and reset
   // the debounce timer. We do NOT force a re-render here, otherwise
   // EditRow (defined inside this component) would unmount on every key
   // and the user would lose focus mid-typing.
   // set — same plus a force re-render, used on blur so dependent UI
   // (e.g. drawer title) refreshes when the user finishes a field.
-  const update = (key, value) => { p[key] = value; markPartnerDirty(p); };
+  const update = (key, value) => {
+    p[key] = value;
+    const alias = FIELD_ALIASES[key];
+    if (alias) p[alias] = value;
+    markPartnerDirty(p);
+  };
   const set = (key, value) => { update(key, value); force((n) => n + 1); };
   // Force-flush any pending debounced save before the drawer unmounts —
   // mobile users frequently tap Close immediately after typing, and we

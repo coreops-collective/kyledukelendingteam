@@ -170,10 +170,18 @@ export default function CFL() {
       collect(l.borrower, l.closeDate);
       const key = (l.borrower || '').trim().toLowerCase();
       if (key) seenSource.set(key, l);
-      const coFirst = l.coFirst || l.c2first;
-      const coLast = l.coLast || l.c2last;
-      if (coFirst && coLast) {
-        const coName = `${coLast}, ${coFirst}`.trim();
+      // Merge co-borrower fields across both alias pairs. Older /
+      // partial rows (only one half filled, or first in c2* and last
+      // in co*) still register — the previous code required BOTH
+      // coFirst AND coLast on the same pair which silently dropped
+      // Kathryn Kuskie's card off the CFL list, so no loan record →
+      // no property address on her drawer.
+      const coFirst = (l.coFirst || l.c2first || '').trim();
+      const coLast  = (l.coLast  || l.c2last  || '').trim();
+      if (coFirst || coLast) {
+        const coName = coFirst && coLast
+          ? `${coLast}, ${coFirst}`
+          : (coLast || coFirst);
         collect(coName, l.closeDate);
         seenSource.set(coName.toLowerCase(), l);
         coBorrowerNames.add(coName.toLowerCase());
@@ -897,14 +905,27 @@ function ClientCardDrawer({ clientName, onClose }) {
   // property address, LO, and closing details — otherwise tasks that
   // fire for them (e.g. "send a card") have nowhere to be sent.
   const nameKey = clientName.trim().toLowerCase();
+  // Merged co-borrower first/last across both alias pairs — a loan
+  // written by NewLoan sets both (co* + c2*), but older loans / hand-
+  // edited rows might have only one half of each pair, or first in
+  // one alias and last in the other (Kathryn Kuskie regression:
+  // c2first='Kathryn' but coLast=''; matchesCoBorrower returned false
+  // because the strict pair `l.c2first && l.c2last` didn't hold).
   const matchesCoBorrower = (l) => {
-    const co = [
-      l.coFirst && l.coLast ? `${l.coLast}, ${l.coFirst}` : '',
-      l.c2first && l.c2last ? `${l.c2last}, ${l.c2first}` : '',
-      l.coFirst && l.coLast ? `${l.coFirst} ${l.coLast}` : '',
-      l.c2first && l.c2last ? `${l.c2first} ${l.c2last}` : '',
-    ].map((s) => s.trim().toLowerCase()).filter(Boolean);
-    return co.includes(nameKey);
+    const first = ((l.coFirst || l.c2first) || '').trim().toLowerCase();
+    const last  = ((l.coLast  || l.c2last)  || '').trim().toLowerCase();
+    if (!first && !last) return false;
+    // Every plausible representation of the co-borrower's name — full
+    // "Last, First", "First Last", or a single half if that's all we
+    // have. Empty variants get filtered so we don't accidentally
+    // match an empty nameKey.
+    const candidates = [
+      first && last ? `${last}, ${first}` : '',
+      first && last ? `${first} ${last}` : '',
+      first,
+      last,
+    ].filter(Boolean);
+    return candidates.includes(nameKey);
   };
   const activeLoan = LOANS.find((l) => {
     if (!l.borrower && !l.coFirst && !l.c2first) return false;
