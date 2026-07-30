@@ -293,7 +293,7 @@ export default function CFL() {
             Client for Life · Task List
           </div>
           <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-            Auto-generated from your workflows + each client's key dates · {filtered.length} of {generated.length} tasks
+            Auto-generated from your workflows + each client's key dates
           </div>
         </div>
         <div style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>

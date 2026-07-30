@@ -542,6 +542,11 @@ export function generateTasksForClient(clientName, anchorDates) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const out = [];
   const profile = getProfile(clientName) || {};
+  // Do-not-contact clients (set from the CFL client card) get zero
+  // workflow-generated tasks. They still count in stats + still show
+  // in All Loans / lists, but nothing routes to the LO or LOA about
+  // outreach, key-date follow-ups, or workflow steps.
+  if (profile.cfl_status === 'do_not_contact') return out;
   for (const wf of WORKFLOWS) {
     if (wf.active === false) continue;
     const tasks = TASKS_BY_WORKFLOW.get(wf.id) || [];
@@ -647,6 +652,9 @@ export function generateStatusTasks(loans) {
         if (status !== wantedStatus) continue;
         if (!l.borrower) continue;
         const profile = getProfile(l.borrower) || {};
+        // Do-not-contact clients get no workflow tasks — same rule as
+        // generateTasksForClient. Set from the CFL client card.
+        if (profile.cfl_status === 'do_not_contact') continue;
         if (!matchesCondition(t, profile, l)) continue;
         // Same decision-branch gating as date-triggered tasks: don't
         // emit a status-triggered branch task until its upstream
