@@ -179,6 +179,13 @@ export async function createTask(workflowId, task) {
     depends_on_task_id: task.depends_on_task_id || null,
     depends_on_outcome: task.depends_on_outcome || null,
     decision_options: Array.isArray(task.decision_options) && task.decision_options.length > 0 ? task.decision_options : null,
+    // "Who does this task fire for on a two-borrower deal?"
+    //   'each'    (default) → fire per borrower + co-borrower separately.
+    //                          Right shape for birthdays, personal follow-ups.
+    //   'primary' → fire once for the primary borrower only.
+    //                          Right shape for "congrats on closing" cards
+    //                          and any per-deal-not-per-person task.
+    applies_to: task.applies_to === 'primary' ? 'primary' : (task.applies_to === 'each' ? 'each' : null),
     notes: task.notes || null,
     position: list.length,
   };
@@ -189,6 +196,11 @@ export async function createTask(workflowId, task) {
   if (error && (error.message || '').includes('email_other_recipient')) {
     console.warn('[workflows] email_other_recipient column missing on insert — retrying without.');
     const { email_other_recipient: _, ...safeRow } = row;
+    ({ data, error } = await supabase.from('workflow_tasks').insert(safeRow).select().single());
+  }
+  if (error && (error.message || '').includes('applies_to')) {
+    console.warn('[workflows] applies_to column missing on insert — retrying without.');
+    const { applies_to: _, ...safeRow } = row;
     ({ data, error } = await supabase.from('workflow_tasks').insert(safeRow).select().single());
   }
   if (error) {
@@ -243,6 +255,13 @@ export async function updateTask(id, patch, opts = {}) {
   if (error && 'email_other_recipient' in patch && (error.message || '').includes('email_other_recipient')) {
     console.warn('[workflows] email_other_recipient column missing — retrying without. Run migration 027_workflow_task_email_other.');
     const { email_other_recipient: _, ...safe } = patch;
+    ({ error } = await supabase.from('workflow_tasks').update(safe).eq('id', id));
+  }
+  // Same downgrade for the applies_to column (added by a future
+  // migration). Strip and retry so the rest of the save lands.
+  if (error && 'applies_to' in patch && (error.message || '').includes('applies_to')) {
+    console.warn('[workflows] applies_to column missing — retrying without. Run the applies_to migration.');
+    const { applies_to: _, ...safe } = patch;
     ({ error } = await supabase.from('workflow_tasks').update(safe).eq('id', id));
   }
   if (error) {
@@ -552,11 +571,21 @@ export function generateTasksForClient(clientName, anchorDates, opts = {}) {
   // passes 'Agent for Life' so agent-scoped workflows don't fire on
   // borrower generators and vice-versa.
   const categoryFilter = opts.category || null;
+  // Caller signals whether this name is the co-borrower on their deal
+  // (CFL sets this — Agent for Life doesn't). Combined with each task's
+  // `applies_to` setting to drop "one-per-deal" tasks for the second
+  // borrower.
+  const isCoBorrower = !!opts.isCoBorrower;
   for (const wf of WORKFLOWS) {
     if (wf.active === false) continue;
     if (categoryFilter && wf.category !== categoryFilter) continue;
     const tasks = TASKS_BY_WORKFLOW.get(wf.id) || [];
     for (const t of tasks) {
+      // applies_to gate: 'primary' means the task fires ONLY for the
+      // primary borrower — skip when we're iterating the co-borrower.
+      // 'each' or null (legacy default) fires for everyone, which is
+      // the right shape for birthdays and personal follow-ups.
+      if (t.applies_to === 'primary' && isCoBorrower) continue;
       if (!matchesCondition(t, profile)) continue;
       // Status-triggered tasks are handled by a separate generator
       // pass (generateStatusTasks). Skip here so we don't double-fire.
