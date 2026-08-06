@@ -26,8 +26,13 @@ export default function AgentForLife() {
         if (!d) continue;
         if (!lastDealDate || d > lastDealDate) lastDealDate = d;
       }
+      // The generator does a CASE-INSENSITIVE trigger_label lookup
+      // (t.trigger_label.toLowerCase()), so every key we insert here
+      // must be lowercased or the Map miss silently drops the task
+      // and Kim sees "workflow not showing up". Matches how the CFL
+      // side does it in buildAnchorsForClient.
       const anchors = new Map();
-      if (lastDealDate) anchors.set('Last Deal', lastDealDate);
+      if (lastDealDate) anchors.set('last deal', lastDealDate);
       // Fields on the Partner record itself (set from the Partners
       // drawer: Birthday, Anniversary) are first-class anchors so a
       // workflow task with trigger label "Birthday" pulls straight from
@@ -36,11 +41,11 @@ export default function AgentForLife() {
       const bdayRaw = p.birthday || p.bday;
       if (bdayRaw) {
         const d = parseLocalDate(bdayRaw);
-        if (d) anchors.set('Birthday', d);
+        if (d) anchors.set('birthday', d);
       }
       if (p.anniversary) {
         const d = parseLocalDate(p.anniversary);
-        if (d) anchors.set('Wedding Anniversary', d);
+        if (d) anchors.set('wedding anniversary', d);
       }
       // client_dates rows keyed to this agent's name still win — Kim
       // can override the drawer-set value or add labels not on the
@@ -48,7 +53,7 @@ export default function AgentForLife() {
       getAllDates().forEach((row) => {
         if ((row.client_name || '').trim().toLowerCase() !== agentName.toLowerCase()) return;
         const d = parseLocalDate(row.date_value);
-        if (d) anchors.set(row.date_label, d);
+        if (d) anchors.set(row.date_label.toLowerCase(), d);
       });
       const emitted = generateTasksForClient(agentName, anchors, { category: 'Agent for Life' });
       emitted.forEach((it) => items.push({ ...it, agent: p }));

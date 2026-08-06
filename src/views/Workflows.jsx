@@ -265,10 +265,17 @@ export default function Workflows() {
   // Appraisal Deadline, Loan Intake Submitted, etc.) come first,
   // then user-managed key-date types (Birthday, Wedding Anniversary,
   // custom). De-duped so a custom "Closing" doesn't appear twice.
+  //
+  // On the "Agent for Life" category tab, "Last Deal" is prepended
+  // — that's the agent-specific anchor the AgentForLife generator
+  // seeds from every partner's most recent LOANS.closeDate. Without
+  // this, Kim would have to type the label by hand and the workflow
+  // silently wouldn't fire.
   const catalogLabels = getKeyDateTypeLabels();
   const builtinLabels = LOAN_DATE_ANCHORS.map(([label]) => label);
+  const agentLabels = category === 'Agent for Life' ? ['Last Deal'] : [];
   const seenTL = new Set();
-  const triggerLabels = [...builtinLabels, ...catalogLabels].filter((l) => {
+  const triggerLabels = [...agentLabels, ...builtinLabels, ...catalogLabels].filter((l) => {
     const k = l.toLowerCase();
     if (seenTL.has(k)) return false;
     seenTL.add(k);
