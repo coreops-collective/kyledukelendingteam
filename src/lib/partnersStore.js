@@ -114,13 +114,20 @@ export async function loadPartnersFromSupabase() {
       return { seeded: false };
     }
     const rows = Array.isArray(data) ? data : [];
-    const dbNames = new Set(rows.map((r) => r.name));
 
-    // Top-up: insert any static partner that's missing from the DB.
-    const missing = PARTNERS.filter((p) => !dbNames.has(p.name));
-    if (missing.length > 0) {
-      console.log(`[partners] topping up ${missing.length} missing partner(s)`);
-      const insertRows = missing.map((p) => {
+    // First-boot seed: if the DB has NO partners at all, drop in the
+    // static seed so the initial install isn't empty. On every load
+    // after that, the DB is the source of truth — any partner Kim
+    // deleted (via the drawer's Delete or the old merge) stays gone.
+    //
+    // The previous behavior was to top up any seed name missing from
+    // the DB on every load, which meant a deleted seed name came back
+    // the moment anyone signed in (see Jenn Ross - TN merge bug). If
+    // Kim needs an old seed row back, she can add it via the "+ Add
+    // New Partner" drawer — cleaner semantics.
+    if (rows.length === 0 && PARTNERS.length > 0) {
+      console.log(`[partners] DB empty — seeding ${PARTNERS.length} partner(s)`);
+      const insertRows = PARTNERS.map((p) => {
         const { id, ...rest } = partnerToRow(p);
         return rest;
       });
@@ -129,8 +136,7 @@ export async function loadPartnersFromSupabase() {
         .insert(insertRows)
         .select();
       if (insErr) {
-        console.warn('[partners] top-up failed:', insErr.message);
-        // Don't set loaded=true yet — retry on next boot.
+        console.warn('[partners] initial seed failed:', insErr.message);
         return { seeded: false };
       }
       (inserted || []).forEach((row) => rows.push(row));
@@ -139,7 +145,7 @@ export async function loadPartnersFromSupabase() {
     PARTNERS.length = 0;
     rows.forEach((row) => PARTNERS.push(rowToPartner(row, seedByName)));
     loaded = true;
-    return { seeded: missing.length > 0 };
+    return { seeded: rows.length > 0 && PARTNERS.length > 0 };
   } catch (e) {
     console.warn('[partners] load error:', e.message);
     loaded = true;

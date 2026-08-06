@@ -628,13 +628,12 @@ function ColorLegend() {
   const [open, setOpen] = useState(false);
   const swatches = [
     { label: 'Disclosed', bg: '#e1bee7', bar: '#7b1fa2' },
-    { label: 'Processing', bg: '#bbdefb', bar: '#1976d2' },
-    { label: 'Underwriting', bg: '#bbdefb', bar: '#1976d2' },
-    { label: 'CTC Required', bg: '#ffe082', bar: '#f57c00' },
-    { label: 'CTC', bg: '#fff3c4', bar: '#f5c518' },
+    { label: 'Processing', bg: '#ffcdd2', bar: '#c62828' },
+    { label: 'Underwriting', bg: '#fff59d', bar: '#f9a825' },
+    { label: 'CTC Required', bg: '#dcedc8', bar: '#558b2f' },
+    { label: 'CTC', bg: '#a5d6a7', bar: '#2e7d32' },
+    { label: 'BTP', bg: '#bbdefb', bar: '#1976d2' },
     { label: 'Approved', bg: '#dcedc8', bar: '#2e7d32' },
-    { label: 'Funded', bg: '#a5d6a7', bar: '#2e7d32' },
-    { label: 'BTP / Adversed', bg: '#ffcdd2', bar: '#c62828' },
   ];
   const dateSwatches = [
     { label: 'Date overdue', bg: '#ffebee', color: '#c62828' },

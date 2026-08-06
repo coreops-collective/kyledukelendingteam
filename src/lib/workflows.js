@@ -780,7 +780,16 @@ export const LOAN_DATE_ANCHORS = [
 export function buildAnchorsForClient(clientName, sources) {
   const anchors = new Map();
   const loan = sources || {};
+  // Refi loans don't get the "Closing Anniversary" anchor — that's a
+  // home-purchase touchpoint (1 year in the new home). A refi isn't a
+  // new home, so the yearly card is confusing / unwanted. Detect refi
+  // via loan.purpose ("Refi" / "Refinance") or loan.saleType
+  // ("REFINANCE"). The plain "Closing" anchor still fires so
+  // post-close-checkin style workflows keep working for refis.
+  const purposeStr = ((loan.purpose || '') + ' ' + (loan.saleType || '')).toLowerCase();
+  const isRefi = purposeStr.includes('refi');
   LOAN_DATE_ANCHORS.forEach(([label, field]) => {
+    if (isRefi && label === 'Closing Anniversary') return;
     const raw = loan[field];
     if (!raw) return;
     const d = parseLocalDate(raw);
