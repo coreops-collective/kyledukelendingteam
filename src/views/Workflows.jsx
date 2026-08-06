@@ -3,7 +3,7 @@ import {
   getWorkflows, getTasksFor, loadWorkflows,
   createWorkflow, deleteWorkflow, createTask, updateTask, deleteTask,
   ROLES, ROLE_LABELS, TRIGGER_BUILTIN_CLOSING, LOAN_DATE_ANCHORS,
-  WORKFLOW_CATEGORIES, allWorkflowCategories, addWorkflowCategory,
+  WORKFLOW_CATEGORIES, allWorkflowCategories, addWorkflowCategory, deleteWorkflowCategory,
 } from '../lib/workflows.js';
 import { loadKeyDateTypes, getKeyDateTypeLabels } from '../lib/keyDateTypes.js';
 import {
@@ -31,11 +31,11 @@ Let's walk through it. Use ← and → keys, or the buttons at the bottom. Hit S
     target: '[data-tour="categories"]',
     title: 'Categories keep workflows organized',
     body:
-`Workflows live in buckets: Client for Life, Loan, Lead Nurture, plus any custom category you add.
+`Workflows live in buckets: Client for Life, Agent for Life, Loan, Lead Nurture, plus any custom category you add.
 
 Click a chip to filter — only workflows in that category show up in the sidebar below.
 
-The number on each chip tells you how many workflows are in it. Click "+ New category" on the right to add your own bucket.`,
+The number on each chip tells you how many workflows are in it. Click "+ New category" on the right to add your own bucket, or click the × on a custom chip to delete it (built-in categories don't get the ×). A category can only be deleted once it's empty — move any workflows inside it to another category first.`,
   },
   {
     target: '[data-tour="manage-dates"]',
@@ -393,30 +393,85 @@ export default function Workflows() {
     bump();
   };
 
+  // Only custom categories (i.e. NOT one of the four predefined
+  // buckets) get a × affordance. Deleting a predefined category
+  // doesn't make sense — the app's workflow generators reference
+  // them by name.
+  const handleDeleteCategory = (c) => {
+    const result = deleteWorkflowCategory(c);
+    if (result.ok) {
+      if (category === c) setCategory('Loan');
+      bump();
+      return;
+    }
+    if (result.reason === 'predefined') {
+      alert(`"${c}" is a built-in category and can't be deleted.`);
+    } else if (result.reason === 'in_use') {
+      alert(
+        `"${c}" still has ${result.count} workflow${result.count === 1 ? '' : 's'} in it. ` +
+        `Move (or delete) those workflows first — pick each one and change its Category — then delete "${c}".`
+      );
+    } else {
+      alert(`Couldn't delete "${c}" (${result.reason || 'unknown'}).`);
+    }
+  };
+
   const categoryBar = (
     <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
       {knownCategories.map((c) => {
         const active = c === category;
+        const isCustom = !WORKFLOW_CATEGORIES.includes(c);
         return (
-          <button
+          <div
             key={c}
-            onClick={() => { setCategory(c); setActiveId(null); }}
             style={{
-              padding: '8px 14px', borderRadius: 999,
+              display: 'inline-flex', alignItems: 'stretch',
+              borderRadius: 999, overflow: 'hidden',
               border: `1px solid ${active ? '#0A0A0A' : '#d0d0d0'}`,
               background: active ? '#0A0A0A' : '#fff',
-              color: active ? '#fff' : '#333',
-              fontWeight: 700, fontSize: 12, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: 6,
             }}
           >
-            {c}
-            <span style={{
-              padding: '2px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700,
-              background: active ? 'rgba(255,255,255,.2)' : '#eee',
-              color: active ? '#fff' : '#666',
-            }}>{categoryCounts[c] || 0}</span>
-          </button>
+            <button
+              onClick={() => { setCategory(c); setActiveId(null); }}
+              style={{
+                padding: '8px 14px', border: 0, background: 'transparent',
+                color: active ? '#fff' : '#333',
+                fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {c}
+              <span style={{
+                padding: '2px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+                background: active ? 'rgba(255,255,255,.2)' : '#eee',
+                color: active ? '#fff' : '#666',
+              }}>{categoryCounts[c] || 0}</span>
+            </button>
+            {isCustom && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const count = categoryCounts[c] || 0;
+                  if (count > 0) {
+                    handleDeleteCategory(c);
+                    return;
+                  }
+                  if (!window.confirm(`Delete the "${c}" category? It's currently empty, so no workflows are affected.`)) return;
+                  handleDeleteCategory(c);
+                }}
+                title={`Delete "${c}" category`}
+                aria-label={`Delete "${c}" category`}
+                style={{
+                  padding: '0 10px 0 6px',
+                  border: 0,
+                  background: 'transparent',
+                  color: active ? '#ffb6b6' : '#c62828',
+                  fontSize: 14, fontWeight: 700,
+                  cursor: 'pointer', lineHeight: 1,
+                }}
+              >×</button>
+            )}
+          </div>
         );
       })}
       <button

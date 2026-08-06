@@ -87,6 +87,28 @@ export function addWorkflowCategory(name) {
   } catch { return false; }
 }
 
+// Delete a custom (non-predefined) workflow category. Predefined
+// buckets (Client for Life / Agent for Life / Loan / Lead Nurture)
+// can't be removed. If any workflow currently sits in the category,
+// returns { ok: false, reason: 'in_use', count } so the caller can
+// prompt to move them first.
+export function deleteWorkflowCategory(name) {
+  const clean = (name || '').trim();
+  if (!clean) return { ok: false, reason: 'empty' };
+  if (WORKFLOW_CATEGORIES.includes(clean)) {
+    return { ok: false, reason: 'predefined' };
+  }
+  const inUse = WORKFLOWS.filter((w) => (w.category || '').trim() === clean).length;
+  if (inUse > 0) return { ok: false, reason: 'in_use', count: inUse };
+  const current = loadCustomCategories();
+  if (!current.includes(clean)) return { ok: false, reason: 'unknown' };
+  try {
+    localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(current.filter((c) => c !== clean)));
+    window.dispatchEvent(new Event('kdt-workflow-categories-changed'));
+    return { ok: true };
+  } catch { return { ok: false, reason: 'storage' }; }
+}
+
 export async function loadWorkflows() {
   try {
     const [{ data: wfs }, { data: ts }, { data: cs }] = await Promise.all([
