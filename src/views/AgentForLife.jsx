@@ -28,8 +28,23 @@ export default function AgentForLife() {
       }
       const anchors = new Map();
       if (lastDealDate) anchors.set('Last Deal', lastDealDate);
-      // Bring through any client_dates rows keyed to this agent name —
-      // Kim can set an agent birthday, first-deal anniversary, etc.
+      // Fields on the Partner record itself (set from the Partners
+      // drawer: Birthday, Anniversary) are first-class anchors so a
+      // workflow task with trigger label "Birthday" pulls straight from
+      // partner.birthday without needing a matching client_dates row.
+      // Legacy p.bday alias handled for older data.
+      const bdayRaw = p.birthday || p.bday;
+      if (bdayRaw) {
+        const d = parseLocalDate(bdayRaw);
+        if (d) anchors.set('Birthday', d);
+      }
+      if (p.anniversary) {
+        const d = parseLocalDate(p.anniversary);
+        if (d) anchors.set('Wedding Anniversary', d);
+      }
+      // client_dates rows keyed to this agent's name still win — Kim
+      // can override the drawer-set value or add labels not on the
+      // partner card at all (Closing Anniversary, custom milestones).
       getAllDates().forEach((row) => {
         if ((row.client_name || '').trim().toLowerCase() !== agentName.toLowerCase()) return;
         const d = parseLocalDate(row.date_value);
@@ -52,7 +67,7 @@ export default function AgentForLife() {
             Agent for Life · Task List
           </div>
           <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-            Auto-generated from workflows in the <strong>Agent for Life</strong> category. Anchors: last-deal close date + any date rows keyed to the agent.
+            Auto-generated from workflows in the <strong>Agent for Life</strong> category. Anchors: last-deal close date, the Birthday + Anniversary set on the Partner card, and any date rows keyed to the agent.
           </div>
         </div>
         <div style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>
