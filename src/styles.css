@@ -309,22 +309,26 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
 .lm-table td.date.soon input{color:#e65100;font-weight:700}
 .lm-table td.date.done{background:#fff8e1}
 .lm-table td.date.done input{color:#7a6300;font-weight:700}
-.lm-row.approved td{background:#f1f8f1}
-.lm-row.approved td:first-child{background:#dcedc8;border-left:4px solid #2e7d32}
-.lm-row.ctc td{background:#fff8e1}
-.lm-row.ctc td:first-child{background:#fff3c4;border-left:4px solid #f5c518}
-.lm-row.ctcreq td{background:#fff8e1}
-.lm-row.ctcreq td:first-child{background:#ffe082;border-left:4px solid #f57c00}
-.lm-row.processing td{background:#e3f2fd}
-.lm-row.processing td:first-child{background:#bbdefb;border-left:4px solid #1976d2}
-.lm-row.uw td,.lm-row.underwriting td{background:#e3f2fd}
-.lm-row.uw td:first-child,.lm-row.underwriting td:first-child{background:#bbdefb;border-left:4px solid #1976d2}
+/* Stage row colors — from Kim's mental flow of a loan:
+   Disclosed = purple · Processing = red · UW = yellow · CTC Req = light green
+   CTC = green · BTP = blue · Approved = light green ·
+   Funded / Adversed = no fill (they drop off the active view anyway). */
 .lm-row.disclosed td{background:#f3e5f5}
 .lm-row.disclosed td:first-child{background:#e1bee7;border-left:4px solid #7b1fa2}
-.lm-row.btp td,.lm-row.adversed td{background:#ffebee}
-.lm-row.btp td:first-child,.lm-row.adversed td:first-child{background:#ffcdd2;border-left:4px solid #c62828}
-.lm-row.funded td{background:#e8f5e9}
-.lm-row.funded td:first-child{background:#a5d6a7;border-left:4px solid #2e7d32}
+.lm-row.processing td{background:#ffebee}
+.lm-row.processing td:first-child{background:#ffcdd2;border-left:4px solid #c62828}
+.lm-row.uw td,.lm-row.underwriting td{background:#fff9c4}
+.lm-row.uw td:first-child,.lm-row.underwriting td:first-child{background:#fff59d;border-left:4px solid #f9a825}
+.lm-row.ctcreq td{background:#f1f8e9}
+.lm-row.ctcreq td:first-child{background:#dcedc8;border-left:4px solid #558b2f}
+.lm-row.ctc td{background:#e8f5e9}
+.lm-row.ctc td:first-child{background:#a5d6a7;border-left:4px solid #2e7d32}
+.lm-row.btp td{background:#e3f2fd}
+.lm-row.btp td:first-child{background:#bbdefb;border-left:4px solid #1976d2}
+.lm-row.approved td{background:#f1f8f1}
+.lm-row.approved td:first-child{background:#dcedc8;border-left:4px solid #2e7d32}
+/* Funded + Adversed intentionally get no colour — they filter out of the
+   active LM view. Keeping them off the palette matches Kim's expectation. */
 .lm-status-select{font-family:'Oswald',sans-serif;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
 .lm-table tbody tr:nth-child(even) td{background:#fafafa}
 .lm-table tbody tr:hover td{background:#fff3c4 !important}

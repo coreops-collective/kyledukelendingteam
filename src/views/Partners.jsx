@@ -4,7 +4,7 @@ import { LOANS } from '../data/loans.js';
 import { LOS_STAGES } from '../data/stages.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
-import { markPartnerDirty, markPartnerNew, savePartnersNow, subscribePartners, deletePartner, mergePartners } from '../lib/partnersStore.js';
+import { markPartnerDirty, markPartnerNew, savePartnersNow, subscribePartners, deletePartner } from '../lib/partnersStore.js';
 import Tour from '../components/Tour.jsx';
 
 // Format helpers — mirror legacy fmt$M / fmt$
@@ -43,6 +43,56 @@ const DEAL_MIN = { All: 0, '1+ deals': 1, '5+ deals': 5, '10+ deals': 10, '25+ d
 // the first partner is assigned to it. Partners without a tier value
 // fall back to "Standard".
 const PREDEFINED_TIERS = ['VIP', 'Standard', 'Should Nurture', 'Not in Real Estate Anymore', 'Other'];
+
+// Collapsible category section. Defaults to closed for the two dead-
+// list buckets ("Not in Real Estate Anymore" / "Other") so they don't
+// push the active partners below the fold. All other categories keep
+// the old flat layout via the isCollapsible path in the parent map.
+function PartnerCategorySection({ category, group, headerColor, defaultCollapsed, storageKey, children }) {
+  const [open, setOpen] = useState(() => {
+    if (!storageKey) return true;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved === '1') return true;
+      if (saved === '0') return false;
+      return !defaultCollapsed;
+    } catch { return !defaultCollapsed; }
+  });
+  useEffect(() => {
+    if (!storageKey) return;
+    try { localStorage.setItem(storageKey, open ? '1' : '0'); } catch {}
+  }, [open, storageKey]);
+  const collapsible = !!storageKey;
+  return (
+    <div>
+      <h3
+        style={{
+          fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase',
+          letterSpacing: 1, margin: '18px 0 10px', color: headerColor,
+          cursor: collapsible ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none',
+        }}
+        onClick={() => { if (collapsible) setOpen((o) => !o); }}
+        role={collapsible ? 'button' : undefined}
+        aria-expanded={collapsible ? open : undefined}
+      >
+        {collapsible && (
+          <span
+            aria-hidden
+            style={{
+              display: 'inline-block',
+              transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform .15s ease',
+              fontSize: 10, width: 10, color: '#888',
+            }}
+          >▶</span>
+        )}
+        <span>{category}{group.label ? ` · ${group.label}` : ''} ({group.items.length})</span>
+      </h3>
+      {(open || !collapsible) && children}
+    </div>
+  );
+}
 
 function loadCustomTiers() {
   try {
@@ -383,12 +433,21 @@ export default function Partners() {
       {partnersByCategory.map(([category, partners]) => {
         const isVip = category === 'VIP';
         const headerColor = isVip ? 'var(--brand-red)' : '#666';
+        // Kim asked for the two "dead-list" buckets — Not in Real
+        // Estate Anymore + Other — to collapse by default so they
+        // don't push the active partners below the fold. Every other
+        // category renders flat, matching the previous layout.
+        const isCollapsible = category === 'Not in Real Estate Anymore' || category === 'Other';
         return groupByState(partners).map((group) => (
           group.items.length > 0 && (
-            <div key={`${category}-${group.key}`}>
-              <h3 style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, margin: '18px 0 10px', color: headerColor }}>
-                {category}{group.label ? ` · ${group.label}` : ''} ({group.items.length})
-              </h3>
+            <PartnerCategorySection
+              key={`${category}-${group.key}`}
+              category={category}
+              group={group}
+              headerColor={headerColor}
+              defaultCollapsed={isCollapsible}
+              storageKey={isCollapsible ? `kdt-partners-cat-${category.toLowerCase().replace(/\s+/g, '-')}` : null}
+            >
               {isVip ? (
                 <div className="partner-grid">
                   {group.items.map((p) => (
@@ -436,7 +495,7 @@ export default function Partners() {
                   ))}
                 </div>
               )}
-            </div>
+            </PartnerCategorySection>
           )
         ));
       })}
@@ -766,7 +825,6 @@ function PartnerDrawer({ partner, onClose }) {
           >
             Delete partner
           </button>
-          <MergeControl partner={p} onMerged={onClose} />
           <button className="drawer-btn primary" onClick={handleClose}>Close</button>
         </div>
       </aside>
@@ -774,49 +832,13 @@ function PartnerDrawer({ partner, onClose }) {
   );
 }
 
-// Merge-this-partner-into-another control. Renders a select of every
-// OTHER partner (alphabetical) and a Merge button. Confirms before
-// actually merging — merge is destructive (deletes the source).
-function MergeControl({ partner, onMerged }) {
-  const [targetName, setTargetName] = useState('');
-  const others = useMemo(
-    () => PARTNERS
-      .filter((x) => x !== partner && x.name !== partner.name)
-      .map((x) => x.name)
-      .sort((a, b) => a.localeCompare(b)),
-    [partner]
-  );
-  return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: '1 1 auto', justifyContent: 'center' }}>
-      <select
-        value={targetName}
-        onChange={(e) => setTargetName(e.target.value)}
-        style={{ padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 6, maxWidth: 220 }}
-      >
-        <option value="">Merge into…</option>
-        {others.map((n) => <option key={n} value={n}>{n}</option>)}
-      </select>
-      <button
-        className="drawer-btn"
-        disabled={!targetName}
-        title={targetName ? `Merge ${partner.name} → ${targetName}` : 'Pick a target first'}
-        style={{ opacity: targetName ? 1 : 0.4 }}
-        onClick={async () => {
-          const target = PARTNERS.find((x) => x.name === targetName);
-          if (!target) return;
-          const ok = window.confirm(
-            `Merge "${partner.name}" INTO "${targetName}"?\n\n` +
-            `"${targetName}" will keep its name and get any missing fields filled in from "${partner.name}". ` +
-            `Loans referencing "${partner.name}" will be re-pointed to "${targetName}". ` +
-            `"${partner.name}" will then be deleted.`
-          );
-          if (!ok) return;
-          await mergePartners(partner, target, LOANS);
-          onMerged();
-        }}
-      >
-        Merge
-      </button>
-    </div>
-  );
-}
+// Merge-this-partner-into-another control was removed after two bugs:
+// (1) the dropdown was missing agents (memo cached the PARTNERS array
+// before every partner had loaded and never invalidated), and (2) a
+// merged source came back on the next login because the seed top-up
+// in loadPartnersFromSupabase re-inserted any static-seed name that
+// wasn't in the DB. The second bug is now fixed at the store layer
+// (only seed when the DB is empty), so Delete works cleanly and Kim
+// can dedupe by delete instead. Reintroducing merge would need a
+// live-updating partners subscription for the picker and a targeted
+// data-integrity pass; parking until we need it.

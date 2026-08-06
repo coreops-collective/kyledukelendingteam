@@ -397,36 +397,64 @@ function FilterChip({ label, value, options, onChange }) {
 }
 
 function BirthdaysPanel({ rows, onOpenDates, onOpenClient }) {
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem('kdt-cfl-birthdays-open') !== '0'; }
+    catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('kdt-cfl-birthdays-open', open ? '1' : '0'); } catch {}
+  }, [open]);
   if (rows.length === 0) return null;
   return (
     <div className="section-card" style={{ marginBottom: 16 }}>
       <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div className="section-title">Birthdays This Month</div>
-          <div className="section-sub">{rows.length} client{rows.length === 1 ? '' : 's'} · click a name to open their card</div>
-        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, background: 'transparent',
+            border: 0, padding: 0, cursor: 'pointer', textAlign: 'left', flex: 1,
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              display: 'inline-block',
+              transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform .15s ease',
+              color: '#fff', fontSize: 14, lineHeight: 1, width: 14,
+            }}
+          >▶</span>
+          <div>
+            <div className="section-title">Birthdays This Month</div>
+            <div className="section-sub">{rows.length} client{rows.length === 1 ? '' : 's'} · click a name to open their card</div>
+          </div>
+        </button>
         {onOpenDates && (
           <button className="form-btn" type="button" onClick={onOpenDates}>+ Add</button>
         )}
       </div>
-      <div className="section-body" style={{ padding: 0 }}>
-        {rows.map((r) => (
-          <div key={`${r.name}-${r.label}`} style={{
-            display: 'grid', gridTemplateColumns: '1fr 140px 100px', gap: 10,
-            padding: '10px 18px', borderTop: '1px solid #f1f1f1', alignItems: 'center',
-            background: r.daysAway <= 3 ? '#fff8e1' : '#fff',
-          }}>
-            <div
-              onClick={() => onOpenClient && onOpenClient(r.name)}
-              style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--brand-red)' }}
-            >{r.name}</div>
-            <div style={{ color: '#555' }}>{r.monthDay}</div>
-            <div style={{ textAlign: 'right', fontSize: 11, fontWeight: r.daysAway <= 3 ? 700 : 400, color: r.daysAway <= 3 ? '#c62828' : '#888' }}>
-              {r.daysAway === 0 ? 'TODAY' : `${r.daysAway}d away`}
+      {open && (
+        <div className="section-body" style={{ padding: 0 }}>
+          {rows.map((r) => (
+            <div key={`${r.name}-${r.label}`} style={{
+              display: 'grid', gridTemplateColumns: '1fr 140px 100px', gap: 10,
+              padding: '10px 18px', borderTop: '1px solid #f1f1f1', alignItems: 'center',
+              background: r.daysAway <= 3 ? '#fff8e1' : '#fff',
+            }}>
+              <div
+                onClick={() => onOpenClient && onOpenClient(r.name)}
+                style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--brand-red)' }}
+              >{r.name}</div>
+              <div style={{ color: '#555' }}>{r.monthDay}</div>
+              <div style={{ textAlign: 'right', fontSize: 11, fontWeight: r.daysAway <= 3 ? 700 : 400, color: r.daysAway <= 3 ? '#c62828' : '#888' }}>
+                {r.daysAway === 0 ? 'TODAY' : `${r.daysAway}d away`}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
