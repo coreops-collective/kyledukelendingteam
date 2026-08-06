@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ROLE_LABELS } from '../data/users.js';
-import { setCurrentUser, isAdmin, isBranchManager, getCurrentUser } from '../lib/auth.js';
+import { setCurrentUser, isAdmin, isBranchManager, getCurrentUser, signOutSupabase } from '../lib/auth.js';
 import { audit, ACTIONS } from '../lib/audit.js';
 
 const NAV_GROUPS = [
@@ -119,11 +119,13 @@ export default function Sidebar({ user, open = false }) {
             e.stopPropagation();
             const me = getCurrentUser();
             // Fire-and-forget audit so a slow / failing RPC never blocks
-            // the actual sign-out. Then clear the session and force the
-            // URL back to root so the Login screen loads clean without
-            // any deep-link route baggage.
+            // the actual sign-out. Then tear down BOTH the Supabase Auth
+            // session and the local profile cache, and force the URL
+            // back to root so the Login screen loads clean without any
+            // deep-link route baggage.
             try { audit(ACTIONS.AUTH_LOGOUT, 'user', me?.id, null); } catch { /* swallow */ }
-            setCurrentUser(null);
+            signOutSupabase(); // async — clears local cache immediately on completion
+            setCurrentUser(null); // and eagerly for the current render
             try { nav('/'); } catch { /* router guard */ }
           }}
         >Sign Out</button>

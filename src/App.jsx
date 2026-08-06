@@ -28,6 +28,7 @@ import Performance from './views/Performance.jsx';
 import Income from './views/Income.jsx';
 import NetIncomeCalc from './views/NetIncomeCalc.jsx';
 import Login from './views/Login.jsx';
+import SetPassword from './views/SetPassword.jsx';
 import Welcome from './views/Welcome.jsx';
 import Setup from './views/Setup.jsx';
 import useAuth from './hooks/useAuth.js';
@@ -162,6 +163,22 @@ export default function App() {
       clearInterval(timer);
     };
   }, []);
+
+  // /set-password is reachable BEFORE any auth or data-load gates —
+  // it's the target of Supabase Auth invite and password-recovery
+  // emails, so the user clicking that link has a one-shot recovery
+  // session but no cached profile yet. Gating this behind useAuth or
+  // usersReady would strand them on either a blank loader or the
+  // login screen. Serve the page directly.
+  if (location.pathname === '/set-password') {
+    return (
+      <>
+        <UpdateBanner />
+        <SetPassword />
+        <ToasterStack />
+      </>
+    );
+  }
 
   if (!usersReady) return (<><UpdateBanner /><ToasterStack /></>);
 

@@ -1,4 +1,5 @@
 import { USERS } from '../data/users.js';
+import { supabase } from './supabase.js';
 
 const KEY = 'kdt_user_id';
 const USER_KEY = 'kdt_user';
@@ -74,4 +75,30 @@ export function enforceSessionCap() {
     return true;
   }
   return false;
+}
+
+// Sign the user out of Supabase Auth AND clear our local profile
+// cache. Kept as a single call so every "log out" button in the app
+// tears down both sides at once.
+export async function signOutSupabase() {
+  try { await supabase.auth.signOut(); } catch { /* still clear locally */ }
+  setCurrentUser(null);
+}
+
+// Look up the user's public.users profile row by email — role + name +
+// the numeric-ish id the rest of the app uses for `me`. Called after a
+// successful Supabase Auth sign-in so the existing isBranchManager /
+// isAdmin / audit code keeps working unchanged.
+export async function loadProfileByEmail(email) {
+  const target = (email || '').trim().toLowerCase();
+  if (!target) return null;
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id,name,email,role')
+      .ilike('email', target)
+      .limit(1);
+    if (error) return null;
+    return (data && data[0]) || null;
+  } catch { return null; }
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { setCurrentUser } from '../lib/auth.js';
+import { setCurrentUser, loadProfileByEmail } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 import { audit, ACTIONS } from '../lib/audit.js';
 
@@ -39,65 +39,51 @@ export default function Login({ onSuccess }) {
     setErr('');
     setSubmitting(true);
     try {
-      // Login goes through a SECURITY DEFINER Postgres function so the
-      // public.users table can stay locked behind RLS. The function
-      // returns the matching row's non-password fields, or zero rows
-      // for invalid creds.
-      let rpcResult;
-      try {
-        rpcResult = await supabase.rpc('login', {
-          p_email: email.trim(),
-          p_password: pass,
-        });
-      } catch (thrown) {
-        rpcResult = { data: null, error: thrown };
-      }
-      const { data, error } = rpcResult || {};
-      // Surface the exact failure so we can see what's wrong rather
-      // than masking everything as "Invalid email or password."
-      if (error) {
-        // eslint-disable-next-line no-console
-        console.error('[login] RPC error:', error);
-      } else {
-        // eslint-disable-next-line no-console
-        console.log('[login] RPC data:', data);
-      }
-      const user = !error && Array.isArray(data) && data.length ? data[0] : null;
+      // Sign in against Supabase Auth. The client is configured with
+      // persistSession + autoRefreshToken (src/lib/supabase.js), so every
+      // subsequent PostgREST / Storage / Realtime request runs under the
+      // returned JWT — not the anon key. Row-level security policies see
+      // auth.uid() = the signed-in user.
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: pass,
+      });
 
-      // Local-seed fallback removed. Previously src/data/users.js shipped
-      // plaintext credentials in the JS bundle for offline / dev
-      // convenience; anyone who viewed the bundle could log in as any
-      // seeded user. Now the RPC is the ONLY source of truth. If the
-      // RPC is unreachable, the app can't authenticate — but the app
-      // can't do anything useful in that state anyway.
-      if (!user) {
-        // Record the failed attempt against the submitted email so an
-        // examiner can see repeated failed logins on an account (a
-        // brute-force signal). We deliberately do NOT record the
-        // password itself in details.
+      if (authError || !authData?.user) {
+        // Record failed attempt against the submitted email (audit
+        // signal — repeated failed logins on the same account is a
+        // brute-force hint). Password is intentionally NOT logged.
         audit(ACTIONS.AUTH_LOGIN_FAILED, 'user', null, { attempted_email: email.trim() }, {
           actorId: null, actorEmail: email.trim(),
         });
-        if (error) {
-          const msg = error.message || error.toString();
-          const code = error.code || error.hint || '';
-          setErr(`Login failed: ${msg}${code ? ` [${code}]` : ''}`);
-        } else {
-          setErr('Invalid email or password');
-        }
+        // Supabase returns a generic "Invalid login credentials" on
+        // both bad email and bad password — surface it verbatim so it's
+        // predictable, but include the raw message for diagnostics.
+        setErr(authError?.message || 'Invalid email or password');
         return;
       }
+
+      // The Supabase Auth user gives us an email + auth.uid; we still
+      // need the public.users profile row for name / role / the numeric
+      // id the rest of the app uses in audit + views. If the profile
+      // row exists (matched by email), merge; otherwise fall back to
+      // a minimal profile with role=null so the hub still renders but
+      // role-gated views (Income / Setup / Net Income) stay locked.
+      const profile = await loadProfileByEmail(authData.user.email || email.trim());
+      const mergedUser = profile
+        ? { ...profile, email: profile.email || authData.user.email }
+        : { id: authData.user.id, name: authData.user.email, email: authData.user.email, role: null };
 
       if (remember) {
         localStorage.setItem(REMEMBER_KEY, email.trim());
       } else {
         localStorage.removeItem(REMEMBER_KEY);
       }
-      setCurrentUser(user);
-      audit(ACTIONS.AUTH_LOGIN_SUCCESS, 'user', user.id, null, {
-        actorId: user.id, actorEmail: user.email,
+      setCurrentUser(mergedUser);
+      audit(ACTIONS.AUTH_LOGIN_SUCCESS, 'user', mergedUser.id, null, {
+        actorId: mergedUser.id, actorEmail: mergedUser.email,
       });
-      onSuccess?.(user);
+      onSuccess?.(mergedUser);
     } catch (thrown) {
       // eslint-disable-next-line no-console
       console.error('[login] unexpected error:', thrown);
@@ -114,19 +100,19 @@ export default function Login({ onSuccess }) {
     if (!target) { setForgotMsg('Enter your email first, then click Forgot password.'); return; }
     setForgotSending(true);
     try {
-      const res = await fetch('/.netlify/functions/request-password-reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: target }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (res.ok && json.ok) {
-        setForgotMsg('Request sent — an admin will reset your password and follow up by email.');
+      // Supabase Auth sends the reset email itself using the SMTP config
+      // set on the project (Auth → Email templates → Password Recovery).
+      // The redirectTo URL lands them on /set-password with a session in
+      // the URL hash; the SetPassword page finalizes it via updateUser().
+      const redirectTo = `${window.location.origin}/set-password`;
+      const { error } = await supabase.auth.resetPasswordForEmail(target, { redirectTo });
+      if (error) {
+        setForgotMsg(error.message || 'Could not send reset email. Contact an admin.');
       } else {
-        setForgotMsg(json.reason || 'Could not send request. Contact an admin directly.');
+        setForgotMsg('Check your email for a reset link. It expires shortly, so complete the reset soon.');
       }
-    } catch {
-      setForgotMsg('Could not send request. Contact an admin directly.');
+    } catch (thrown) {
+      setForgotMsg(thrown?.message || 'Could not send reset email. Contact an admin.');
     } finally {
       setForgotSending(false);
     }
@@ -205,7 +191,7 @@ export default function Login({ onSuccess }) {
           <div style={{ marginTop: 16, padding: 14, background: '#fafafa', border: '1px solid #e5e5e5', borderRadius: 8, fontSize: 12 }}>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>Reset password</div>
             <div style={{ color: '#555', marginBottom: 10 }}>
-              We'll email an admin to reset the password for <strong>{email || '(enter your email above)'}</strong>.
+              We'll email a password-reset link to <strong>{email || '(enter your email above)'}</strong>. Click the link and follow the instructions to set a new password.
             </div>
             <button
               type="button"
@@ -214,9 +200,9 @@ export default function Login({ onSuccess }) {
               className="login-btn"
               style={{ padding: '8px 14px', fontSize: 12 }}
             >
-              {forgotSending ? 'Sending…' : 'Send reset request'}
+              {forgotSending ? 'Sending…' : 'Send reset email'}
             </button>
-            {forgotMsg && <div style={{ marginTop: 10, color: forgotMsg.startsWith('Request sent') ? '#1a6b4a' : '#c62828' }}>{forgotMsg}</div>}
+            {forgotMsg && <div style={{ marginTop: 10, color: forgotMsg.startsWith('Check your email') ? '#1a6b4a' : '#c62828' }}>{forgotMsg}</div>}
           </div>
         )}
       </div>
