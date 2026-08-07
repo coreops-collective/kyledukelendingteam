@@ -555,7 +555,6 @@ export default function Snapshot(){
   }, []);
   return (
     <div>
-      <AnnouncementBanner onStartTour={() => setTourOpen(true)} />
       <div dangerouslySetInnerHTML={{ __html: html }} />
       <MonthlyTargets />
       {tourOpen && <Tour steps={SNAPSHOT_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
