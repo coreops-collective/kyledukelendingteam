@@ -1371,7 +1371,6 @@ export default function LoanManagement() {
 
   return (
     <div>
-      <AbelFundingDateBanner />
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginBottom: 18, padding: '14px 18px', background: '#fff',
