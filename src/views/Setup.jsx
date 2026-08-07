@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { USERS, ROLE_LABELS, sbInsertUser, sbUpdateUser, sbDeleteUser, sbSetUserPassword } from '../data/users.js';
+import { USERS, ROLE_LABELS, sbInsertUser, sbUpdateUser, sbDeleteUser } from '../data/users.js';
 import { getCurrentUser, isAdmin } from '../lib/auth.js';
+import { supabase } from '../lib/supabase.js';
 import EmailDeliverySettings from './EmailDeliverySettings.jsx';
 import NotificationRules from './NotificationRules.jsx';
 import {
@@ -129,8 +130,6 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
   async function save() {
     const u = USERS.find(x => x.id === user.id);
     if (!u) return;
-    // Password changes go through their own bcrypt-hashing RPC. Everything
-    // else goes through update_user_profile / set_user_role.
     if (pass && !canChangePassword) {
       toast({ title: 'Not allowed', msg: "Only a Branch Manager can change a Branch Manager's password" });
       return;
@@ -144,8 +143,49 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
     toast({ title: 'User Saved', msg: `${u.name} updated` });
     sbUpdateUser(u.id, { name: u.name, email: u.email, role: u.role, initials: u.initials, nmls: u.nmls || '' });
     if (pass) {
-      const ok = await sbSetUserPassword(u.id, pass);
-      if (ok) toast({ title: 'Password reset', msg: `${u.name}'s password updated` });
+      // Two password paths post-Supabase-Auth migration:
+      //   - Self-change → supabase.auth.updateUser({password}) writes
+      //     directly to auth.users.encrypted_password. This is what
+      //     Supabase Auth actually checks on signInWithPassword, so
+      //     the new password takes effect immediately.
+      //   - Admin-change-someone-else → the old set_user_password RPC
+      //     only updates public.users.password_hash, which nothing
+      //     reads anymore. Route through a Netlify function that uses
+      //     the service role to hit auth.admin.updateUserById(). For
+      //     now, if the function isn't wired up yet, tell the admin
+      //     to send a reset link via Supabase Auth Users instead of
+      //     silently writing a shadow hash.
+      const isSelfEdit = me?.id === u.id;
+      if (isSelfEdit) {
+        const { error } = await supabase.auth.updateUser({ password: pass });
+        if (error) {
+          toast({ title: 'Password reset failed', msg: error.message || 'Try again from Forgot password?' });
+        } else {
+          toast({ title: 'Password reset', msg: 'Your password has been updated' });
+        }
+      } else {
+        // Admin path. Call the Netlify function that owns the service
+        // role. The function verifies the caller's role server-side.
+        try {
+          const callerEmail = me?.email || '';
+          const res = await fetch('/.netlify/functions/admin-set-user-password', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(callerEmail ? { 'x-kdt-user-email': callerEmail } : {}),
+            },
+            body: JSON.stringify({ target_email: u.email, new_password: pass }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.ok) {
+            toast({ title: 'Password reset', msg: `${u.name}'s password updated` });
+          } else {
+            toast({ title: 'Password reset failed', msg: data.error || `HTTP ${res.status}` });
+          }
+        } catch (err) {
+          toast({ title: 'Password reset failed', msg: err?.message || 'Network error' });
+        }
+      }
     }
   }
 
