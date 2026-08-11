@@ -144,6 +144,36 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Force clipboard copies to be PLAIN TEXT ONLY, without the source
+  // element's background-color / gradient. Every dark-headered surface
+  // in the app (drawer heads, section-headers) uses inline background
+  // gradients, and browsers hand those off to the clipboard as HTML.
+  // Pasting into Gmail / Outlook / Word / Notes then shows a black
+  // rectangle behind the text. Intercept `copy` at the document level
+  // and rewrite the payload to text/plain matching the current
+  // selection. Copies from real inputs and textareas still work — we
+  // only overwrite the HTML flavor, and the text flavor comes from
+  // window.getSelection() which preserves what the user actually saw.
+  useEffect(() => {
+    const onCopy = (e) => {
+      try {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed) return;
+        const text = sel.toString();
+        if (!text) return;
+        e.clipboardData.setData('text/plain', text);
+        // Overwrite the HTML flavor with the same plain text wrapped
+        // in a bare span — most rich-text destinations pick up the
+        // HTML flavor first, and this strips the dark background.
+        e.clipboardData.setData('text/html', text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])));
+        e.preventDefault();
+      } catch { /* fall through to browser default */ }
+    };
+    document.addEventListener('copy', onCopy);
+    return () => document.removeEventListener('copy', onCopy);
   }, []);
 
   // 12h absolute session cap. Check on mount, on window focus / tab
