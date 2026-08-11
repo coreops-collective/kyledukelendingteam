@@ -7,8 +7,14 @@ import { parseLocalDate } from '../lib/clientDates.js';
 import Tour from '../components/Tour.jsx';
 
 export default function RateLocks() {
-  const [, force] = useState(0);
-  const bump = useCallback(() => force((n) => n + 1), []);
+  // tick is bumped on every subscribeLoans event so the memo below
+  // actually recomputes when a loan's lockExp / status / stage changes
+  // in the underlying LOANS store. Previously `[openId]` was the only
+  // memo dep, so subscribe events triggered a re-render but the memo
+  // returned its cached rows and the tab looked stale (Hightower
+  // Clements symptom).
+  const [tick, setTick] = useState(0);
+  const bump = useCallback(() => setTick((n) => n + 1), []);
   const [openId, setOpenId] = useState(null);
   const [tourOpen, setTourOpen] = useState(false);
 
@@ -46,12 +52,33 @@ export default function RateLocks() {
 
   const withDays = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    return LOANS
-      .filter((l) => !l.archived && l.status !== 'Adversed' && l.lockExp && l.lockExp !== 'Funded' && l.stage !== 'funded' && parseLocalDate(l.lockExp))
-      .map((l) => ({ ...l, daysLeft: Math.ceil((parseLocalDate(l.lockExp) - today) / 86400000) }))
-      .sort((a, b) => a.daysLeft - b.daysLeft);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openId]);
+    // Guard rails, one per line so the intent is obvious:
+    //  - archived: hidden
+    //  - status Adversed OR Funded, OR stage funded: drop off (Kim's
+    //    request — Rate Locks is an "active locks" view only)
+    //  - lockExp missing or literal string "Funded": nothing to track
+    //  - lockExp doesn't parse to a real date: junk value, skip
+    //  - dedupe by loan.id (fallback to borrower+lockExp key) so
+    //    Farrar-style duplicates never surface twice
+    const seen = new Set();
+    const out = [];
+    for (const l of LOANS) {
+      if (!l) continue;
+      if (l.archived) continue;
+      if (l.status === 'Adversed') continue;
+      if (l.status === 'Funded') continue;
+      if (l.stage === 'funded') continue;
+      if (!l.lockExp || l.lockExp === 'Funded') continue;
+      const lockDate = parseLocalDate(l.lockExp);
+      if (!lockDate) continue;
+      const dedupeKey = l.id || `${(l.borrower || '').trim().toLowerCase()}||${l.lockExp}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      out.push({ ...l, daysLeft: Math.ceil((lockDate - today) / 86400000) });
+    }
+    out.sort((a, b) => a.daysLeft - b.daysLeft);
+    return out;
+  }, [openId, tick]);
 
   const totalLocked = withDays.length;
   const expiring7 = withDays.filter((l) => l.daysLeft <= 7 && l.daysLeft >= 0).length;
