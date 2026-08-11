@@ -97,6 +97,25 @@ export default function AgentForLife() {
     for (const p of agents) {
       const agentName = p.name;
       const agentLoans = LOANS.filter((l) => (l.agent || '').trim() === agentName);
+      // Collect FUNDED closings ascending — the ordered list is what
+      // the First Closing + Third Closing anchors project from. A loan
+      // counts as funded when stage === 'funded' OR status === 'Funded'
+      // (matches how the rest of the app decides).
+      const fundedCloseDates = [];
+      for (const l of agentLoans) {
+        if (!l.closeDate) continue;
+        const stage = (l.stage || '').toLowerCase();
+        const status = (l.status || '').toLowerCase();
+        if (stage !== 'funded' && status !== 'funded') continue;
+        const d = parseLocalDate(l.closeDate);
+        if (d) fundedCloseDates.push(d);
+      }
+      fundedCloseDates.sort((a, b) => a - b);
+      const firstClosingDate = fundedCloseDates[0] || null;
+      const thirdClosingDate = fundedCloseDates[2] || null;
+      // "Last Deal" stays the LATEST closeDate across ALL loans (funded
+      // or not) — keeps existing "N days after Last Deal" workflows
+      // pointing at the most recent activity.
       let lastDealDate = null;
       for (const l of agentLoans) {
         if (!l.closeDate) continue;
@@ -110,6 +129,13 @@ export default function AgentForLife() {
       // dark silently.
       const anchors = new Map();
       if (lastDealDate) anchors.set('last deal', lastDealDate);
+      if (firstClosingDate) anchors.set('first closing', firstClosingDate);
+      if (thirdClosingDate) anchors.set('third closing', thirdClosingDate);
+      // Fields on the Partner record itself (set from the Partners
+      // drawer: Birthday, Anniversary) are first-class anchors so a
+      // workflow task with trigger label "Birthday" pulls straight from
+      // partner.birthday without needing a matching client_dates row.
+      // Legacy p.bday alias handled for older data.
       const bdayRaw = p.birthday || p.bday;
       if (bdayRaw) {
         const d = parseLocalDate(bdayRaw);
@@ -124,7 +150,12 @@ export default function AgentForLife() {
         const d = parseLocalDate(row.date_value);
         if (d) anchors.set(row.date_label.toLowerCase(), d);
       });
-      const emitted = generateTasksForClient(agentName, anchors, { category: 'Agent for Life' });
+      // Pass the agent record so is_vip / has_mailing_address conditions
+      // on Agent-for-Life workflow tasks can gate correctly.
+      const emitted = generateTasksForClient(agentName, anchors, {
+        category: 'Agent for Life',
+        agent: p,
+      });
       emitted.forEach((it) => items.push({ ...it, agent: p }));
     }
     items.sort((a, b) => a.due_date - b.due_date);
