@@ -109,18 +109,27 @@ export async function sbUpdateUser(id, patch) {
     // Split off role — that goes through its own RPC so role changes are
     // isolatable in a future audit log.
     const wantsRole = patch.role !== undefined && patch.role !== null;
+    // Empty string → null before hitting the RPC. Team drawer inputs
+    // hydrate from `target.field || ''`, so any date field that hasn't
+    // been set yet arrives as ''. Postgres then refuses to cast '' to
+    // date and the whole update errors — that's why Abel's birthday
+    // silently reverted every save. `??` only replaces undefined/null,
+    // so we had to add an explicit empty-to-null step here. RPC uses
+    // coalesce() so null-valued fields correctly keep their existing
+    // value; sent non-null values overwrite as expected.
+    const emptyToNull = (v) => (v === '' || v === undefined ? null : v);
     const profileArgs = {
       p_target_id: id,
-      p_name: patch.name ?? null,
-      p_email: patch.email ?? null,
-      p_initials: patch.initials ?? null,
-      p_nmls: patch.nmls ?? null,
-      p_phone: patch.phone ?? null,
-      p_birthday: patch.birthday ?? null,
-      p_spouse_name: patch.spouse_name ?? null,
-      p_spouse_birthday: patch.spouse_birthday ?? null,
-      p_marriage_anniversary: patch.marriage_anniversary ?? null,
-      p_work_anniversary: patch.work_anniversary ?? null,
+      p_name: emptyToNull(patch.name),
+      p_email: emptyToNull(patch.email),
+      p_initials: emptyToNull(patch.initials),
+      p_nmls: emptyToNull(patch.nmls),
+      p_phone: emptyToNull(patch.phone),
+      p_birthday: emptyToNull(patch.birthday),
+      p_spouse_name: emptyToNull(patch.spouse_name),
+      p_spouse_birthday: emptyToNull(patch.spouse_birthday),
+      p_marriage_anniversary: emptyToNull(patch.marriage_anniversary),
+      p_work_anniversary: emptyToNull(patch.work_anniversary),
     };
     const hasProfile = Object.entries(profileArgs).some(([k, v]) => k !== 'p_target_id' && v !== null);
     if (hasProfile) {
