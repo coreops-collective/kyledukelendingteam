@@ -13,6 +13,7 @@ export const USERS = [];
 export const ROLE_LABELS = {
   branch_manager: 'Branch Manager',
   admin: 'Admin',
+  loan_officer_assistant: 'LOA',
   loan_officer: 'Loan Officer',
 };
 

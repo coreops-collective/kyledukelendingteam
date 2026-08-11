@@ -16,13 +16,17 @@ function roleOptions(me, currentRole) {
       <>
         <option value="branch_manager">Branch Manager</option>
         <option value="admin">Admin</option>
+        <option value="loan_officer_assistant">LOA</option>
         <option value="loan_officer">Loan Officer</option>
       </>
     );
   }
+  // Admins (and LOAs — same permission tier) can create other admins,
+  // LOAs, and LOs. Only BMs can create other BMs.
   return (
     <>
       <option value="admin">Admin</option>
+      <option value="loan_officer_assistant">LOA</option>
       <option value="loan_officer">Loan Officer</option>
     </>
   );
@@ -31,6 +35,7 @@ function roleOptions(me, currentRole) {
 function rolePillStyle(role) {
   if (role === 'branch_manager') return { background: '#fff1f3', color: '#c8102e' };
   if (role === 'admin') return { background: '#e3f2fd', color: '#1976d2' };
+  if (role === 'loan_officer_assistant') return { background: '#f3e5f5', color: '#7b1fa2' };
   return { background: '#f4f4f6', color: '#555' };
 }
 

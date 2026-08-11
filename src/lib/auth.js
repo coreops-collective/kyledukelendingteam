@@ -62,7 +62,11 @@ export function isBranchManager() {
 
 export function isAdmin() {
   const u = getCurrentUser();
-  return !!(u && (u.role === 'branch_manager' || u.role === 'admin'));
+  // LOA (loan_officer_assistant) intentionally has admin-tier
+  // permissions — it's a title-only distinction from Admin. Kim
+  // asked to add LOA as a role but keep Abel's existing permissions
+  // exactly. Anything gated by isAdmin() stays available to LOA.
+  return !!(u && (u.role === 'branch_manager' || u.role === 'admin' || u.role === 'loan_officer_assistant'));
 }
 
 // Called from App.jsx on mount + on window focus + on a periodic timer.
