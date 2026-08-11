@@ -273,7 +273,14 @@ export default function Workflows() {
   // silently wouldn't fire.
   const catalogLabels = getKeyDateTypeLabels();
   const builtinLabels = LOAN_DATE_ANCHORS.map(([label]) => label);
-  const agentLabels = category === 'Agent for Life' ? ['Last Deal'] : [];
+  // Agent-for-Life-only anchors — AgentForLifeView computes First
+  // Closing (earliest funded closeDate) and Third Closing (3rd
+  // earliest) per agent from LOANS, so the workflow editor should
+  // offer them in the trigger dropdown when the active category is
+  // Agent for Life.
+  const agentLabels = category === 'Agent for Life'
+    ? ['First Closing', 'Third Closing', 'Last Deal']
+    : [];
   const seenTL = new Set();
   const triggerLabels = [...agentLabels, ...builtinLabels, ...catalogLabels].filter((l) => {
     const k = l.toLowerCase();

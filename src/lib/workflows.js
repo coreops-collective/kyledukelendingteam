@@ -399,10 +399,14 @@ export async function unmarkTaskCompleted(taskId, clientName, dueDate, loanId) {
 // where the intake form's answers land (isLocked, orderAppraisalNow,
 // hasCoBorrower, etc.) alongside the existing loan-level fields.
 export const CONDITION_FIELDS = [
-  { value: 'review_left',        label: 'Review left',              type: 'bool', source: 'profile' },
-  { value: 'isLocked',           label: 'Rate is locked (intake)',  type: 'bool', source: 'loan' },
-  { value: 'orderAppraisalNow',  label: 'Order appraisal right away (intake)', type: 'bool', source: 'loan' },
-  { value: 'hasCoBorrower',      label: 'Has co-borrower (intake)', type: 'bool', source: 'loan' },
+  { value: 'review_left',          label: 'Review left',                          type: 'bool', source: 'profile' },
+  { value: 'isLocked',             label: 'Rate is locked (intake)',              type: 'bool', source: 'loan' },
+  { value: 'orderAppraisalNow',    label: 'Order appraisal right away (intake)',  type: 'bool', source: 'loan' },
+  { value: 'hasCoBorrower',        label: 'Has co-borrower (intake)',             type: 'bool', source: 'loan' },
+  // Agent-side conditions — used by Agent for Life workflows. Read from
+  // the partner record passed alongside the generator call.
+  { value: 'is_vip',               label: 'Agent is VIP',                          type: 'bool', source: 'agent' },
+  { value: 'has_mailing_address',  label: 'Agent has mailing address on file',    type: 'bool', source: 'agent' },
 ];
 
 export const CONDITION_OPS = {
@@ -412,20 +416,37 @@ export const CONDITION_OPS = {
   ],
 };
 
-// True when a task's condition (if any) matches the client's profile
-// AND / OR the loan record. Tasks with no condition_field always match.
-// The condition picker's source flag decides which side to read:
+// True when a task's condition (if any) matches the client's profile,
+// the loan record, or the agent partner record. Tasks with no
+// condition_field always match. The condition picker's source flag
+// decides which side to read:
 //   source='profile' → CFL profile row
 //   source='loan'    → the LOANS record (intake answers land here)
-function matchesCondition(task, profile, loan) {
+//   source='agent'   → the PARTNERS record (Agent for Life workflows;
+//                      is_vip and has_mailing_address use this)
+function matchesCondition(task, profile, loan, agent) {
   const field = task.condition_field;
   const op = task.condition_op;
   if (!field || field === 'none' || !op) return true;
   const def = CONDITION_FIELDS.find((f) => f.value === field);
   const source = def?.source || 'profile';
-  const raw = source === 'loan'
-    ? (loan ? loan[field] : null)
-    : (profile ? profile[field] : null);
+  // Special-case the agent-side derived fields: is_vip is a real
+  // partner column (agent.vip), has_mailing_address is derived from
+  // whether agent.mailing_address / agent.addr is set.
+  let raw;
+  if (source === 'agent') {
+    if (!agent) raw = null;
+    else if (field === 'is_vip') raw = !!agent.vip;
+    else if (field === 'has_mailing_address') {
+      const addr = agent.mailing_address || agent.addr || '';
+      raw = !!(addr && String(addr).trim());
+    }
+    else raw = agent[field];
+  } else if (source === 'loan') {
+    raw = loan ? loan[field] : null;
+  } else {
+    raw = profile ? profile[field] : null;
+  }
   switch (op) {
     case 'is_true': return raw === true;
     case 'is_false': return !raw;
@@ -598,6 +619,10 @@ export function generateTasksForClient(clientName, anchorDates, opts = {}) {
   // `applies_to` setting to drop "one-per-deal" tasks for the second
   // borrower.
   const isCoBorrower = !!opts.isCoBorrower;
+  // Agent partner record for Agent-for-Life category — enables agent-
+  // sourced conditions (is_vip, has_mailing_address). CFL callers omit
+  // this and it just stays null.
+  const agent = opts.agent || null;
   for (const wf of WORKFLOWS) {
     if (wf.active === false) continue;
     if (categoryFilter && wf.category !== categoryFilter) continue;
@@ -608,7 +633,7 @@ export function generateTasksForClient(clientName, anchorDates, opts = {}) {
       // 'each' or null (legacy default) fires for everyone, which is
       // the right shape for birthdays and personal follow-ups.
       if (t.applies_to === 'primary' && isCoBorrower) continue;
-      if (!matchesCondition(t, profile)) continue;
+      if (!matchesCondition(t, profile, null, agent)) continue;
       // Status-triggered tasks are handled by a separate generator
       // pass (generateStatusTasks). Skip here so we don't double-fire.
       if (t.trigger_kind === 'status') continue;
