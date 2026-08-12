@@ -919,7 +919,12 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                     <EditInput type="date" value={l.fundingDate} onChange={(v) => onEdit(l.id, 'fundingDate', v)} />
                   </td>
                   <td>
-                    <EditSelect value={l.status || ''} options={STATUSES.filter(s => s !== 'All')} onChange={(v) => onEditStatus(l.id, v)} />
+                    {/* Fall back to the stage-derived status when the
+                        loan record has no `status` string on it (older
+                        loans stored only the stage). Prevents the
+                        dropdown from silently defaulting to the first
+                        option ("New Contract") for every legacy loan. */}
+                    <EditSelect value={statusOf(l)} options={STATUSES.filter(s => s !== 'All')} onChange={(v) => onEditStatus(l.id, v)} />
                   </td>
                   <td
                     onClick={(e) => { e.stopPropagation(); onOpenNotes(l.id); }}
