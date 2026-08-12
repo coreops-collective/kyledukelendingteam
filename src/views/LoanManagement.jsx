@@ -502,11 +502,31 @@ const cellInputStyle = {
   boxSizing: 'border-box',
 };
 
+// Legacy loans store dates as US "M/D/YYYY"; newer loans store ISO
+// "YYYY-MM-DD". <input type="date"> silently blanks anything that
+// isn't ISO. Normalize here so both formats display correctly. Doesn't
+// touch DB — the value that lands via onBlur is already ISO when the
+// user picks from the date picker, so any subsequent save converges
+// the row to ISO naturally.
+function toIsoDateForInput(raw) {
+  if (raw == null || raw === '') return '';
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // already ISO
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const mm = m[1].padStart(2, '0');
+    const dd = m[2].padStart(2, '0');
+    return `${m[3]}-${mm}-${dd}`;
+  }
+  return s;
+}
+
 function EditInput({ value, onChange, type = 'text', ...rest }) {
+  const initial = type === 'date' ? toIsoDateForInput(value) : (value ?? '');
   return (
     <input
       type={type}
-      defaultValue={value ?? ''}
+      defaultValue={initial}
       onBlur={(e) => onChange(type === 'number' ? (e.target.value === '' ? null : parseFloat(e.target.value)) : e.target.value)}
       onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
       style={cellInputStyle}
