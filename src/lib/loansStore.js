@@ -25,13 +25,20 @@ export async function loadLoansFromSupabase() {
       console.warn('[loans] load failed, using static seed:', error.message);
       return { seeded: false };
     }
+    // Auto-seed removed on 2026-08-12 after a race between Kim's login
+    // and the initial fetch bulk-overwrote 24 loans with the src/data/
+    // loans.js seed values, rewinding stages that had legitimately
+    // advanced. The DB is now the source of truth — if the fetch
+    // returns empty (from a real empty DB, an RLS filter, or a
+    // transient auth race) we DO NOT write anything back. That way a
+    // signed-in user can never accidentally clobber production data
+    // just by opening the app. Fresh installs seed by running the
+    // one-shot script in supabase/seeds if we ever need to bootstrap
+    // a blank project again.
     if (!data || data.length === 0) {
-      console.log('[loans] table empty — seeding from static data');
-      await supabase.from('loans').upsert(
-        LOANS.map((l) => ({ id: l.id, data: l })),
-        { onConflict: 'id' }
-      );
-      return { seeded: true };
+      console.warn('[loans] fetch returned 0 rows — leaving LOANS empty; NOT auto-seeding');
+      LOANS.length = 0;
+      return { seeded: false };
     }
     LOANS.length = 0;
     for (const row of data) {
