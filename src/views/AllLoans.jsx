@@ -12,6 +12,7 @@ import {
   loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
 } from '../lib/clientProfiles.js';
 import Tour from '../components/Tour.jsx';
+import CflStatusRow from '../components/CflStatusRow.jsx';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -55,6 +56,10 @@ export default function AllLoans() {
     {
       title: 'Click a client for the drawer',
       body: 'The drawer shows every field on the past client + client dates (birthday, home anniversary, wedding anniversary) + a review section for tracking Google / Zillow / Facebook reviews.\n\nIdentity edits (spelling, phone, email) persist through client_profiles so the corrections stick even if the seed file changes.',
+    },
+    {
+      title: 'CFL status: Do Not Contact / Archive',
+      body: 'The three pills at the top of the drawer (Active / Do Not Contact / Archived) are the same CFL status shown on the Client for Life client card — flip it here and it syncs there. Anything other than Active removes the client from the CFL follow-up board immediately while leaving their record and stats intact.\n\nOptional reason ("moved out of state", "passed away", "requested no contact") is saved with the status.',
     },
   ];
   // Load the client_dates store (used for client birthdays inside the
@@ -839,6 +844,15 @@ function PastClientDrawer({ client, refiRate, onClose }) {
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{c.property || ''}</div>
         </div>
         <div className="drawer-body">
+          {/* CFL status — same field the Client for Life card writes
+              to, so setting Do Not Contact / Archive here removes the
+              client from the follow-up board immediately and shows the
+              same state next time you open their CFL card. */}
+          <CflStatusRow
+            profile={profile}
+            clientName={c.name}
+            onChanged={() => force((n) => n + 1)}
+          />
           {/* Read-only loan-financial rows. Edit these in Loan
               Management, not here. */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
