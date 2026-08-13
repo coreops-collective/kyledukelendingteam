@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import { getCurrentUser } from '../lib/auth.js';
 import { LOANS } from '../data/loans.js';
@@ -329,7 +329,12 @@ export default function AllLoans() {
       )}
 
       {openClient && (
-        <PastClientDrawer client={openClient} refiRate={refiMode ? parseFloat(todaysRate) : null} onClose={() => setOpenClient(null)} />
+        <PastClientDrawer
+          key={openClient.name}
+          client={openClient}
+          refiRate={refiMode ? parseFloat(todaysRate) : null}
+          onClose={() => setOpenClient(null)}
+        />
       )}
       {tourOpen && <Tour steps={ALL_LOANS_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
@@ -693,11 +698,22 @@ function PastClientDrawer({ client, refiRate, onClose }) {
   const isLive = c._source === 'loans';
   const [, force] = useState(0);
   const [draft, setDraft] = useState('');
+  // Freeze the profile key at mount time. Legacy records use the
+  // client's name as their client_profiles primary key, so if the user
+  // edits the name via set('name', ...) we must NOT re-derive the key
+  // from the mutated c.name — that would orphan the write to a new
+  // profile row keyed by the new name, leaving corrected_phone /
+  // corrected_email / etc. under the old key (which the outside card
+  // still reads from PAST_CLIENTS.name). The key stays stable for the
+  // lifetime of this drawer; the parent forces a remount by keying the
+  // element on openClient.name.
+  const profileKeyRef = useRef(c.name);
+  const profileKey = profileKeyRef.current;
   // Hydrate the drawer from client_profiles so edits made previously
   // survive refresh. Follow-Up fields (last_contact, note_entries) have
   // their own columns. Everything else lives in past_client_overrides
   // (jsonb) so we don't need a column per field.
-  const profile = getProfile(c.name) || {};
+  const profile = getProfile(profileKey) || {};
   if (profile.last_contact && !c.lastContact) c.lastContact = profile.last_contact;
   if (Array.isArray(profile.note_entries) && profile.note_entries.length && (!c.noteEntries || c.noteEntries.length === 0)) {
     c.noteEntries = profile.note_entries;
@@ -745,13 +761,13 @@ function PastClientDrawer({ client, refiRate, onClose }) {
         markLoansDirty(loan);
       }
     } else if (key === 'lastContact') {
-      upsertClientProfile(c.name, { last_contact: value || null });
+      upsertClientProfile(profileKey, { last_contact: value || null });
     } else if (LEGACY_CORRECTED[key]) {
       // Corrected column — same field the outside cards read.
-      upsertClientProfile(c.name, { [LEGACY_CORRECTED[key]]: value || null });
+      upsertClientProfile(profileKey, { [LEGACY_CORRECTED[key]]: value || null });
     } else {
       const nextOverrides = { ...overrides, [key]: value === '' ? null : value };
-      upsertClientProfile(c.name, { past_client_overrides: nextOverrides });
+      upsertClientProfile(profileKey, { past_client_overrides: nextOverrides });
     }
     force((n) => n + 1);
   };
@@ -771,7 +787,7 @@ function PastClientDrawer({ client, refiRate, onClose }) {
     setDraft('');
     force((n) => n + 1);
     // Persist to client_profiles so the note survives refresh.
-    upsertClientProfile(c.name, { note_entries: nextEntries });
+    upsertClientProfile(profileKey, { note_entries: nextEntries });
   };
   const monthlyPI = (principal, ratePct) => {
     if (!principal || !ratePct) return 0;
@@ -850,7 +866,7 @@ function PastClientDrawer({ client, refiRate, onClose }) {
               same state next time you open their CFL card. */}
           <CflStatusRow
             profile={profile}
-            clientName={c.name}
+            clientName={profileKey}
             onChanged={() => force((n) => n + 1)}
           />
           {/* Read-only loan-financial rows. Edit these in Loan
@@ -885,8 +901,8 @@ function PastClientDrawer({ client, refiRate, onClose }) {
             </div>
           </div>
 
-          <BirthdayField clientName={c.name} />
-          <ReviewField clientName={c.name} />
+          <BirthdayField clientName={profileKey} />
+          <ReviewField clientName={profileKey} />
           <CoBorrowerEditor client={c} onChange={() => force((n) => n + 1)} />
 
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eee' }}>
