@@ -20,6 +20,7 @@ import {
 } from '../lib/workflows.js';
 import {
   loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
+  getReviewSources, buildReviewSourcesPatch,
 } from '../lib/clientProfiles.js';
 import CflStatusRow from '../components/CflStatusRow.jsx';
 import {
@@ -78,11 +79,6 @@ export default function CFL() {
       target: '[data-tour="cfl-toolbar"]',
       title: 'Search + filters',
       body: 'Filter by role (LO / LOA / Admin / Automated), status (Open / Done), workflow, and free-text search across borrower + task title.\n\nLayer as many filters as you need — "just Kyle\'s LO tasks for the Birthday workflow due this week" is one dropdown per constraint. Reset clears everything at once.',
-    },
-    {
-      target: '[data-tour="cfl-birthdays"]',
-      title: 'Birthdays this month',
-      body: 'The Birthdays panel at the top shows every past client whose birthday falls in the current month — the single highest-value CFL touchpoint.\n\nComes straight from client_dates. Edit or delete via the client card. Add a new birthday via the past-client drawer or the Add a Date form.',
     },
     {
       target: '[data-tour="cfl-buckets"]',
@@ -280,28 +276,6 @@ export default function CFL() {
     else buckets[4].items.push(it);
   });
 
-  // Birthdays this month — separate from the task list since the user
-  // specifically asked for an at-a-glance panel. Past-month birthdays
-  // for the current calendar month are filtered out (no "Jan 3" panel
-  // entry on Jan 20). Days-away is always >= 0 because we project to
-  // this year first and skip anything already passed.
-  const birthdaysThisMonth = useMemo(() => {
-    const month = today.getMonth();
-    const out = [];
-    getAllDates().forEach((row) => {
-      if (!row.date_value) return;
-      if (!/birthday/i.test(row.date_label)) return;
-      const d = parseLocalDate(row.date_value);
-      if (!d) return;
-      if (d.getMonth() !== month) return;
-      const next = new Date(today.getFullYear(), d.getMonth(), d.getDate());
-      const daysAway = Math.round((next - today) / DAY);
-      if (daysAway < 0) return; // already happened this month
-      out.push({ name: row.client_name, label: row.date_label, raw: row.date_value, monthDay: fmtMonthDay(d), daysAway });
-    });
-    return out.sort((a, b) => a.daysAway - b.daysAway);
-  }, [dataVersion]);
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, padding: '14px 18px', background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', flexWrap: 'wrap', gap: 10 }}>
@@ -316,10 +290,6 @@ export default function CFL() {
         <div style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>
           Workflows &amp; key date types are managed on the Workflows &amp; SOPs tab.
         </div>
-      </div>
-
-      <div data-tour="cfl-birthdays">
-        <BirthdaysPanel rows={birthdaysThisMonth} onOpenDates={null} onOpenClient={setOpenClient} />
       </div>
 
       <div data-tour="cfl-toolbar" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
@@ -392,69 +362,6 @@ function FilterChip({ label, value, options, onChange }) {
         style={{ background: 'transparent', color: '#fff', border: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
         {options.map((o) => <option key={o} value={o} style={{ color: '#000' }}>{o}</option>)}
       </select>
-    </div>
-  );
-}
-
-function BirthdaysPanel({ rows, onOpenDates, onOpenClient }) {
-  const [open, setOpen] = useState(() => {
-    try { return localStorage.getItem('kdt-cfl-birthdays-open') !== '0'; }
-    catch { return true; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem('kdt-cfl-birthdays-open', open ? '1' : '0'); } catch {}
-  }, [open]);
-  if (rows.length === 0) return null;
-  return (
-    <div className="section-card" style={{ marginBottom: 16 }}>
-      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10, background: 'transparent',
-            border: 0, padding: 0, cursor: 'pointer', textAlign: 'left', flex: 1,
-          }}
-        >
-          <span
-            aria-hidden
-            style={{
-              display: 'inline-block',
-              transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
-              transition: 'transform .15s ease',
-              color: '#fff', fontSize: 14, lineHeight: 1, width: 14,
-            }}
-          >▶</span>
-          <div>
-            <div className="section-title">Birthdays This Month</div>
-            <div className="section-sub">{rows.length} client{rows.length === 1 ? '' : 's'} · click a name to open their card</div>
-          </div>
-        </button>
-        {onOpenDates && (
-          <button className="form-btn" type="button" onClick={onOpenDates}>+ Add</button>
-        )}
-      </div>
-      {open && (
-        <div className="section-body" style={{ padding: 0 }}>
-          {rows.map((r) => (
-            <div key={`${r.name}-${r.label}`} style={{
-              display: 'grid', gridTemplateColumns: '1fr 140px 100px', gap: 10,
-              padding: '10px 18px', borderTop: '1px solid #f1f1f1', alignItems: 'center',
-              background: r.daysAway <= 3 ? '#fff8e1' : '#fff',
-            }}>
-              <div
-                onClick={() => onOpenClient && onOpenClient(r.name)}
-                style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--brand-red)' }}
-              >{r.name}</div>
-              <div style={{ color: '#555' }}>{r.monthDay}</div>
-              <div style={{ textAlign: 'right', fontSize: 11, fontWeight: r.daysAway <= 3 ? 700 : 400, color: r.daysAway <= 3 ? '#c62828' : '#888' }}>
-                {r.daysAway === 0 ? 'TODAY' : `${r.daysAway}d away`}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -917,8 +824,15 @@ function ClientCardDrawer({ clientName, onClose }) {
   const profile = getProfile(clientName) || {};
 
   const [reviewLeft, setReviewLeft] = useState(!!profile.review_left);
-  const [reviewSource, setReviewSource] = useState(profile.review_source || '');
+  const [reviewSources, setReviewSources] = useState(getReviewSources(profile));
   const [reviewDate, setReviewDate] = useState(profile.review_date || '');
+  const toggleReviewSource = (src) => {
+    const next = reviewSources.includes(src)
+      ? reviewSources.filter((s) => s !== src)
+      : [...reviewSources, src];
+    setReviewSources(next);
+    persistProfile(buildReviewSourcesPatch(next));
+  };
   const [notes, setNotes] = useState(profile.notes || '');
 
   const persistProfile = async (patch) => {
@@ -995,8 +909,14 @@ function ClientCardDrawer({ clientName, onClose }) {
     allClientDates.forEach((r) => m.set(r.date_label.toLowerCase(), r));
     return m;
   }, [allClientDates]);
+  // Labels Kim asked to remove from the client card entirely (Kim's
+  // email 2026-08-18 item under Client Cards). Data on file is left
+  // in place per rule 1 — this just filters the render so those fields
+  // stop showing. Add another lowercase entry here to hide more.
+  const HIDDEN_DATE_LABELS = new Set(['wedding anniversary', 'spouse birthday']);
   const orphanDates = allClientDates.filter(
     (r) => !types.some((t) => t.label.toLowerCase() === r.date_label.toLowerCase())
+      && !HIDDEN_DATE_LABELS.has((r.date_label || '').toLowerCase())
   );
 
   const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
@@ -1060,13 +980,35 @@ function ClientCardDrawer({ clientName, onClose }) {
                     style={inputStyle} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Where</label>
-                  <select value={reviewSource}
-                    onChange={(e) => { setReviewSource(e.target.value); persistProfile({ review_source: e.target.value }); }}
-                    style={inputStyle}>
-                    <option value="">— Pick —</option>
-                    {REVIEW_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  <label style={labelStyle}>Where (pick as many as apply)</label>
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 2px',
+                  }}>
+                    {REVIEW_SOURCES.map((s) => {
+                      const on = reviewSources.includes(s);
+                      return (
+                        <label
+                          key={s}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '4px 10px', fontSize: 12, fontWeight: 600,
+                            border: `1px solid ${on ? '#2e7d32' : '#d0d0d0'}`,
+                            background: on ? '#e8f5e9' : '#fff',
+                            color: on ? '#1b5e20' : '#555',
+                            borderRadius: 999, cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() => toggleReviewSource(s)}
+                            style={{ width: 14, height: 14, accentColor: '#2e7d32', margin: 0 }}
+                          />
+                          {s}
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
@@ -1098,6 +1040,10 @@ function ClientCardDrawer({ clientName, onClose }) {
                 // Don't render an input for derived labels — those
                 // come from the loan, not from a manual entry.
                 .filter((t) => !['closing', 'closing anniversary'].includes(t.label.toLowerCase()))
+                // Kim asked to remove Wedding Anniversary + Spouse
+                // Birthday from the client card. Key-date-type rows in
+                // the DB are preserved; we just don't render inputs.
+                .filter((t) => !HIDDEN_DATE_LABELS.has(t.label.toLowerCase()))
                 .map((t) => (
                   <ClientDateInput
                     key={t.id}

@@ -10,6 +10,7 @@ import {
 } from '../lib/clientDates.js';
 import {
   loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
+  getReviewSources, buildReviewSourcesPatch,
 } from '../lib/clientProfiles.js';
 import Tour from '../components/Tour.jsx';
 import CflStatusRow from '../components/CflStatusRow.jsx';
@@ -55,7 +56,7 @@ export default function AllLoans() {
     },
     {
       title: 'Click a client for the drawer',
-      body: 'The drawer shows every field on the past client + client dates (birthday, home anniversary, wedding anniversary) + a review section for tracking Google / Zillow / Facebook reviews.\n\nIdentity edits (spelling, phone, email) persist through client_profiles so the corrections stick even if the seed file changes.',
+      body: 'The drawer shows every field on the past client + client dates (birthday, home anniversary) + a review section for tracking Google / Zillow / Facebook / Yelp reviews — pick as many platforms as apply since some clients review on more than one.\n\nIdentity edits (spelling, phone, email) persist through client_profiles so the corrections stick even if the seed file changes.',
     },
     {
       title: 'CFL status: Do Not Contact / Archive',
@@ -389,7 +390,7 @@ function ReviewField({ clientName }) {
   const profile = getProfile(clientName) || {};
   const [reviewLeft, setReviewLeft] = useState(!!profile.review_left);
   const [reviewDate, setReviewDate] = useState(profile.review_date || '');
-  const [reviewSource, setReviewSource] = useState(profile.review_source || '');
+  const [reviewSources, setReviewSources] = useState(getReviewSources(profile));
 
   // If the same client is updated from CFL in another tab, refresh
   // the local state on the next render.
@@ -397,11 +398,18 @@ function ReviewField({ clientName }) {
     const p = getProfile(clientName) || {};
     setReviewLeft(!!p.review_left);
     setReviewDate(p.review_date || '');
-    setReviewSource(p.review_source || '');
+    setReviewSources(getReviewSources(p));
   }, [clientName]);
 
   const persist = async (patch) => {
     await upsertClientProfile(clientName, patch);
+  };
+  const toggleReviewSource = (src) => {
+    const next = reviewSources.includes(src)
+      ? reviewSources.filter((s) => s !== src)
+      : [...reviewSources, src];
+    setReviewSources(next);
+    persist(buildReviewSourcesPatch(next));
   };
 
   const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', background: '#fff' };
@@ -446,15 +454,33 @@ function ReviewField({ clientName }) {
             />
           </div>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>Where</div>
-            <select
-              value={reviewSource}
-              onChange={(e) => { setReviewSource(e.target.value); persist({ review_source: e.target.value }); }}
-              style={inputStyle}
-            >
-              <option value="">— Pick —</option>
-              {REVIEW_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>Where (pick as many as apply)</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 0' }}>
+              {REVIEW_SOURCES.map((s) => {
+                const on = reviewSources.includes(s);
+                return (
+                  <label
+                    key={s}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '4px 10px', fontSize: 12, fontWeight: 600,
+                      border: `1px solid ${on ? '#2e7d32' : '#d0d0d0'}`,
+                      background: on ? '#e8f5e9' : '#fff',
+                      color: on ? '#1b5e20' : '#555',
+                      borderRadius: 999, cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggleReviewSource(s)}
+                      style={{ width: 14, height: 14, accentColor: '#2e7d32', margin: 0 }}
+                    />
+                    {s}
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
