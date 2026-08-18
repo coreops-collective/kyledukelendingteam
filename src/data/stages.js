@@ -6,7 +6,7 @@ export const STAGES = [
   { key: 'disclosed', label: 'Disclosed' },
   { key: 'processing', label: 'Processing' },
   { key: 'uw', label: 'Underwriting' },
-  { key: 'ctcreq', label: 'CTC Required' },
+  { key: 'ctcreq', label: 'CTC Requested' },
   { key: 'ctc', label: 'Clear to Close' },
   { key: 'approved', label: 'Approved' },
   { key: 'funded', label: 'Funded' },
@@ -25,14 +25,19 @@ export const NURTURE_PA_STAGE = { key: 'nurturepa', label: 'Nurture PA' };
 export const STAGE_TO_STATUS = {
   new: 'New Lead', hotpa: 'HOT PA', nurturepa: 'Nurture PA', applied: 'Applied', refiwatch: 'REFI Watch', fresh: 'New Contract',
   disclosed: 'Disclosed', processing: 'Processing', uw: 'Underwriting',
-  ctcreq: 'CTC Required', ctc: 'CTC', approved: 'Approved', funded: 'Funded',
+  ctcreq: 'CTC Requested', ctc: 'CTC', approved: 'Approved', funded: 'Funded',
   cold: 'Archived',
 };
 
+// Both 'CTC Required' (legacy label) and 'CTC Requested' (new label,
+// renamed 2026-08-18 per Kim) resolve to the same ctcreq stage so
+// historical loans persisted under the old string still map correctly
+// without a data migration.
 export const STATUS_TO_STAGE = {
   'New Lead': 'new', 'HOT PA': 'hotpa', 'Nurture PA': 'nurturepa', 'Applied': 'applied', 'REFI Watch': 'refiwatch', 'New Contract': 'fresh',
   'Disclosed': 'disclosed', 'Processing': 'processing', 'Underwriting': 'uw',
-  'CTC Required': 'ctcreq', 'CTC': 'ctc', 'Approved': 'approved', 'Funded': 'funded',
+  'CTC Required': 'ctcreq', 'CTC Requested': 'ctcreq',
+  'CTC': 'ctc', 'Approved': 'approved', 'Funded': 'funded',
   'Archived': 'cold',
   'BTP': 'processing',
 };

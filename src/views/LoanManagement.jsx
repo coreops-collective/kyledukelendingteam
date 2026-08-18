@@ -6,6 +6,7 @@ import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import NewLoanDrawer from '../components/NewLoanDrawer.jsx';
 import { markLoansDirty, saveLoansNow, subscribeLoans } from '../lib/loansStore.js';
+import { activeLosLoans } from '../lib/loanFilters.js';
 import { fireWebhooks } from '../lib/webhooks.js';
 import { audit, ACTIONS } from '../lib/audit.js';
 import { appendNotesHistory, loadNotesHistory } from '../lib/notesHistory.js';
@@ -95,7 +96,7 @@ function statusSlug(s) {
   return (s || '').toLowerCase().replace(/[^a-z]/g, '');
 }
 
-const STATUSES = ['All','New Contract','Disclosed','Processing','Underwriting','CTC Required','CTC','BTP','Approved','Funded','Adversed','Archived'];
+const STATUSES = ['All','New Contract','Disclosed','Processing','Underwriting','CTC Requested','CTC','BTP','Approved','Funded','Adversed','Archived'];
 const LOS_LIST = ['All','Kyle','Missy'];
 const TYPES = ['All','CONV','FHA','VA','Jumbo'];
 const SALE_TYPES = ['All','PURCHASE','REFINANCE'];
@@ -650,7 +651,7 @@ function ColorLegend() {
     { label: 'Disclosed', bg: '#e1bee7', bar: '#7b1fa2' },
     { label: 'Processing', bg: '#ffcdd2', bar: '#c62828' },
     { label: 'Underwriting', bg: '#fff59d', bar: '#f9a825' },
-    { label: 'CTC Required', bg: '#dcedc8', bar: '#558b2f' },
+    { label: 'CTC Requested', bg: '#ffe0b2', bar: '#ef6c00' },
     { label: 'CTC', bg: '#a5d6a7', bar: '#2e7d32' },
     { label: 'BTP', bg: '#bbdefb', bar: '#1976d2' },
     { label: 'Approved', bg: '#dcedc8', bar: '#2e7d32' },
@@ -1153,7 +1154,7 @@ export default function LoanManagement() {
     {
       target: '.income-filters',
       title: 'Filters + search',
-      body: 'Filter by year, month, status, LO, loan type, and sale type. Layer as many as you need to drill into a specific slice — "all of Missy\'s CTC files closing this month," etc.\n\nThe search box on the right matches on borrower name, property address, LO, agent, loan ID, or co-borrower — free-text substring.\n\nReset (dark red chip) blows all filters + search back to All in one click.',
+      body: 'Filter by year, month, status, LO, loan type, and sale type. Layer as many as you need to drill into a specific slice — "all of Kyle\'s CTC Requested files closing this month," etc.\n\nThe search box on the right matches on borrower name, property address, LO, agent, loan ID, or co-borrower. When you type in it the Status filter is bypassed so you\'ll find past closings and funded files without having to switch Status first — Kim\'s "Walker Nichol funded 1/8/2025" case works from the default view.\n\nReset (dark red chip) blows all filters + search back to All in one click.',
     },
     {
       title: 'Save Now + reset columns',
@@ -1201,6 +1202,11 @@ export default function LoanManagement() {
   // property, LO, agent, loan id — case-insensitive substring.
   const [searchQ, setSearchQ] = useState('');
 
+  // Canonical active-in-LOS count that drives the top banner. Always
+  // filter-independent (per Kim) so the number matches Snapshot's
+  // Active Files tile no matter what the user has picked for Status.
+  const activeCount = activeLosLoans(LOANS).length;
+
   // Adversed and Archived loans are kept available so the Status filter
   // can surface them on demand, but hidden by default. Recomputed every
   // render so realtime echoes that swap loan references in LOANS are
@@ -1216,28 +1222,48 @@ export default function LoanManagement() {
     return LOS_STAGES.includes(l.stage) || (l.status || '') === 'Adversed';
   });
 
-  const filtered = losLoans.filter((r) => {
+  // When the user is searching, the base set expands to the whole
+  // LOANS array (minus archived unless they explicitly filter to
+  // Archived) so past closings surface even when Status is set to
+  // something else. Kim's Walker Nichol case: file was Funded 1/8/2025;
+  // she typed "Walker" with Status=Funded but the pre-search losLoans
+  // hadn't rebuilt for that filter yet — search now bypasses the whole
+  // filter chain when a term is typed.
+  const searchQTrim = searchQ.trim();
+  const searchActive = searchQTrim !== '';
+  const baseSet = searchActive
+    ? LOANS.filter((l) => !l.archived || filters.status === 'Archived')
+    : losLoans;
+
+  const filtered = baseSet.filter((r) => {
     const ry = getYearFromDate(r.closeDate);
     const rm = getMonthFromDate(r.closeDate);
-    if ((r.status || '') === 'Adversed' && filters.status !== 'Adversed') return false;
+    // When searching, the Status filter is bypassed so Kim can find
+    // funded / past closings from the default view without first
+    // clicking the Status dropdown. The other filters (year, month,
+    // LO, type, sale) still compose with search so she can narrow
+    // "Walker year=2025" if she wants to.
+    if (!searchActive) {
+      if ((r.status || '') === 'Adversed' && filters.status !== 'Adversed') return false;
+      if (filters.status !== 'All' && filters.status !== 'Archived') {
+        // Funded matches on stage OR status because historical loans
+        // (marked funded via stage) sometimes never had a status field
+        // set. Without this, picking the Funded filter turns up an
+        // empty list even though loans exist.
+        if (filters.status === 'Funded') {
+          if (r.stage !== 'funded' && (r.status || '') !== 'Funded') return false;
+        } else if ((r.status || '') !== filters.status) return false;
+      }
+    }
     if (filters.year !== 'All' && ry !== filters.year) return false;
     if (filters.month !== 'All' && rm !== filters.month) return false;
-    if (filters.status !== 'All' && filters.status !== 'Archived') {
-      // Funded matches on stage OR status because historical loans
-      // (marked funded via stage) sometimes never had a status field
-      // set. Without this, picking the Funded filter turns up an empty
-      // list even though loans exist.
-      if (filters.status === 'Funded') {
-        if (r.stage !== 'funded' && (r.status || '') !== 'Funded') return false;
-      } else if ((r.status || '') !== filters.status) return false;
-    }
     if (filters.lo !== 'All' && r.lo !== filters.lo) return false;
     if (filters.type !== 'All' && r.type !== filters.type) return false;
     if (filters.saleType !== 'All' && r.saleType !== filters.saleType) return false;
     // Free-text search across the fields most useful for pulling up a
     // specific file — borrower name, property, LO, agent, or loan id.
-    const q = searchQ.trim().toLowerCase();
-    if (q) {
+    if (searchActive) {
+      const q = searchQTrim.toLowerCase();
       const hay = [
         r.borrower, r.property, r.lo, r.agent, r.id, r.loa, r.email, r.phone,
         r.coFirst, r.coLast, r.c2first, r.c2last,
@@ -1403,7 +1429,7 @@ export default function LoanManagement() {
       }}>
         <div>
           <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.8px' }}>
-            {losLoans.length} Active Files in LOS
+            {activeCount} Active Files in LOS
           </div>
           <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
             Changes auto-sync with Loan Pipeline

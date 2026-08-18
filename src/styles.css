@@ -319,8 +319,8 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
 .lm-row.processing td:first-child{background:#ffcdd2;border-left:4px solid #c62828}
 .lm-row.uw td,.lm-row.underwriting td{background:#fff9c4}
 .lm-row.uw td:first-child,.lm-row.underwriting td:first-child{background:#fff59d;border-left:4px solid #f9a825}
-.lm-row.ctcreq td{background:#f1f8e9}
-.lm-row.ctcreq td:first-child{background:#dcedc8;border-left:4px solid #558b2f}
+.lm-row.ctcreq td{background:#fff3e0}
+.lm-row.ctcreq td:first-child{background:#ffe0b2;border-left:4px solid #ef6c00}
 .lm-row.ctc td{background:#e8f5e9}
 .lm-row.ctc td:first-child{background:#a5d6a7;border-left:4px solid #2e7d32}
 .lm-row.btp td{background:#e3f2fd}
@@ -667,7 +667,8 @@ body[data-role="loan_officer"] .sidebar-section-label.settings-label{display:non
 .lm-card:hover{box-shadow:var(--shadow-md)}
 .lm-card.approved{border-left-color:#2e7d32}
 .lm-card.ctc{border-left-color:#f5c518}
-.lm-card.ctcrequired{border-left-color:#f57c00}
+.lm-card.ctcrequired{border-left-color:#ef6c00}
+.lm-card.ctcrequested{border-left-color:#ef6c00}
 .lm-card.processing,.lm-card.underwriting{border-left-color:#1976d2}
 .lm-card.disclosed{border-left-color:#7b1fa2}
 .lm-card.btp,.lm-card.adversed{border-left-color:#c62828}
