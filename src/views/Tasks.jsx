@@ -347,7 +347,7 @@ export default function Tasks() {
     { key: 'disclosed', label: 'Disclosed' },
     { key: 'processing', label: 'Processing' },
     { key: 'uw', label: 'Underwriting' },
-    { key: 'ctcreq', label: 'CTC Required' },
+    { key: 'ctcreq', label: 'CTC Requested' },
     { key: 'ctc', label: 'CTC' },
     { key: 'approved', label: 'Approved' },
   ];

@@ -26,6 +26,14 @@ const BRANCH_GROSS_START = parseLocalDate('2025-06-01');
 const BRANCH_GROSS_BUMP = parseLocalDate('2026-04-01');
 const KYLE_OVERRIDE_BPS = 0.1;   // 10 bps → 0.10% (mortgage bps-as-percent)
 
+// Missy stopped generating branch-manager override for Kyle at end of
+// July 2026. For any target month on or after this cutoff, hide the
+// Missy units line, the Branch Mgr Override line, and don't add the
+// override into Kyle's Total Earnings. Historical months (July 2026
+// and earlier) still show the override so past comp stays accurate.
+const MISSY_OVERRIDE_END = new Date(2026, 7, 1); // August 1, 2026
+const overrideAppliesTo = (dt) => dt < MISSY_OVERRIDE_END;
+
 // Default LO gross bps per LO (integer bps: 130 = 1.30% of loan amount).
 // These seed each row's BPS in the Last / This / Next Month sections; every
 // row is editable per-loan, so Kyle can dial an individual deal in without
@@ -309,13 +317,14 @@ function IncomeInner() {
       (a, r) => a + (r.amount || 0) * asFrac(bpsForRow(r, bpsOverrides)),
       0
     );
-    const override = missyVolume * KYLE_OVERRIDE_BPS / 100;
+    const applies = overrideAppliesTo(new Date(yr, mIdx, 1));
+    const override = applies ? missyVolume * KYLE_OVERRIDE_BPS / 100 : 0;
     return {
       volume,
       units: kyle.length,
       loGross,
-      missyVolume,
-      missyUnits: missy.length,
+      missyVolume: applies ? missyVolume : 0,
+      missyUnits: applies ? missy.length : 0,
       override,
       total: loGross + override,
     };
@@ -734,36 +743,38 @@ function KyleTile({ label, dt, s, projected }) {
           borderTop: '1px dashed #e5e5e8',
           paddingTop: 8,
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
+          gridTemplateColumns: overrideAppliesTo(dt) ? '1fr 1fr' : '1fr',
           gap: 8,
         }}
       >
-        <div>
-          <div
-            style={{
-              fontSize: 9,
-              color: '#888',
-              textTransform: 'uppercase',
-              letterSpacing: '.4px',
-              fontWeight: 700,
-            }}
-          >
-            Branch Mgr Override (10 bps)
+        {overrideAppliesTo(dt) && (
+          <div>
+            <div
+              style={{
+                fontSize: 9,
+                color: '#888',
+                textTransform: 'uppercase',
+                letterSpacing: '.4px',
+                fontWeight: 700,
+              }}
+            >
+              Branch Mgr Override (10 bps)
+            </div>
+            <div
+              style={{
+                fontFamily: "'Oswald',sans-serif",
+                fontSize: 14,
+                fontWeight: 700,
+                color: '#1976d2',
+              }}
+            >
+              {fmt$(Math.round(s.override))}
+            </div>
+            <div style={{ fontSize: 9, color: '#aaa', marginTop: 1 }}>
+              {s.missyUnits} Missy unit{s.missyUnits !== 1 ? 's' : ''} · {fmt$M(s.missyVolume)}
+            </div>
           </div>
-          <div
-            style={{
-              fontFamily: "'Oswald',sans-serif",
-              fontSize: 14,
-              fontWeight: 700,
-              color: '#1976d2',
-            }}
-          >
-            {fmt$(Math.round(s.override))}
-          </div>
-          <div style={{ fontSize: 9, color: '#aaa', marginTop: 1 }}>
-            {s.missyUnits} Missy unit{s.missyUnits !== 1 ? 's' : ''} · {fmt$M(s.missyVolume)}
-          </div>
-        </div>
+        )}
         <div style={{ textAlign: 'right' }}>
           <div
             style={{

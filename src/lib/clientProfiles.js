@@ -25,6 +25,35 @@ export async function loadClientProfiles() {
 
 // Upsert by client_name. Uses the unique constraint to avoid needing
 // to look up the existing id first.
+// Columns the app may include in a patch that older schemas don't have
+// yet. If PostgREST reports the column missing (either directly or via
+// the schema cache), we strip the field and retry so the rest of the
+// patch still lands — same graceful-downgrade pattern as workflows.js.
+const OPTIONAL_COLUMNS = ['review_sources'];
+
+function isMissingColumnError(msg, column) {
+  if (!msg) return false;
+  const m = msg.toLowerCase();
+  return (
+    m.includes(`column "${column}"`) ||
+    m.includes(`'${column}' column`) ||
+    (m.includes(column) && m.includes('schema cache')) ||
+    (m.includes(column) && m.includes('does not exist'))
+  );
+}
+
+function stripOptionalFromPatch(patch, errMsg) {
+  const next = { ...patch };
+  let dropped = false;
+  for (const col of OPTIONAL_COLUMNS) {
+    if (col in next && isMissingColumnError(errMsg, col)) {
+      delete next[col];
+      dropped = true;
+    }
+  }
+  return dropped ? next : null;
+}
+
 export async function upsertClientProfile(name, patch) {
   const cleanName = (name || '').trim();
   if (!cleanName) return null;
@@ -37,6 +66,8 @@ export async function upsertClientProfile(name, patch) {
         .eq('id', existing.id)
         .select().single();
       if (error) {
+        const downgraded = stripOptionalFromPatch(patch, error.message);
+        if (downgraded) return upsertClientProfile(name, downgraded);
         console.warn('[clientProfiles] update:', error.message);
         showError(`Couldn't update profile for ${cleanName}: ${error.message}`, {
           retry: () => upsertClientProfile(name, patch),
@@ -52,6 +83,8 @@ export async function upsertClientProfile(name, patch) {
       .insert({ client_name: cleanName, ...patch })
       .select().single();
     if (error) {
+      const downgraded = stripOptionalFromPatch(patch, error.message);
+      if (downgraded) return upsertClientProfile(name, downgraded);
       console.warn('[clientProfiles] insert:', error.message);
       showError(`Couldn't create profile for ${cleanName}: ${error.message}`, {
         retry: () => upsertClientProfile(name, patch),
@@ -71,6 +104,30 @@ export async function upsertClientProfile(name, patch) {
 }
 
 export const REVIEW_SOURCES = ['Google', 'Zillow', 'Facebook', 'Yelp', 'Other'];
+
+// Kim's request: some clients leave reviews on multiple platforms.
+// getReviewSources reads the new array column (review_sources) if
+// populated, otherwise falls back to wrapping the legacy single-string
+// column (review_source) in a one-item array. buildReviewSourcesPatch
+// takes the current selection and returns a patch that writes BOTH
+// columns so legacy readers keep working until every consumer is
+// updated. Empty selection clears both.
+export function getReviewSources(profile) {
+  if (!profile) return [];
+  if (Array.isArray(profile.review_sources) && profile.review_sources.length) {
+    return profile.review_sources.filter((s) => typeof s === 'string' && s);
+  }
+  if (profile.review_source) return [profile.review_source];
+  return [];
+}
+
+export function buildReviewSourcesPatch(selection) {
+  const arr = Array.isArray(selection) ? selection.filter(Boolean) : [];
+  return {
+    review_sources: arr.length ? arr : null,
+    review_source: arr[0] || null,
+  };
+}
 
 // CFL status per client. Determines whether the client appears on the
 // Client for Life follow-up board or is quietly kept off it while

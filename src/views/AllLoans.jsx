@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import { getCurrentUser } from '../lib/auth.js';
 import { LOANS } from '../data/loans.js';
@@ -10,8 +10,10 @@ import {
 } from '../lib/clientDates.js';
 import {
   loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
+  getReviewSources, buildReviewSourcesPatch,
 } from '../lib/clientProfiles.js';
 import Tour from '../components/Tour.jsx';
+import CflStatusRow from '../components/CflStatusRow.jsx';
 
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -54,7 +56,11 @@ export default function AllLoans() {
     },
     {
       title: 'Click a client for the drawer',
-      body: 'The drawer shows every field on the past client + client dates (birthday, home anniversary, wedding anniversary) + a review section for tracking Google / Zillow / Facebook reviews.\n\nIdentity edits (spelling, phone, email) persist through client_profiles so the corrections stick even if the seed file changes.',
+      body: 'The drawer shows every field on the past client + client dates (birthday, home anniversary) + a review section for tracking Google / Zillow / Facebook / Yelp reviews — pick as many platforms as apply since some clients review on more than one.\n\nIdentity edits (spelling, phone, email) persist through client_profiles so the corrections stick even if the seed file changes.',
+    },
+    {
+      title: 'CFL status: Do Not Contact / Archive',
+      body: 'The three pills at the top of the drawer (Active / Do Not Contact / Archived) are the same CFL status shown on the Client for Life client card — flip it here and it syncs there. Anything other than Active removes the client from the CFL follow-up board immediately while leaving their record and stats intact.\n\nOptional reason ("moved out of state", "passed away", "requested no contact") is saved with the status.',
     },
   ];
   // Load the client_dates store (used for client birthdays inside the
@@ -324,7 +330,12 @@ export default function AllLoans() {
       )}
 
       {openClient && (
-        <PastClientDrawer client={openClient} refiRate={refiMode ? parseFloat(todaysRate) : null} onClose={() => setOpenClient(null)} />
+        <PastClientDrawer
+          key={openClient.name}
+          client={openClient}
+          refiRate={refiMode ? parseFloat(todaysRate) : null}
+          onClose={() => setOpenClient(null)}
+        />
       )}
       {tourOpen && <Tour steps={ALL_LOANS_TOUR_STEPS} onClose={() => setTourOpen(false)} />}
     </div>
@@ -379,7 +390,7 @@ function ReviewField({ clientName }) {
   const profile = getProfile(clientName) || {};
   const [reviewLeft, setReviewLeft] = useState(!!profile.review_left);
   const [reviewDate, setReviewDate] = useState(profile.review_date || '');
-  const [reviewSource, setReviewSource] = useState(profile.review_source || '');
+  const [reviewSources, setReviewSources] = useState(getReviewSources(profile));
 
   // If the same client is updated from CFL in another tab, refresh
   // the local state on the next render.
@@ -387,11 +398,18 @@ function ReviewField({ clientName }) {
     const p = getProfile(clientName) || {};
     setReviewLeft(!!p.review_left);
     setReviewDate(p.review_date || '');
-    setReviewSource(p.review_source || '');
+    setReviewSources(getReviewSources(p));
   }, [clientName]);
 
   const persist = async (patch) => {
     await upsertClientProfile(clientName, patch);
+  };
+  const toggleReviewSource = (src) => {
+    const next = reviewSources.includes(src)
+      ? reviewSources.filter((s) => s !== src)
+      : [...reviewSources, src];
+    setReviewSources(next);
+    persist(buildReviewSourcesPatch(next));
   };
 
   const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', background: '#fff' };
@@ -436,15 +454,33 @@ function ReviewField({ clientName }) {
             />
           </div>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>Where</div>
-            <select
-              value={reviewSource}
-              onChange={(e) => { setReviewSource(e.target.value); persist({ review_source: e.target.value }); }}
-              style={inputStyle}
-            >
-              <option value="">— Pick —</option>
-              {REVIEW_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>Where (pick as many as apply)</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 0' }}>
+              {REVIEW_SOURCES.map((s) => {
+                const on = reviewSources.includes(s);
+                return (
+                  <label
+                    key={s}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '4px 10px', fontSize: 12, fontWeight: 600,
+                      border: `1px solid ${on ? '#2e7d32' : '#d0d0d0'}`,
+                      background: on ? '#e8f5e9' : '#fff',
+                      color: on ? '#1b5e20' : '#555',
+                      borderRadius: 999, cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggleReviewSource(s)}
+                      style={{ width: 14, height: 14, accentColor: '#2e7d32', margin: 0 }}
+                    />
+                    {s}
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -688,11 +724,22 @@ function PastClientDrawer({ client, refiRate, onClose }) {
   const isLive = c._source === 'loans';
   const [, force] = useState(0);
   const [draft, setDraft] = useState('');
+  // Freeze the profile key at mount time. Legacy records use the
+  // client's name as their client_profiles primary key, so if the user
+  // edits the name via set('name', ...) we must NOT re-derive the key
+  // from the mutated c.name — that would orphan the write to a new
+  // profile row keyed by the new name, leaving corrected_phone /
+  // corrected_email / etc. under the old key (which the outside card
+  // still reads from PAST_CLIENTS.name). The key stays stable for the
+  // lifetime of this drawer; the parent forces a remount by keying the
+  // element on openClient.name.
+  const profileKeyRef = useRef(c.name);
+  const profileKey = profileKeyRef.current;
   // Hydrate the drawer from client_profiles so edits made previously
   // survive refresh. Follow-Up fields (last_contact, note_entries) have
   // their own columns. Everything else lives in past_client_overrides
   // (jsonb) so we don't need a column per field.
-  const profile = getProfile(c.name) || {};
+  const profile = getProfile(profileKey) || {};
   if (profile.last_contact && !c.lastContact) c.lastContact = profile.last_contact;
   if (Array.isArray(profile.note_entries) && profile.note_entries.length && (!c.noteEntries || c.noteEntries.length === 0)) {
     c.noteEntries = profile.note_entries;
@@ -740,13 +787,13 @@ function PastClientDrawer({ client, refiRate, onClose }) {
         markLoansDirty(loan);
       }
     } else if (key === 'lastContact') {
-      upsertClientProfile(c.name, { last_contact: value || null });
+      upsertClientProfile(profileKey, { last_contact: value || null });
     } else if (LEGACY_CORRECTED[key]) {
       // Corrected column — same field the outside cards read.
-      upsertClientProfile(c.name, { [LEGACY_CORRECTED[key]]: value || null });
+      upsertClientProfile(profileKey, { [LEGACY_CORRECTED[key]]: value || null });
     } else {
       const nextOverrides = { ...overrides, [key]: value === '' ? null : value };
-      upsertClientProfile(c.name, { past_client_overrides: nextOverrides });
+      upsertClientProfile(profileKey, { past_client_overrides: nextOverrides });
     }
     force((n) => n + 1);
   };
@@ -766,7 +813,7 @@ function PastClientDrawer({ client, refiRate, onClose }) {
     setDraft('');
     force((n) => n + 1);
     // Persist to client_profiles so the note survives refresh.
-    upsertClientProfile(c.name, { note_entries: nextEntries });
+    upsertClientProfile(profileKey, { note_entries: nextEntries });
   };
   const monthlyPI = (principal, ratePct) => {
     if (!principal || !ratePct) return 0;
@@ -839,6 +886,15 @@ function PastClientDrawer({ client, refiRate, onClose }) {
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{c.property || ''}</div>
         </div>
         <div className="drawer-body">
+          {/* CFL status — same field the Client for Life card writes
+              to, so setting Do Not Contact / Archive here removes the
+              client from the follow-up board immediately and shows the
+              same state next time you open their CFL card. */}
+          <CflStatusRow
+            profile={profile}
+            clientName={profileKey}
+            onChanged={() => force((n) => n + 1)}
+          />
           {/* Read-only loan-financial rows. Edit these in Loan
               Management, not here. */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -871,8 +927,8 @@ function PastClientDrawer({ client, refiRate, onClose }) {
             </div>
           </div>
 
-          <BirthdayField clientName={c.name} />
-          <ReviewField clientName={c.name} />
+          <BirthdayField clientName={profileKey} />
+          <ReviewField clientName={profileKey} />
           <CoBorrowerEditor client={c} onChange={() => force((n) => n + 1)} />
 
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eee' }}>

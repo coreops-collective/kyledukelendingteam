@@ -37,7 +37,12 @@ export const extractState = (addr) => {
 };
 
 const allLoansForStats = () => {
-  const active = LOANS.filter(l=>l.stage!=='cold');
+  // Historical PAST_CLIENTS are also present in LOANS after migration
+  // 043 (imported as archived-funded rows so LM can edit them). Skip
+  // those here — they're already counted via the `past` array below,
+  // and double-counting would silently inflate every by-state and
+  // by-type card on the Snapshot page.
+  const active = LOANS.filter(l => l.stage !== 'cold' && l.imported_from !== 'past_clients_seed');
   const past = PAST_CLIENTS.map(c=>({
     amount:c.amount||0,
     type:c.type||'',

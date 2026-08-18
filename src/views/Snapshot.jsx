@@ -4,84 +4,18 @@
 import { useMemo, useState, useEffect } from 'react';
 import Tour from '../components/Tour.jsx';
 import { LOANS } from '../data/loans.js';
-import { PAST_CLIENTS } from '../data/pastClients.js';
-import { PARTNERS } from '../data/partners.js';
 import {
   fmt$M, purchVsRefi, loansByState, loansByType,
   STATE_NAMES, buildMonthlyFunded, buildYoyHistory,
-  AGENT_MILESTONES, partnerLoc,
 } from '../lib/snapshotHelpers.js';
 import { parseLocalDate } from '../lib/clientDates.js';
 import { getAllFunded } from '../lib/fundedLoans.js';
+import { activeLosLoans } from '../lib/loanFilters.js';
 
-function renderAnniversariesBlock(){
-  const today = new Date();
-  const upcoming = PAST_CLIENTS.map(c=>{
-    const d = parseLocalDate(c.closeDate);
-    if(!d) return { ...c, daysAway: 9999, yearsTogether: 0, annivDate: '' };
-    const annivThisYear = new Date(today.getFullYear(), d.getMonth(), d.getDate());
-    const daysAway = Math.ceil((annivThisYear - today) / 86400000);
-    const yearsTogether = today.getFullYear() - d.getFullYear();
-    return {...c, daysAway, yearsTogether, annivDate: annivThisYear.toLocaleDateString('en-US',{month:'short',day:'numeric'})};
-  }).filter(c=>c.daysAway >= -7 && c.daysAway <= 60).sort((a,b)=>a.daysAway-b.daysAway);
-
-  if(!upcoming.length) return '';
-  const rows = upcoming.map(c=>{
-    const badge = c.daysAway === 0 ? '#C8102E' : c.daysAway <= 7 ? '#f5c518' : c.daysAway <= 30 ? '#999' : '#ccc';
-    return `<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid #f0f0f0">
-      <div style="background:${badge};color:#fff;font-family:'Oswald',sans-serif;font-weight:700;font-size:11px;padding:6px 10px;border-radius:6px;text-align:center;min-width:70px;text-transform:uppercase;letter-spacing:.4px">${c.daysAway===0?'TODAY':c.daysAway<0?(-c.daysAway+'d ago'):(c.daysAway+'d')}</div>
-      <div style="flex:1">
-        <div style="font-weight:700;font-size:13px">${c.name}</div>
-        <div style="font-size:11px;color:#888">${c.property||''}${c.agent?' \u00b7 '+c.agent:''}</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-family:'Oswald',sans-serif;font-weight:700;font-size:14px">${c.yearsTogether} yr${c.yearsTogether!==1?'s':''}</div>
-        <div style="font-size:10px;color:#888">${c.annivDate}</div>
-      </div>
-    </div>`;
-  }).join('');
-
-  return `<div class="section-card">
-    <div class="section-header"><div class="section-title">Home Anniversaries Coming Up</div><div class="section-sub">Next 60 days \u00b7 trigger CFL touches</div></div>
-    <div class="section-body" style="max-height:340px;overflow-y:auto">${rows}</div>
-  </div>`;
-}
-
-function renderAgentMilestonesBlock(){
-  const watchlist = PARTNERS.map(p=>{
-    const total = p.deals;
-    const nextMilestone = AGENT_MILESTONES.find(m => m > total);
-    const lastMilestone = [...AGENT_MILESTONES].reverse().find(m => m <= total);
-    const justHit = lastMilestone && total === lastMilestone;
-    const dealsAway = nextMilestone ? nextMilestone - total : null;
-    return {...p, nextMilestone, lastMilestone, justHit, dealsAway};
-  }).filter(p => p.justHit || (p.dealsAway && p.dealsAway <= 2));
-
-  if(!watchlist.length) return '';
-  const rows = watchlist.map(p=>{
-    if(p.justHit){
-      return `<div style="display:flex;align-items:center;gap:14px;padding:12px;background:#fff8e1;border-left:4px solid #f5c518;border-radius:6px;margin-bottom:8px">
-        <div style="background:#f5c518;color:#1a1a1a;font-family:'Oswald',sans-serif;font-weight:700;font-size:11px;padding:6px 12px;border-radius:6px;text-transform:uppercase;letter-spacing:.5px">${p.lastMilestone}-Deal Milestone</div>
-        <div style="flex:1">
-          <div style="font-weight:700;font-size:13px">${p.name}</div>
-          <div style="font-size:11px;color:#7a6300">${partnerLoc(p)} \u00b7 Trigger milestone gift + handwritten note</div>
-        </div>
-      </div>`;
-    }
-    return `<div style="display:flex;align-items:center;gap:14px;padding:12px;background:#fff;border:1px solid var(--border);border-left:4px solid var(--brand-red);border-radius:6px;margin-bottom:8px">
-      <div style="background:var(--brand-red);color:#fff;font-family:'Oswald',sans-serif;font-weight:700;font-size:11px;padding:6px 12px;border-radius:6px;text-transform:uppercase;letter-spacing:.5px">${p.dealsAway} away</div>
-      <div style="flex:1">
-        <div style="font-weight:700;font-size:13px">${p.name}</div>
-        <div style="font-size:11px;color:#888">${partnerLoc(p)} \u00b7 ${p.deals} \u2192 ${p.nextMilestone} milestone</div>
-      </div>
-    </div>`;
-  }).join('');
-
-  return `<div class="section-card">
-    <div class="section-header"><div class="section-title">Agent Milestone Watch</div><div class="section-sub">Trigger gift + recognition when an agent hits a deal milestone</div></div>
-    <div class="section-body" style="max-height:340px;overflow-y:auto">${rows}</div>
-  </div>`;
-}
+// C12 (Kim's email 2026-08-18): the Home Anniversaries and Agent
+// Milestone Watch panels were removed. Their render functions used to
+// live here; PARTNERS + AGENT_MILESTONES + partnerLoc imports were
+// dropped with them.
 
 function renderYoYBlock(YOY_HISTORY){
   const MSHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -195,10 +129,14 @@ function renderGeoLoanTypeBlock(){
 }
 
 function buildSnapshotHTML(){
-  const activeLoans = LOANS.filter(l=>!l.archived && l.status!=='Adversed' && l.stage!=='funded' && l.stage!=='cold');
+  // Kim's C9 + C11: the "Active Files" tile must show the exact same
+  // count as Loan Management's top banner (previously they drifted
+  // because Snapshot counted pre-contract stages too). Both surfaces
+  // now share activeLosLoans() so the number is one source of truth.
+  // Missy dropped from the sub-line per C11 — she's no longer on the
+  // team as of Aug 2026.
+  const activeLoans = activeLosLoans(LOANS);
   const refiCount = LOANS.filter(l=>!l.archived && l.status!=='Adversed' && l.stage==='refiwatch').length;
-  const kyleCount = activeLoans.filter(l=>l.lo==='Kyle').length;
-  const missyCount = activeLoans.filter(l=>l.lo==='Missy').length;
   const now = new Date();
   const thisMoIdx = now.getMonth();
   const thisYr = now.getFullYear();
@@ -222,7 +160,7 @@ function buildSnapshotHTML(){
   const activeWithAmt = activeLoans.filter(l=>l.amount);
   const avgLoan = activeWithAmt.length ? activeWithAmt.reduce((a,l)=>a+l.amount,0) / activeWithAmt.length : 0;
   const kpis = [
-    {label:'Active Files',value:activeLoans.length,sub:`Kyle: ${kyleCount} \u00b7 Missy: ${missyCount}`},
+    {label:'Active Files',value:activeLoans.length,sub:'In LOS \u00b7 matches Loan Management'},
     {label:'Pipeline Volume',value:fmt$M(activeLoans.reduce((a,l)=>a+(l.amount||0),0)),sub:'All stages pre-funded',cls:'up'},
     {label:'REFI Watch',value:refiCount,sub:'Tracking for opportunity'},
     {label:`Closing in ${MONTH_FULL[thisMoIdx]}`,value:closingThisMo,sub:`${MONTH_FULL[thisMoIdx]} ${thisYr}`,cls:'up'},
@@ -262,10 +200,6 @@ function buildSnapshotHTML(){
     </div>
     ${renderYoYBlock(YOY_HISTORY)}
     ${renderGeoLoanTypeBlock()}
-    <div class="two-col">
-      ${renderAnniversariesBlock()}
-      ${renderAgentMilestonesBlock()}
-    </div>
 `;
 }
 
@@ -426,7 +360,7 @@ const SNAPSHOT_TOUR_STEPS = [
   {
     target: '.kpi-grid',
     title: 'The 7 top KPIs',
-    body: '• Active Files — every loan currently in the pipeline (any pre-funded stage)\n• Pipeline Volume — total dollar amount of active files\n• REFI Watch — loans in the refinance-opportunity bucket\n• Closing This Month & Next Month — expected closings in each\n• Avg Loan Amount — mean size across active files\n• Lifetime Volume — every loan ever funded (historical + app-funded, deduped)\n\nAll pull from LOANS + the funded ledger in real time.',
+    body: '• Active Files — every loan currently in the LOS pipeline (New Contract through Approved). Matches Loan Management\'s top-banner count exactly.\n• Pipeline Volume — total dollar amount of active files\n• REFI Watch — loans in the refinance-opportunity bucket\n• Closing This Month & Next Month — expected closings in each\n• Avg Loan Amount — mean size across active files\n• Lifetime Volume — every loan ever funded (historical + app-funded, deduped)\n\nAll pull from LOANS + the funded ledger in real time.',
   },
   {
     target: '.bar-chart',
@@ -441,10 +375,6 @@ const SNAPSHOT_TOUR_STEPS = [
   {
     title: 'Year-over-Year History',
     body: 'Below the chart: multi-year table showing volume by month by year. Compare this year\'s June against last year\'s June at a glance.\n\nQ1-Q4 subtotals appear on the right. Grand totals at the far right show lifetime totals per year.',
-  },
-  {
-    title: 'Home Anniversaries + Agent Milestones',
-    body: 'Home Anniversaries: every past client whose home-anniversary is coming up in the next 60 days. Perfect trigger for a card + gift touch. Days-away color-coded (today = red, ≤7d = yellow).\n\nAgent Milestones: partners approaching their next 3/5/10/25/50/100 deal milestone. Trigger a gift + recognition touch when they hit it.',
   },
   {
     title: 'Monthly Targets',

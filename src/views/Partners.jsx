@@ -42,7 +42,10 @@ const DEAL_MIN = { All: 0, '1+ deals': 1, '5+ deals': 5, '10+ deals': 10, '25+ d
 // persisted to localStorage so it shows up in dropdowns even before
 // the first partner is assigned to it. Partners without a tier value
 // fall back to "Standard".
-const PREDEFINED_TIERS = ['VIP', 'Standard', 'Should Nurture', 'Not in Real Estate Anymore', 'Other'];
+// Order matters — the render iterates this to emit sections in this
+// exact sequence. "New Agent Leads" sits right after VIP because Kim
+// wants brand-new agents surfaced high on the page for outreach.
+const PREDEFINED_TIERS = ['VIP', 'New Agent Leads', 'Standard', 'Should Nurture', 'Not in Real Estate Anymore', 'Other'];
 
 // Collapsible category section. Defaults to closed for the two dead-
 // list buckets ("Not in Real Estate Anymore" / "Other") so they don't
@@ -212,7 +215,7 @@ export default function Partners() {
     {
       target: '.partner-grid, .partner-list',
       title: 'Partner cards + list',
-      body: 'Toggle between grid and list view. Each card shows total closings, total volume, YTD closings, YTD volume, and live pipeline volume in escrow with this agent right now. Click any card to open the drawer.',
+      body: 'Toggle between grid and list view. Each card shows total closings, total volume, YTD closings, YTD volume, and live pipeline volume in escrow with this agent right now. Click any card to open the drawer.\n\nTwo card-grid sections sit at the top of the page — VIP Agents (red border) and New Agent Leads (blue border). Both mirror the same card layout. Standard / Should Nurture / custom categories render as a compact row list below. Change a partner\'s category from the drawer to move them between sections.',
     },
     {
       target: '.partner-card, .partner-row',
@@ -432,7 +435,9 @@ export default function Partners() {
 
       {partnersByCategory.map(([category, partners]) => {
         const isVip = category === 'VIP';
-        const headerColor = isVip ? 'var(--brand-red)' : '#666';
+        const isNewLead = category === 'New Agent Leads';
+        const isCardGrid = isVip || isNewLead;
+        const headerColor = isVip ? 'var(--brand-red)' : isNewLead ? '#1976d2' : '#666';
         // Kim asked for the two "dead-list" buckets — Not in Real
         // Estate Anymore + Other — to collapse by default so they
         // don't push the active partners below the fold. Every other
@@ -448,10 +453,10 @@ export default function Partners() {
               defaultCollapsed={isCollapsible}
               storageKey={isCollapsible ? `kdt-partners-cat-${category.toLowerCase().replace(/\s+/g, '-')}` : null}
             >
-              {isVip ? (
+              {isCardGrid ? (
                 <div className="partner-grid">
                   {group.items.map((p) => (
-                    <div key={p.name} className="partner-card vip" style={{ cursor: 'pointer' }} onClick={() => openPartner(p)}>
+                    <div key={p.name} className={`partner-card ${isVip ? 'vip' : 'newlead'}`} style={{ cursor: 'pointer' }} onClick={() => openPartner(p)}>
                       <div className="partner-name">{p.name}</div>
                       <div className="partner-brokerage">{partnerLoc(p)}</div>
                       <div className="partner-stat"><span>Total Closings</span><strong>{p.totalClosings || p.deals || 0}</strong></div>

@@ -36,7 +36,7 @@ function cardAttentionState(loan) {
     return Math.ceil((d - today) / 86400000);
   };
   // Red signals first.
-  if ((loan.status || '') === 'CTC Required') return 'action';
+  if (['CTC Required', 'CTC Requested'].includes(loan.status || '')) return 'action';
   const dLock = daysUntil(loan.lockExp);
   if (dLock !== null && dLock <= 7) return 'action';
   // Appraisal deadline: past AND appraisal not yet received.

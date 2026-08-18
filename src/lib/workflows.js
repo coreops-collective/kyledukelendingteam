@@ -407,6 +407,11 @@ export const CONDITION_FIELDS = [
   // the partner record passed alongside the generator call.
   { value: 'is_vip',               label: 'Agent is VIP',                          type: 'bool', source: 'agent' },
   { value: 'has_mailing_address',  label: 'Agent has mailing address on file',    type: 'bool', source: 'agent' },
+  // Client-side conditions read from the client's anchor map. Use this
+  // to gate a reminder task like "Input Client Birthday" so it only
+  // fires until the birthday actually gets recorded — set condition to
+  // has_birthday IS NO and it self-completes once Kim enters the date.
+  { value: 'has_birthday',         label: 'Client has birthday on file',           type: 'bool', source: 'client' },
 ];
 
 export const CONDITION_OPS = {
@@ -424,7 +429,7 @@ export const CONDITION_OPS = {
 //   source='loan'    → the LOANS record (intake answers land here)
 //   source='agent'   → the PARTNERS record (Agent for Life workflows;
 //                      is_vip and has_mailing_address use this)
-function matchesCondition(task, profile, loan, agent) {
+function matchesCondition(task, profile, loan, agent, anchors) {
   const field = task.condition_field;
   const op = task.condition_op;
   if (!field || field === 'none' || !op) return true;
@@ -444,6 +449,12 @@ function matchesCondition(task, profile, loan, agent) {
     else raw = agent[field];
   } else if (source === 'loan') {
     raw = loan ? loan[field] : null;
+  } else if (source === 'client') {
+    // Client-anchor-derived: has_birthday is true when the client's
+    // anchor map carries a 'birthday' entry (set from client_dates).
+    if (field === 'has_birthday') {
+      raw = !!(anchors && anchors.get && anchors.get('birthday'));
+    } else raw = null;
   } else {
     raw = profile ? profile[field] : null;
   }
@@ -633,7 +644,7 @@ export function generateTasksForClient(clientName, anchorDates, opts = {}) {
       // 'each' or null (legacy default) fires for everyone, which is
       // the right shape for birthdays and personal follow-ups.
       if (t.applies_to === 'primary' && isCoBorrower) continue;
-      if (!matchesCondition(t, profile, null, agent)) continue;
+      if (!matchesCondition(t, profile, null, agent, anchorDates)) continue;
       // Status-triggered tasks are handled by a separate generator
       // pass (generateStatusTasks). Skip here so we don't double-fire.
       if (t.trigger_kind === 'status') continue;
