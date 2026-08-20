@@ -142,8 +142,23 @@ export default function AgentForLife() {
         if (d) fundedCloseDates.push(d);
       }
       fundedCloseDates.sort((a, b) => a - b);
-      const firstClosingDate = fundedCloseDates[0] || null;
-      const thirdClosingDate = fundedCloseDates[2] || null;
+      // Bug fix 2026-08-19 (Lauren): the "First Closing with an Agent"
+      // workflow was firing for every agent because we set this anchor
+      // any time fundedCloseDates had at least one entry. Kim's spec is
+      // "first closing" = fires ONLY for agents whose funded-closing
+      // count is exactly 1 (i.e. brand-new agents whose first is also
+      // their only). Once they close a 2nd deal, First-Closing tasks
+      // stop emitting. Any already-completed First-Closing task rows
+      // in task_completions stay intact — they're just historical.
+      //
+      // Same shape for the "3rd Closing" anchor: fires only when the
+      // agent's funded count is exactly 3, so the 3rd-closing thank-
+      // you-card task fires once, right after the 3rd closing, and
+      // stops emitting once they close a 4th. VIP gating is separate
+      // (task-level condition_field='is_vip' condition_op='is_false',
+      // seeded by migration 042 — verified still correct).
+      const firstClosingDate = fundedCloseDates.length === 1 ? fundedCloseDates[0] : null;
+      const thirdClosingDate = fundedCloseDates.length === 3 ? fundedCloseDates[2] : null;
       // "Last Deal" stays the LATEST closeDate across ALL loans (funded
       // or not) — keeps existing "N days after Last Deal" workflows
       // pointing at the most recent activity.
@@ -291,38 +306,125 @@ export default function AgentForLife() {
   );
 }
 
-// Collapsible bucket header + list — mirrors CFL's Section pattern but
-// tuned for the AFL row shape.
+// Collapsible bucket header + list — mirrors CFL's Section pattern
+// including the per-bucket "Select multiple" affordance so several
+// tasks can be checked off in one click. Selection stays local to the
+// section so "select all" in Overdue doesn't sweep in Today too.
 function AgentSection({ label, items, today, collapsed, onToggle, expandedAgentName, onExpandAgent }) {
   const headerColor = label === 'Overdue' ? '#c62828' : label === 'Today' ? '#e65100' : '#555';
+
+  // Per-bucket bulk-select state. Gated behind a Select-mode toggle so
+  // the row's default checkbox stays the primary red "mark complete"
+  // action — mirrors CFL's UX exactly.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const selectableItems = items.filter((it) => !it.completed);
+  const selectableIds = selectableItems.map((it) => it.id);
+  const allChecked = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  const someChecked = selected.size > 0;
+  const toggleOne = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    setSelected(() => allChecked ? new Set() : new Set(selectableIds));
+  };
+  const bulkComplete = async () => {
+    const targets = selectableItems.filter((it) => selected.has(it.id));
+    if (targets.length === 0) return;
+    if (!window.confirm(`Mark ${targets.length} task${targets.length === 1 ? '' : 's'} complete in ${label}?`)) return;
+    await Promise.all(targets.map((it) => {
+      const dueIso = toIsoDate(it.due_date);
+      return markTaskCompleted(it.task.id, it.client_name, dueIso, null, null, it.loan_id);
+    }));
+    setSelected(new Set());
+    setSelectMode(false);
+  };
+  const exitSelectMode = () => { setSelected(new Set()); setSelectMode(false); };
+
+  const btnStyle = {
+    padding: '3px 10px', background: '#fff', color: '#0A0A0A',
+    border: '1px solid #d0d0d0', borderRadius: 4, fontWeight: 700, fontSize: 10,
+    cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
+    fontFamily: "'Oswald',sans-serif",
+  };
+
   return (
     <div style={{ marginBottom: 16 }}>
       <div
-        onClick={onToggle}
         style={{
           display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
           background: '#fff', border: '1px solid var(--border)',
           borderRadius: collapsed ? 8 : '8px 8px 0 0', borderBottom: collapsed ? '1px solid var(--border)' : 'none',
-          cursor: 'pointer', userSelect: 'none',
+          userSelect: 'none',
         }}
-        role="button"
-        aria-expanded={!collapsed}
       >
-        <span
-          aria-hidden
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
           style={{
-            display: 'inline-block',
-            transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
-            transition: 'transform .15s ease',
-            fontSize: 10, width: 10, color: '#888',
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            background: 'transparent', border: 0, padding: 0, cursor: 'pointer',
+            color: 'inherit', font: 'inherit',
           }}
-        >▶</span>
-        <div style={{
-          fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700,
-          textTransform: 'uppercase', letterSpacing: '.6px', color: headerColor,
-        }}>
-          {label} <span style={{ color: '#888', marginLeft: 6 }}>({items.length})</span>
-        </div>
+        >
+          <span
+            aria-hidden
+            style={{
+              display: 'inline-block',
+              transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+              transition: 'transform .15s ease',
+              fontSize: 10, width: 10, color: '#888',
+            }}
+          >▶</span>
+          <span style={{
+            fontFamily: "'Oswald',sans-serif", fontSize: 12, fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '.6px', color: headerColor,
+          }}>
+            {label} <span style={{ color: '#888', marginLeft: 6 }}>({items.length})</span>
+          </span>
+        </button>
+        {!collapsed && selectableIds.length > 0 && !selectMode && (
+          <button
+            type="button"
+            onClick={() => setSelectMode(true)}
+            style={{ ...btnStyle, marginLeft: 'auto' }}
+          >Select multiple</button>
+        )}
+        {selectMode && (
+          <>
+            <button
+              type="button"
+              onClick={toggleAll}
+              style={{ ...btnStyle, marginLeft: 12 }}
+            >{allChecked ? 'Deselect all' : 'Select all'}</button>
+            {someChecked && (
+              <button
+                type="button"
+                onClick={bulkComplete}
+                style={{
+                  padding: '4px 10px', background: '#0A0A0A', color: '#fff',
+                  border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 10,
+                  cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '.4px',
+                  fontFamily: "'Oswald',sans-serif",
+                }}
+              >{'✓'} Complete {selected.size}</button>
+            )}
+            <button
+              type="button"
+              onClick={exitSelectMode}
+              style={{
+                ...btnStyle,
+                marginLeft: 'auto',
+                background: 'transparent', color: '#555',
+              }}
+            >Exit</button>
+          </>
+        )}
       </div>
       {!collapsed && (
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderTop: 'none', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
@@ -334,6 +436,9 @@ function AgentSection({ label, items, today, collapsed, onToggle, expandedAgentN
               first={i === 0}
               expanded={expandedAgentName === it.client_name}
               onExpandAgent={onExpandAgent}
+              selected={selected.has(it.id)}
+              selectMode={selectMode}
+              onSelect={selectMode && selectableIds.includes(it.id) ? () => toggleOne(it.id) : null}
             />
           ))}
         </div>
@@ -344,10 +449,15 @@ function AgentSection({ label, items, today, collapsed, onToggle, expandedAgentN
 
 // Single task row with a red-checkbox complete control. Clicking the
 // checkbox marks the task complete (writes to task_completions and
-// bumps this view via the kdt-task-completions-changed event). The
-// row body remains clickable to expand the agent's mailing-address
-// panel — Kim's key AFL flow.
-function AgentTaskRow({ item, today, first, expanded, onExpandAgent }) {
+// bumps this view via the kdt-workflows-changed event). The row body
+// remains clickable to expand the agent's mailing-address panel —
+// Kim's key AFL flow.
+//
+// In selectMode (bulk-complete active on this bucket), the red
+// checkbox is swapped for a black bulk-select checkbox — same UX as
+// CFL. Passing onSelect=null falls back to the default single-row
+// behavior even inside selectMode (e.g. for already-completed rows).
+function AgentTaskRow({ item, today, first, expanded, onExpandAgent, selected, selectMode, onSelect }) {
   const days = Math.round((item.due_date - today) / DAY_MS);
   const dueLabel = days < 0 ? `${-days}d overdue` : days === 0 ? 'Today' : `${days}d`;
   const dueIso = toIsoDate(item.due_date);
@@ -359,21 +469,33 @@ function AgentTaskRow({ item, today, first, expanded, onExpandAgent }) {
       markTaskCompleted(item.task.id, item.client_name, dueIso, null, null, item.loan_id);
     }
   };
+  const bulkCheckbox = selectMode && onSelect && !item.completed;
   return (
     <div style={{ borderTop: first ? 'none' : '1px solid #f1f1f1' }}>
       <div style={{
         display: 'grid', gridTemplateColumns: '40px 90px 1fr auto 90px', gap: 12,
         padding: '12px 16px', alignItems: 'center',
-        background: item.completed ? '#fafafa' : '#fff',
+        background: item.completed ? '#fafafa' : selected ? '#fffce7' : '#fff',
       }}>
-        <input
-          type="checkbox"
-          checked={!!item.completed}
-          onChange={onToggleComplete}
-          style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)', margin: 0 }}
-          title="Mark complete"
-          aria-label="Complete"
-        />
+        {bulkCheckbox ? (
+          <input
+            type="checkbox"
+            checked={!!selected}
+            onChange={onSelect}
+            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#0A0A0A', margin: 0 }}
+            title="Select for bulk complete"
+            aria-label="Select"
+          />
+        ) : (
+          <input
+            type="checkbox"
+            checked={!!item.completed}
+            onChange={onToggleComplete}
+            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-red)', margin: 0 }}
+            title="Mark complete"
+            aria-label="Complete"
+          />
+        )}
         <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px' }}>
           {item.anchor_label || 'Task'}
         </div>

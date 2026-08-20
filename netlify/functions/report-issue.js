@@ -127,12 +127,26 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { message, url, userAgent, callerEmail } = JSON.parse(event.body || '{}');
+    const payload = JSON.parse(event.body || '{}');
+    const {
+      message,
+      // New enhanced payload (2026-08-18):
+      context = {},
+      breadcrumbs = [],
+      screenshot = null,
+      // Legacy payload fields (kept for backwards compat during a
+      // mid-deploy window). Used only if the new context.* fields are
+      // absent.
+      url: legacyUrl,
+      userAgent: legacyUa,
+      callerEmail,
+    } = payload;
+
     const text = String(message || '').trim();
     if (!text) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Message is required' }) };
 
     const headerCaller = (event.headers['x-kdt-user-email'] || event.headers['X-KDT-User-Email'] || '').toString().trim().toLowerCase();
-    const caller = headerCaller || String(callerEmail || '').trim().toLowerCase();
+    const caller = headerCaller || String(context.userEmail || callerEmail || '').trim().toLowerCase();
     const user = await knownEmail(caller);
     if (!user) {
       return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Sign in first' }) };
@@ -149,37 +163,131 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ ok: false, reason: 'No SMTP password' }) };
     }
 
-    // Compose the report email. HTML for nice display in Gmail; text
-    // fallback for plain-text clients.
-    const now = new Date().toISOString();
+    // Merge context (new payload) with legacy top-level fields so a
+    // pre-deploy client can still get a report through.
+    const now = context.sentAt || new Date().toISOString();
+    const url = context.url || legacyUrl || '';
+    const route = context.route || (url ? (() => { try { return new URL(url).pathname; } catch { return url; } })() : '(unknown)');
+    const userAgent = context.userAgent || legacyUa || '';
+    const browser = context.browser || '';
+    const os = context.os || '';
+    const viewport = context.viewport || '';
+    const dpr = context.dpr || '';
+    const language = context.language || '';
+    const appVersion = context.appVersion || '';
+    const reporterName = user.name || context.userName || caller;
+
+    // Short-description slice for the subject line. First line of the
+    // message, trimmed to ~60 chars so email clients don't truncate
+    // the meaningful parts of the subject.
+    const firstLine = text.split(/\r?\n/).find((s) => s.trim()) || text;
+    const shortDesc = firstLine.length > 60 ? firstLine.slice(0, 57).trim() + '…' : firstLine.trim();
+
+    // Breadcrumb table for the email body. Only render if we got any —
+    // legacy clients don't send this array.
+    const crumbRows = Array.isArray(breadcrumbs) ? breadcrumbs : [];
+    const crumbsHtml = crumbRows.length
+      ? `<div style="margin-top:20px">
+           <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:6px">
+             Recent activity (last ${crumbRows.length}, oldest first)
+           </div>
+           <table style="width:100%;border-collapse:collapse;font-size:12px;color:#333;border:1px solid #eee">
+             <thead>
+               <tr style="background:#f7f7f7">
+                 <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #eee;width:170px">When</th>
+                 <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #eee;width:140px">Kind</th>
+                 <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #eee">What</th>
+               </tr>
+             </thead>
+             <tbody>
+               ${crumbRows.map((c) => `
+                 <tr>
+                   <td style="padding:5px 10px;border-bottom:1px solid #f4f4f4;color:#666;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px">${esc(c.at || '')}</td>
+                   <td style="padding:5px 10px;border-bottom:1px solid #f4f4f4;color:#555;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px">${esc(c.kind || '')}</td>
+                   <td style="padding:5px 10px;border-bottom:1px solid #f4f4f4">${esc(c.label || '')}</td>
+                 </tr>
+               `).join('')}
+             </tbody>
+           </table>
+         </div>`
+      : '';
+    const crumbsText = crumbRows.length
+      ? '\nRecent activity (last ' + crumbRows.length + ', oldest first):\n' +
+        crumbRows.map((c) => `  ${c.at || ''}  ${c.kind || ''}  ${c.label || ''}`).join('\n') + '\n'
+      : '';
+
+    // Compose the report email. HTML for Gmail; text fallback for
+    // plain-text clients.
     const html = `
       <div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#222;line-height:1.5;font-size:14px">
         <div style="border-left:4px solid #C8102E;padding:12px 16px;background:#fafafa;border-radius:6px">
           <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.6px;font-weight:700">Issue reported</div>
-          <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(user.name || caller)}</div>
+          <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(reporterName)}</div>
+          <div style="font-size:12px;color:#666;margin-top:2px">on <code style="color:#333">${esc(route)}</code></div>
         </div>
         <div style="margin-top:16px;padding:16px;background:#fff;border:1px solid #eee;border-radius:6px;white-space:pre-wrap">${esc(text)}</div>
         <table style="margin-top:16px;font-size:12px;color:#555;border-collapse:collapse">
-          <tr><td style="padding:4px 12px 4px 0;color:#888">Reporter</td><td>${esc(user.name || '')} &lt;${esc(caller)}&gt;</td></tr>
-          <tr><td style="padding:4px 12px 4px 0;color:#888">Page</td><td><a href="${esc(url || '')}">${esc(url || '(none)')}</a></td></tr>
-          <tr><td style="padding:4px 12px 4px 0;color:#888">Browser</td><td>${esc(userAgent || '(unknown)')}</td></tr>
-          <tr><td style="padding:4px 12px 4px 0;color:#888">Sent at</td><td>${now}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#888">Reporter</td><td>${esc(reporterName)} &lt;${esc(caller)}&gt;${context.userRole ? ` &middot; ${esc(context.userRole)}` : ''}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#888">Page</td><td><a href="${esc(url)}">${esc(url || '(none)')}</a></td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#888">Route</td><td>${esc(route)}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#888">Browser</td><td>${esc(browser || '(unknown)')}${userAgent ? ` &middot; <span style="color:#888">${esc(userAgent)}</span>` : ''}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#888">OS</td><td>${esc(os || '(unknown)')}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#888">Viewport</td><td>${esc(viewport || '(unknown)')}${dpr ? ` @ ${esc(String(dpr))}x` : ''}</td></tr>
+          ${language ? `<tr><td style="padding:4px 12px 4px 0;color:#888">Language</td><td>${esc(language)}</td></tr>` : ''}
+          ${appVersion ? `<tr><td style="padding:4px 12px 4px 0;color:#888">App version</td><td>${esc(appVersion)}</td></tr>` : ''}
+          <tr><td style="padding:4px 12px 4px 0;color:#888">Sent at</td><td>${esc(now)}</td></tr>
         </table>
+        ${crumbsHtml}
+        ${screenshot ? `<div style="margin-top:20px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.6px;font-weight:700">Screenshot attached</div>` : ''}
       </div>
     `;
     const textBody =
-      `Issue reported by ${user.name || caller} <${caller}>\n\n` +
+      `Issue reported by ${reporterName} <${caller}>\n` +
+      `Route: ${route}\n\n` +
       `${text}\n\n` +
-      `--\nPage: ${url || '(none)'}\nBrowser: ${userAgent || '(unknown)'}\nSent at: ${now}\n`;
+      `--\n` +
+      `Page:      ${url || '(none)'}\n` +
+      `Browser:   ${browser || '(unknown)'} — ${userAgent || '(no UA)'}\n` +
+      `OS:        ${os || '(unknown)'}\n` +
+      `Viewport:  ${viewport || '(unknown)'}${dpr ? ` @ ${dpr}x` : ''}\n` +
+      (language ? `Language:  ${language}\n` : '') +
+      (appVersion ? `Version:   ${appVersion}\n` : '') +
+      `Sent at:   ${now}\n` +
+      crumbsText;
+
+    // Parse the screenshot data-URL into a nodemailer attachment. We
+    // only accept image/jpeg or image/png; anything else gets skipped
+    // (safety net — the client always sends JPEG). The data URL is
+    // trusted to arrive from our own client but we still bound it at
+    // ~8MB after decode so a runaway send doesn't flood the mailbox.
+    const attachments = [];
+    if (screenshot && typeof screenshot.dataUrl === 'string') {
+      const match = screenshot.dataUrl.match(/^data:(image\/(?:jpeg|png));base64,(.+)$/);
+      if (match) {
+        const mime = match[1];
+        const b64 = match[2];
+        // Rough decoded-size estimate — base64 is 4/3 the size of raw.
+        const approxBytes = (b64.length * 3) / 4;
+        if (approxBytes <= 8 * 1024 * 1024) {
+          const ext = mime === 'image/png' ? 'png' : 'jpg';
+          attachments.push({
+            filename: `hub-issue-${now.replace(/[:.]/g, '-')}.${ext}`,
+            content: Buffer.from(b64, 'base64'),
+            contentType: mime,
+          });
+        }
+      }
+    }
 
     const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: settings.username, pass: appPassword } });
     await transporter.sendMail({
       from: `"${settings.from_name || BRAND}" <${settings.username}>`,
       to: ADMIN_EMAIL,
       replyTo: caller || undefined,
-      subject: `[${BRAND}] Issue reported — ${user.name || caller}`,
+      subject: `[Hub Issue] ${shortDesc} — ${reporterName} — ${route}`,
       text: textBody,
       html,
+      attachments,
     });
 
     return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ ok: true }) };

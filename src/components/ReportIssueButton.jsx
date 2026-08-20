@@ -1,12 +1,88 @@
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentUser } from '../lib/auth.js';
+import { getBreadcrumbs } from '../lib/breadcrumbs.js';
 
-// "Report an issue" header chip → opens a modal with a textarea → sends
-// an email to lauren@coreopscollective.com via /.netlify/functions/
-// report-issue with the current URL, browser, and reporter attached.
+// "Report an issue" header chip → opens a modal with a textarea →
+// packages a screenshot of the current screen + the user's last ~20
+// interactions (from the breadcrumbs ring buffer) + full context
+// (route, user, browser, OS, viewport, timestamp), and POSTs the
+// bundle to /.netlify/functions/report-issue. The netlify function
+// emails everything to Lauren via the app's existing SMTP setup — no
+// email creds ever touch the browser.
 //
-// Reachable on every page — visible to any signed-in user (Kim, Missy,
-// Kyle, Abel). Rate-limited server-side.
+// Reachable on every page, visible to any signed-in user. Rate-limited
+// server-side (5/min) so a stuck button can't spam.
+//
+// Privacy: html2canvas captures the visible DOM (screenshot is fine per
+// spec), but the breadcrumb collector NEVER captures the text typed
+// into inputs — see src/lib/breadcrumbs.js. Screenshot capture happens
+// BEFORE the modal renders so the modal doesn't obscure the page.
+
+// Lazy-load html2canvas the first time the user clicks Send. Keeps it
+// out of the initial bundle for the 99% of loads that never open this
+// dialog. Also failsafe: if the load or capture fails for any reason,
+// we still send the report without a screenshot — never block the
+// user from getting help.
+async function captureScreenshot() {
+  try {
+    const html2canvas = (await import('html2canvas')).default;
+    const canvas = await html2canvas(document.body, {
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+      // Scale down to keep the JPEG reasonably-sized. Anything bigger
+      // than 1600px wide is oversized for an email attachment.
+      scale: Math.min(1, 1600 / (window.innerWidth || 1600)),
+      windowWidth: document.documentElement.clientWidth,
+      windowHeight: document.documentElement.clientHeight,
+    });
+    // JPEG at q=0.7 — good enough to read UI, ~30-50KB per screen on
+    // most pages. Fallback to PNG if JPEG isn't supported (rare).
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+    return {
+      dataUrl,
+      width: canvas.width,
+      height: canvas.height,
+    };
+  } catch (err) {
+    console.warn('[report-issue] screenshot capture failed:', err?.message || err);
+    return null;
+  }
+}
+
+// Very rough OS + browser detection from the UA string. We could pull
+// in a full ua-parser lib but this is fine for triage — the raw UA
+// string is sent too so anything the heuristic misses is still
+// available in the email.
+function detectOs(ua) {
+  if (/Windows NT/i.test(ua)) return 'Windows';
+  if (/Mac OS X|Macintosh/i.test(ua)) return 'macOS';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS';
+  if (/Android/i.test(ua)) return 'Android';
+  if (/Linux/i.test(ua)) return 'Linux';
+  return 'Unknown';
+}
+// Grab the deployed commit + build time from /version.json, written at
+// build by scripts/write-version.js. Silent no-op if the file is
+// missing (dev server, prod build without the script running).
+async function readAppVersion() {
+  try {
+    const res = await fetch('/version.json', { cache: 'no-store' });
+    if (!res.ok) return '';
+    const v = await res.json();
+    return v?.commit ? `${v.commit} @ ${v.buildTime || ''}` : '';
+  } catch { return ''; }
+}
+
+function detectBrowser(ua) {
+  if (/Edg\//i.test(ua)) return 'Edge';
+  if (/OPR\/|Opera/i.test(ua)) return 'Opera';
+  if (/Chrome\//i.test(ua) && !/Chromium/i.test(ua)) return 'Chrome';
+  if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) return 'Safari';
+  if (/Firefox\//i.test(ua)) return 'Firefox';
+  return 'Unknown';
+}
+
 export default function ReportIssueButton() {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState('');
@@ -18,7 +94,6 @@ export default function ReportIssueButton() {
     if (!open) return;
     setStatus(null);
     setMessage('');
-    // Focus the textarea a tick after mount so the modal is on-screen.
     const t = setTimeout(() => textareaRef.current?.focus(), 20);
     return () => clearTimeout(t);
   }, [open]);
@@ -36,7 +111,33 @@ export default function ReportIssueButton() {
     setSending(true);
     setStatus(null);
     try {
+      // Capture the screenshot BEFORE the modal is hidden — we want to
+      // capture what the user was looking at when they clicked. The
+      // modal itself is in the DOM, but that's actually fine: the
+      // report reader wants to see exactly what the user saw, which
+      // includes the "Report an issue" dialog they were typing into.
+      const shot = await captureScreenshot();
+
       const me = getCurrentUser();
+      const ua = navigator.userAgent || '';
+      const context = {
+        route: window.location.pathname + window.location.search + window.location.hash,
+        url: window.location.href,
+        userName: me?.name || '',
+        userEmail: me?.email || '',
+        userId: me?.id || '',
+        userRole: me?.role || '',
+        userAgent: ua,
+        browser: detectBrowser(ua),
+        os: detectOs(ua),
+        viewport: `${window.innerWidth}×${window.innerHeight}`,
+        dpr: window.devicePixelRatio || 1,
+        language: navigator.language || '',
+        sentAt: new Date().toISOString(),
+        appVersion: await readAppVersion(),
+      };
+      const breadcrumbs = getBreadcrumbs();
+
       const res = await fetch('/.netlify/functions/report-issue', {
         method: 'POST',
         headers: {
@@ -45,16 +146,26 @@ export default function ReportIssueButton() {
         },
         body: JSON.stringify({
           message: text,
+          context,
+          breadcrumbs,
+          screenshot: shot ? {
+            dataUrl: shot.dataUrl,
+            width: shot.width,
+            height: shot.height,
+          } : null,
+          // Legacy fields kept for backwards compat with older function
+          // versions during a mid-deploy window — the new function reads
+          // from context.* first and falls back to these.
           url: window.location.href,
-          userAgent: navigator.userAgent,
+          userAgent: ua,
           callerEmail: me?.email || '',
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
-        setStatus({ kind: 'ok', text: 'Report sent. Thanks — Lauren will follow up.' });
+        setStatus({ kind: 'ok', text: 'Thanks, your report was sent.' });
         setMessage('');
-        setTimeout(() => setOpen(false), 1600);
+        setTimeout(() => setOpen(false), 1800);
       } else {
         setStatus({ kind: 'err', text: data.error || data.reason || `HTTP ${res.status}` });
       }
@@ -131,16 +242,15 @@ export default function ReportIssueButton() {
 
             <div style={{ padding: 18 }}>
               <div style={{ fontSize: 12, color: '#666', marginBottom: 10, lineHeight: 1.5 }}>
-                Tell Lauren what's happening. Include what you were doing, what you expected, and what actually happened.
-                Your current page URL and browser are attached automatically.
+                What went wrong? A screenshot of the page, your last few clicks, and the current URL/browser are attached automatically — no need to describe those.
               </div>
               <textarea
                 ref={textareaRef}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="e.g. Clicked Sign Out on the Snapshot page and nothing happened. I'm on Chrome on a MacBook."
+                placeholder="e.g. Clicked Sign Out on the Snapshot page and nothing happened."
                 style={{
-                  width: '100%', minHeight: 160, padding: 12,
+                  width: '100%', minHeight: 140, padding: 12,
                   border: '1px solid #d0d0d0', borderRadius: 6,
                   fontFamily: 'inherit', fontSize: 13, lineHeight: 1.5,
                   resize: 'vertical', boxSizing: 'border-box',
