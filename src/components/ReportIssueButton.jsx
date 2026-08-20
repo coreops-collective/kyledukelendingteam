@@ -83,17 +83,35 @@ function detectBrowser(ua) {
   return 'Unknown';
 }
 
+// Feedback kinds Kim can pick between when she opens the dialog. Bug
+// stays the default because that's what the button entry point has
+// historically implied and Kim's muscle memory is there. Adding
+// Feature to the payload changes the email subject prefix + header
+// so Lauren can triage without opening the body.
+const FEEDBACK_KINDS = [
+  { value: 'bug', label: 'Bug report', icon: '🐛',
+    placeholder: 'e.g. Clicked Sign Out on the Snapshot page and nothing happened.',
+    ok: 'Thanks, your bug report was sent.' },
+  { value: 'feature', label: 'Feature request', icon: '💡',
+    placeholder: 'e.g. On the Rate Locks page, please add a Locked ≥ 30 days filter so I can pull the extension list at once.',
+    ok: 'Thanks, your feature request was sent.' },
+];
+
 export default function ReportIssueButton() {
   const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState('bug');
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState(null); // { kind: 'ok' | 'err', text: string } | null
   const [sending, setSending] = useState(false);
   const textareaRef = useRef(null);
 
+  const activeKind = FEEDBACK_KINDS.find((k) => k.value === kind) || FEEDBACK_KINDS[0];
+
   useEffect(() => {
     if (!open) return;
     setStatus(null);
     setMessage('');
+    setKind('bug');
     const t = setTimeout(() => textareaRef.current?.focus(), 20);
     return () => clearTimeout(t);
   }, [open]);
@@ -146,6 +164,7 @@ export default function ReportIssueButton() {
         },
         body: JSON.stringify({
           message: text,
+          kind,
           context,
           breadcrumbs,
           screenshot: shot ? {
@@ -163,7 +182,7 @@ export default function ReportIssueButton() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
-        setStatus({ kind: 'ok', text: 'Thanks, your report was sent.' });
+        setStatus({ kind: 'ok', text: activeKind.ok });
         setMessage('');
         setTimeout(() => setOpen(false), 1800);
       } else {
@@ -181,8 +200,8 @@ export default function ReportIssueButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="Something wrong? Send Lauren a note."
-        aria-label="Report an issue"
+        title="Report a bug or request a feature."
+        aria-label="Report an issue or request a feature"
         className="chip"
         style={{
           cursor: 'pointer',
@@ -227,7 +246,7 @@ export default function ReportIssueButton() {
                 fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 700,
                 textTransform: 'uppercase', letterSpacing: '.6px', color: '#0A0A0A',
               }}>
-                Report an issue
+                Report an issue or request a feature
               </div>
               <button
                 type="button"
@@ -241,14 +260,53 @@ export default function ReportIssueButton() {
             </div>
 
             <div style={{ padding: 18 }}>
+              {/* Feedback-kind picker — Bug vs Feature. Whichever is
+                  active controls the email subject prefix, the header
+                  block color in the email body, and the placeholder /
+                  confirmation copy in the dialog. */}
+              <div
+                role="radiogroup"
+                aria-label="What kind of feedback?"
+                style={{ display: 'flex', gap: 8, marginBottom: 12 }}
+              >
+                {FEEDBACK_KINDS.map((k) => {
+                  const on = k.value === kind;
+                  return (
+                    <button
+                      key={k.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setKind(k.value)}
+                      style={{
+                        flex: 1,
+                        padding: '10px 12px',
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        fontSize: 13, fontWeight: 700, fontFamily: "'Oswald', sans-serif",
+                        textTransform: 'uppercase', letterSpacing: '.5px',
+                        border: `2px solid ${on ? '#C8102E' : '#e0e0e0'}`,
+                        background: on ? '#fdecea' : '#fff',
+                        color: on ? '#C8102E' : '#666',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <span aria-hidden style={{ fontSize: 16 }}>{k.icon}</span>
+                      {k.label}
+                    </button>
+                  );
+                })}
+              </div>
               <div style={{ fontSize: 12, color: '#666', marginBottom: 10, lineHeight: 1.5 }}>
-                What went wrong? A screenshot of the page, your last few clicks, and the current URL/browser are attached automatically — no need to describe those.
+                {kind === 'feature'
+                  ? 'What would make this easier? A screenshot of the page, your last few clicks, and the current URL/browser are attached automatically — no need to describe those.'
+                  : 'What went wrong? A screenshot of the page, your last few clicks, and the current URL/browser are attached automatically — no need to describe those.'}
               </div>
               <textarea
                 ref={textareaRef}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="e.g. Clicked Sign Out on the Snapshot page and nothing happened."
+                placeholder={activeKind.placeholder}
                 style={{
                   width: '100%', minHeight: 140, padding: 12,
                   border: '1px solid #d0d0d0', borderRadius: 6,
@@ -297,7 +355,7 @@ export default function ReportIssueButton() {
                   borderRadius: 6,
                   cursor: message.trim() && !sending ? 'pointer' : 'not-allowed',
                 }}
-              >{sending ? 'Sending…' : 'Send report'}</button>
+              >{sending ? 'Sending…' : (kind === 'feature' ? 'Send request' : 'Send report')}</button>
             </div>
           </div>
         </div>

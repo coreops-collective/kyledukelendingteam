@@ -1,9 +1,15 @@
 /**
- * POST { message, url, userAgent, callerEmail }
+ * POST { message, kind?, context?, breadcrumbs?, screenshot?, ...legacy }
  * Emails the app's admin (PASSWORD_RESET_ADMIN_EMAIL, currently
- * lauren@coreopscollective.com) with a user-reported issue. Uses the
- * existing SMTP creds stored in email_settings, same as
- * send-notification / request-password-reset.
+ * lauren@coreopscollective.com) with a user-reported issue OR feature
+ * request — `kind` picks between them ('bug' default, 'feature'
+ * changes the subject prefix + header block color). Uses the existing
+ * SMTP creds stored in email_settings, same as send-notification /
+ * request-password-reset.
+ *
+ * Subject line:
+ *   [Hub Issue] <desc> — <user name> — <route>          (kind === 'bug')
+ *   [Hub Feature Request] <desc> — <user name> — <route> (kind === 'feature')
  *
  * Auth (S2 posture):
  *   - Origin allowlist (KDT_ALLOWED_ORIGIN)
@@ -130,6 +136,10 @@ exports.handler = async (event) => {
     const payload = JSON.parse(event.body || '{}');
     const {
       message,
+      // Feedback kind picked in the dialog: 'bug' (default, historical
+      // behavior) or 'feature'. Any other string coerces to 'bug' so
+      // a mistyped value from a stale client still delivers.
+      kind: rawKind,
       // New enhanced payload (2026-08-18):
       context = {},
       breadcrumbs = [],
@@ -141,6 +151,9 @@ exports.handler = async (event) => {
       userAgent: legacyUa,
       callerEmail,
     } = payload;
+
+    const kind = rawKind === 'feature' ? 'feature' : 'bug';
+    const isFeature = kind === 'feature';
 
     const text = String(message || '').trim();
     if (!text) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Message is required' }) };
@@ -216,12 +229,17 @@ exports.handler = async (event) => {
         crumbRows.map((c) => `  ${c.at || ''}  ${c.kind || ''}  ${c.label || ''}`).join('\n') + '\n'
       : '';
 
+    // Header block color + label track the feedback kind so Lauren
+    // can spot the type at a glance without opening the message.
+    const headerColor = isFeature ? '#1976d2' : '#C8102E';
+    const headerLabel = isFeature ? 'Feature requested' : 'Issue reported';
+
     // Compose the report email. HTML for Gmail; text fallback for
     // plain-text clients.
     const html = `
       <div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#222;line-height:1.5;font-size:14px">
-        <div style="border-left:4px solid #C8102E;padding:12px 16px;background:#fafafa;border-radius:6px">
-          <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.6px;font-weight:700">Issue reported</div>
+        <div style="border-left:4px solid ${headerColor};padding:12px 16px;background:#fafafa;border-radius:6px">
+          <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.6px;font-weight:700">${esc(headerLabel)}</div>
           <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(reporterName)}</div>
           <div style="font-size:12px;color:#666;margin-top:2px">on <code style="color:#333">${esc(route)}</code></div>
         </div>
@@ -242,7 +260,7 @@ exports.handler = async (event) => {
       </div>
     `;
     const textBody =
-      `Issue reported by ${reporterName} <${caller}>\n` +
+      `${headerLabel} by ${reporterName} <${caller}>\n` +
       `Route: ${route}\n\n` +
       `${text}\n\n` +
       `--\n` +
@@ -284,7 +302,7 @@ exports.handler = async (event) => {
       from: `"${settings.from_name || BRAND}" <${settings.username}>`,
       to: ADMIN_EMAIL,
       replyTo: caller || undefined,
-      subject: `[Hub Issue] ${shortDesc} — ${reporterName} — ${route}`,
+      subject: `${isFeature ? '[Hub Feature Request]' : '[Hub Issue]'} ${shortDesc} — ${reporterName} — ${route}`,
       text: textBody,
       html,
       attachments,
