@@ -5,6 +5,7 @@ import { LOS_STAGES } from '../data/stages.js';
 import { ALL_STATES, STATE_NAMES } from '../data/states.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import { markPartnerDirty, markPartnerNew, savePartnersNow, subscribePartners, deletePartner } from '../lib/partnersStore.js';
+import { getAllFunded } from '../lib/fundedLoans.js';
 import Tour from '../components/Tour.jsx';
 
 // Format helpers — mirror legacy fmt$M / fmt$
@@ -247,9 +248,45 @@ export default function Partners() {
     return map;
   }, []);
 
+  // Compute per-agent funded-loan stats from the canonical funded
+  // ledger (PAST_CLIENTS + LOANS marked Funded, deduped by name+
+  // closeDate). This replaces the seed-lookup-by-exact-name that
+  // rowToPartner does in partnersStore.js — any partner without an
+  // exact seed match (added via + Add New Partner, or renamed in the
+  // drawer — e.g. "Joshua Beasley") was falling through to 0/$0
+  // because seedByName never had them. Live compute makes the number
+  // right regardless of provenance.
+  //
+  // Follow-up: agent-name drift between LOANS.agent and PARTNERS.name
+  // ("Ajs Small" vs "Aja Small") still means exact matching can miss
+  // some agents. Deferred to a normalization pass.
+  const fundedStatsByAgent = useMemo(() => {
+    const map = {};
+    const thisYear = new Date().getFullYear();
+    getAllFunded().forEach((r) => {
+      const name = (r.agent || '').trim();
+      if (!name) return;
+      if (!map[name]) map[name] = { totalClosings: 0, totalVolume: 0, ytdClosings: 0, ytdVolume: 0 };
+      map[name].totalClosings += 1;
+      map[name].totalVolume += (r.amount || 0);
+      if (r.year === thisYear) {
+        map[name].ytdClosings += 1;
+        map[name].ytdVolume += (r.amount || 0);
+      }
+    });
+    return map;
+  }, [partnersVersion]);
+
   // Decorate partners with live pipeline data and a derived primary LO.
   // The manual primary_lo field (if set) takes precedence over the derived
   // value so the user can override the heuristic when needed.
+  //
+  // Stat fields (totalClosings / totalVolume / ytdClosings / ytdVolume)
+  // now prefer fundedStatsByAgent — live-derived from the funded
+  // ledger. Seed-derived values from rowToPartner stay as a fallback
+  // for pre-hub agents who don't have any funded loans keyed to their
+  // exact name in the ledger (kept per Lauren's spec — pre-hub agents
+  // rely on it).
   const primaryLoByName = useMemo(derivePrimaryLoByName, [partnersVersion]);
   const partnersWithLive = useMemo(
     () => PARTNERS.map((p) => {
@@ -257,9 +294,16 @@ export default function Partners() {
       const primaryLo = p.primary_lo || p.primaryLo || primaryLoByName[p.name] || '';
       const base = lp ? { ...p, livePipeline: lp.count, livePipelineVolume: lp.volume } : { ...p };
       base.derivedLo = primaryLo;
+      const funded = fundedStatsByAgent[p.name];
+      if (funded) {
+        base.totalClosings = funded.totalClosings;
+        base.totalVolume = funded.totalVolume;
+        base.ytdClosings = funded.ytdClosings;
+        base.ytdVolume = funded.ytdVolume;
+      }
       return base;
     }),
-    [livePipelineByAgent, partnersVersion, primaryLoByName]
+    [livePipelineByAgent, partnersVersion, primaryLoByName, fundedStatsByAgent]
   );
 
   const stateOptions = useMemo(
