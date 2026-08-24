@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { USERS } from '../data/users.js';
 import { parseLocalDate } from '../lib/clientDates.js';
 import {
@@ -10,6 +10,10 @@ import {
 } from '../data/tasks.js';
 import Tour from '../components/Tour.jsx';
 import { getCurrentUser } from '../lib/auth.js';
+import {
+  loadTasks, getTasks, createTask, updateTask, deleteTask as storeDeleteTask,
+  subscribeTasks, synthLocalTaskId,
+} from '../lib/projectsStore.js';
 
 // Projects (formerly the "Tasks" tab under Pipeline Tasks). Manual
 // Kanban of the team's non-workflow work — recruiting, marketing,
@@ -22,8 +26,16 @@ import { getCurrentUser } from '../lib/auth.js';
 // aren't lost, but the Kanban never shows the Done column — the whole
 // point of this page is "what am I working on right now".
 
-const TASKS_KEY = 'kdt-tasks-v1';
+// Projects (metadata: name/color/desc) still live in localStorage.
+// The team never actually mutates these — they're the color-coded
+// buckets the Kanban groups tasks into. If cross-device project
+// definitions ever matter, migrate them the same way tasks were
+// migrated (add a `projects` table + store); until then, keeping
+// them local keeps the change surface narrow.
 const PROJECTS_KEY = 'kdt-projects-v1';
+// TASKS_KEY kept ONLY so the one-time migration read below can
+// carry existing local tasks into Supabase on first mount post-fix.
+const TASKS_KEY = 'kdt-tasks-v1';
 
 const VISIBLE_STATUSES = TASK_STATUSES.filter((s) => s.key !== 'done');
 
@@ -38,8 +50,27 @@ function loadStored(key, fallback) {
   }
 }
 
+// True when a local task looks identical to its TASKS_SEED counterpart
+// on the fields the seed populates. Used by the one-time
+// localStorage → Supabase migration so an untouched seed row isn't
+// pushed into the DB (which would resurrect it for a teammate who
+// already deleted it).
+function sameShape(a, b) {
+  if (!a || !b) return false;
+  const keys = ['projectId', 'title', 'status', 'priority', 'assignee', 'due', 'notes'];
+  for (const k of keys) {
+    if ((a[k] || '') !== (b[k] || '')) return false;
+  }
+  return true;
+}
+
 export default function Projects() {
-  const [tasks, setTasks] = useState(() => loadStored(TASKS_KEY, TASKS_SEED));
+  // Tasks now live in Supabase (public.tasks) via projectsStore.
+  // The local `tasks` state is a mirror of the store's cache — every
+  // mutation goes through the store, which updates the cache and
+  // notifies subscribers. Kyle's delete on his browser propagates to
+  // Kim's browser via realtime — no more "coming back on refresh".
+  const [tasks, setTasksLocal] = useState(() => getTasks());
   const [projects, setProjects] = useState(() => loadStored(PROJECTS_KEY, PROJECTS_SEED));
   const [activeProjectId, setActiveProjectId] = useState('all');
   const [activeTab, setActiveTab] = useState('tasks');
@@ -57,8 +88,49 @@ export default function Projects() {
     return () => window.removeEventListener('kdt-start-tour', startTour);
   }, []);
 
-  // Persist every change immediately — 200 small objects is cheap.
-  useEffect(() => { try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); } catch {} }, [tasks]);
+  // Sync from Supabase on mount + subscribe to realtime so any teammate's
+  // change (delete, complete, edit) shows up here within a beat.
+  const refreshFromStore = useCallback(() => setTasksLocal(getTasks()), []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await loadTasks();
+      if (cancelled) return;
+      refreshFromStore();
+      // One-time localStorage → Supabase migration. If Kim / Kyle /
+      // Missy had any tasks in localStorage from before this fix,
+      // carry them into the DB so nothing is lost. Any task with an
+      // id we already see in Supabase is skipped (soft-dedupe). Runs
+      // once per browser via a marker key so a delete-and-refresh
+      // doesn't resurrect what someone else just removed.
+      try {
+        const alreadyMigrated = localStorage.getItem('kdt-projects-tasks-migrated-to-supabase');
+        if (!alreadyMigrated) {
+          const local = loadStored(TASKS_KEY, []);
+          const remoteIds = new Set(getTasks().map((t) => t.id));
+          const seed = new Set(TASKS_SEED.map((t) => t.id));
+          for (const t of local) {
+            // Only carry over tasks the user MADE — skip anything that
+            // still matches the untouched TASKS_SEED so we don't reseed
+            // Kim's board with everyone else's leftovers.
+            if (seed.has(t.id) && sameShape(t, TASKS_SEED.find((s) => s.id === t.id))) continue;
+            if (remoteIds.has(t.id)) continue;
+            await createTask(t);
+          }
+          localStorage.setItem('kdt-projects-tasks-migrated-to-supabase', '1');
+          refreshFromStore();
+        }
+      } catch (e) {
+        // Migration failure is non-fatal; the user still sees the DB tasks.
+        console.warn('[projects] one-time localStorage migration skipped:', e?.message || e);
+      }
+    })();
+    const unsub = subscribeTasks(refreshFromStore);
+    return () => { cancelled = true; unsub && unsub(); };
+  }, [refreshFromStore]);
+
+  // Projects (buckets) still persist to localStorage — see comment
+  // near PROJECTS_KEY at the top of the file.
   useEffect(() => { try { localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects)); } catch {} }, [projects]);
 
   const me = useMemo(() => getCurrentUser(), []);
@@ -77,11 +149,11 @@ export default function Projects() {
     : openTasks.filter((t) => t.projectId === activeProjectId);
   const allCount = openTasks.length;
 
-  const addTrackerTaskQuick = () => {
+  const addTrackerTaskQuick = async () => {
     const title = quickTitle.trim();
     if (!title) return;
     const newTask = {
-      id: newTrackerTaskId(),
+      id: synthLocalTaskId(),
       projectId: quickProject,
       title,
       status: 'todo',
@@ -92,7 +164,7 @@ export default function Projects() {
       created: new Date().toISOString().slice(0, 10),
       notes: '',
     };
-    setTasks((prev) => [...prev, newTask]);
+    await createTask(newTask);
     setQuickTitle('');
     toast('Task added', 'New Task');
   };
@@ -103,25 +175,29 @@ export default function Projects() {
     setProjects((prev) => [...prev, { id: 'proj' + (prev.length + 1), name, color: '#555', desc: '' }]);
   };
 
-  const saveTask = (id, patch) => {
-    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, ...patch } : t));
+  const saveTask = async (id, patch) => {
+    await updateTask(id, patch);
     toast('Task saved');
     setOpenTaskId(null);
   };
 
-  // Delete = hard remove. Confirm first because this can't be undone.
-  const deleteTask = (id) => {
+  // Delete = SOFT delete (deleted_at set on the row). Migration 050
+  // added the column. Reversible via `update tasks set deleted_at =
+  // null where id = '<uuid>';` — matches the "no hard delete" rule.
+  // Realtime broadcasts the soft-delete so every other browser drops
+  // the task the moment this call lands.
+  const deleteTaskHandler = async (id) => {
     const target = tasks.find((t) => t.id === id);
-    if (!window.confirm(`Delete "${target?.title || 'this task'}"? This can't be undone.`)) return;
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    if (!window.confirm(`Delete "${target?.title || 'this task'}"? It stays in the audit log but disappears from every board.`)) return;
+    await storeDeleteTask(id);
     toast('Task deleted', 'Removed');
     setOpenTaskId(null);
   };
 
   // Complete a task: mark status='done'. It disappears from the visible
   // Kanban immediately (VISIBLE_STATUSES excludes 'done').
-  const completeTask = (id) => {
-    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: 'done' } : t));
+  const completeTask = async (id) => {
+    await updateTask(id, { status: 'done' });
     toast('Task complete');
   };
 
@@ -132,13 +208,14 @@ export default function Projects() {
       return next;
     });
   };
-  const bulkComplete = () => {
+  const bulkComplete = async () => {
     if (selected.size === 0) return;
     if (!window.confirm(`Mark ${selected.size} task${selected.size === 1 ? '' : 's'} done? They\'ll disappear from the board.`)) return;
-    setTasks((prev) => prev.map((t) => selected.has(t.id) ? { ...t, status: 'done' } : t));
+    const targets = [...selected];
+    await Promise.all(targets.map((id) => updateTask(id, { status: 'done' })));
     setSelected(new Set());
     setSelectMode(false);
-    toast(`${selected.size} task${selected.size === 1 ? '' : 's'} completed`, 'Bulk update');
+    toast(`${targets.length} task${targets.length === 1 ? '' : 's'} completed`, 'Bulk update');
   };
   const exitSelectMode = () => { setSelected(new Set()); setSelectMode(false); };
 
@@ -207,11 +284,14 @@ export default function Projects() {
               onAdd={addProject}
               onRename={(id, name) => setProjects((prev) => prev.map((p) => p.id === id ? { ...p, name } : p))}
               onRecolor={(id, color) => setProjects((prev) => prev.map((p) => p.id === id ? { ...p, color } : p))}
-              onDelete={(id) => {
+              onDelete={async (id) => {
                 const p = projects.find((x) => x.id === id);
                 if (!window.confirm(`Delete project "${p?.name || 'this project'}"? Tasks inside it stay put but move to no project.`)) return;
                 setProjects((prev) => prev.filter((x) => x.id !== id));
-                setTasks((prev) => prev.map((t) => t.projectId === id ? { ...t, projectId: null } : t));
+                // Bulk-reparent every task in that project via the store
+                // so the change propagates via realtime to every teammate.
+                const affected = tasks.filter((t) => t.projectId === id);
+                await Promise.all(affected.map((t) => updateTask(t.id, { projectId: null })));
               }}
               onOpenProject={(id) => { setActiveProjectId(id); setActiveTab('tasks'); }}
             />
@@ -392,7 +472,7 @@ export default function Projects() {
           projects={projects}
           onClose={() => setOpenTaskId(null)}
           onSave={saveTask}
-          onDelete={deleteTask}
+          onDelete={deleteTaskHandler}
         />
       )}
 
