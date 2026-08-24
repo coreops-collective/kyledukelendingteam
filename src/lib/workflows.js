@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { getDate, parseLocalDate } from './clientDates.js';
+import { isPlausibleUserDate } from './dateHelpers.js';
 import { getProfile } from './clientProfiles.js';
 import { showError } from './toaster.js';
 
@@ -664,6 +665,23 @@ export function generateTasksForClient(clientName, anchorDates, opts = {}) {
       }
       if (!anchor) continue;
 
+      // TODO(kim-2026-08-20): far-future window filter.
+      // Kim reported that when a birthday is far out (e.g. October
+      // birthday viewed in April), the "Send Birthday Card" task
+      // still shows in the Later bucket. She'd prefer these NOT emit
+      // until the actual birthday is closer.
+      //
+      // We deliberately do NOT invent a window here — the existing
+      // code has ANCIENT_DAYS=30 for HIDING far-overdue tasks but no
+      // equivalent upcoming-window constant. Adding one is a product
+      // call (per Lauren): what's the right window per anchor type?
+      // 30 days? Same as trigger_days? Different for Birthday vs
+      // Wedding Anniversary vs Closing Anniversary?
+      //
+      // When the product decision lands, gate here with something like:
+      //   if (labelLc === 'birthday' && daysUntil(due) > WINDOW) continue;
+      // and mirror in AFL.jsx if agent birthdays should share the rule.
+
       const unit = TRIGGER_UNITS.includes(t.trigger_unit) ? t.trigger_unit : 'days';
       let due;
       let anchorOccurrence;
@@ -833,13 +851,28 @@ export function buildAnchorsForClient(clientName, sources) {
   });
   // Client-managed date rows layer on top of the loan built-ins,
   // so a user-supplied Birthday overrides nothing but adds to the map.
+  //
+  // Two guards on this path (Kim's 2026-08-20 bug: "Send birthday
+  // card" tasks were appearing for clients with no birthday):
+  //   1. Empty/whitespace date_value skips (existing guard).
+  //   2. parseLocalDate returning null skips (garbage strings —
+  //      "null", "undefined", "birthday", stray text).
+  //   3. NEW: isPlausibleUserDate rejects dates < 1900 or > today+120y.
+  //      Older versions of the app briefly wrote '1970-01-01' /
+  //      epoch-derived values for empty inputs — those parsed as a
+  //      valid Date (Jan 1 1970) and quietly anchored a phantom
+  //      "birthday" task on every client that carried one. This guard
+  //      makes any pre-1900 anchor a no-op regardless of source.
   const datesMap = sources?.clientDates;
   if (datesMap) {
     datesMap.forEach((row) => {
       if (!row.client_name || !row.date_label || !row.date_value) return;
       if (row.client_name.trim().toLowerCase() !== clientName.trim().toLowerCase()) return;
-      const d = parseLocalDate(row.date_value);
-      if (d) anchors.set(row.date_label.toLowerCase(), d);
+      const raw = String(row.date_value).trim();
+      if (!raw) return;
+      const d = parseLocalDate(raw);
+      if (!isPlausibleUserDate(d)) return;
+      anchors.set(row.date_label.toLowerCase(), d);
     });
   }
   return anchors;

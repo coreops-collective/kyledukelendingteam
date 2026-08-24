@@ -22,7 +22,13 @@ export async function loadClientDates() {
     const { data, error } = await supabase.from('client_dates').select('*');
     if (error) { console.warn('[clientDates] load:', error.message); return; }
     DATES.clear();
-    (data || []).forEach((row) => DATES.set(key(row.client_name, row.date_label), row));
+    // Skip rows that migration 049 marked hidden (empty / phantom
+    // date_values from a pre-guard client). Nulls before the migration
+    // runs pass through unchanged so no behavior loss during rollout.
+    (data || []).forEach((row) => {
+      if (row.hidden_at) return;
+      DATES.set(key(row.client_name, row.date_label), row);
+    });
     window.dispatchEvent(new Event('kdt-client-dates-loaded'));
   } catch (e) {
     console.warn('[clientDates] load error:', e.message);
