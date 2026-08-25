@@ -77,6 +77,8 @@ Change its category with the dropdown — it moves buckets immediately, no confi
 
 Add a description that helps everyone else on the team understand the workflow's purpose.
 
+"⏸ Pause workflow" silences the workflow without deleting it — tasks stop appearing on Client for Life / Tasks until you hit "▶ Resume workflow." The workflow and every task inside are preserved, along with any completion history.
+
 "Delete workflow" wipes it and every task inside. There's a confirm before it goes, but this can't be undone.`,
   },
   {

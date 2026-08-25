@@ -18,13 +18,14 @@ import {
 // Projects (formerly the "Tasks" tab under Pipeline Tasks). Manual
 // Kanban of the team's non-workflow work — recruiting, marketing,
 // tech stack, etc. Grouped by project (color-coded), managed in
-// swim-lane columns (To Do / In Progress / Blocked / Done).
+// swim-lane columns (To Do / In Progress / Completed).
 //
-// Completion semantics: when a user marks a task done (drawer status
-// dropdown → 'done' OR bulk-complete), the row disappears from view.
-// Behind the scenes the task keeps its 'done' status so audit / stats
-// aren't lost, but the Kanban never shows the Done column — the whole
-// point of this page is "what am I working on right now".
+// Completion semantics (Kim's 2026-08-24 change): when a user marks
+// a task done (drawer status dropdown → 'done' OR bulk-complete),
+// the row moves into the Completed column so the team can see what's
+// finished. The 'blocked' status is kept in TASK_STATUSES for legacy
+// rows but is NOT rendered as a board column — a row still carrying
+// blocked can be moved out via the drawer status picker.
 
 // Projects (metadata: name/color/desc) still live in localStorage.
 // The team never actually mutates these — they're the color-coded
@@ -37,7 +38,10 @@ const PROJECTS_KEY = 'kdt-projects-v1';
 // carry existing local tasks into Supabase on first mount post-fix.
 const TASKS_KEY = 'kdt-tasks-v1';
 
-const VISIBLE_STATUSES = TASK_STATUSES.filter((s) => s.key !== 'done');
+// Board columns Kim wants to see: To Do / In Progress / Completed.
+// The 'blocked' key stays in TASK_STATUSES so legacy rows are still
+// editable from the drawer, but we don't render it as a column.
+const VISIBLE_STATUSES = TASK_STATUSES.filter((s) => s.key !== 'blocked');
 
 function loadStored(key, fallback) {
   try {
@@ -143,10 +147,16 @@ export default function Projects() {
   // Only show open tasks — completed ones drop out immediately so the
   // board reads as "what I'm actively working on". The user wanted this
   // behavior — leaving a Done column visible was cluttering things up.
+  // `openTasks` still drives the "N Open Tasks" header count —
+  // completed tasks don't inflate that number even though they now
+  // render in the Completed column. `visibleTasks` is what the
+  // board actually paints; it includes done rows so the Completed
+  // column populates.
   const openTasks = tasks.filter((t) => t.status !== 'done');
+  const boardTasks = tasks.filter((t) => t.status !== 'blocked'); // hide legacy blocked from the board
   const visibleTasks = activeProjectId === 'all'
-    ? openTasks
-    : openTasks.filter((t) => t.projectId === activeProjectId);
+    ? boardTasks
+    : boardTasks.filter((t) => t.projectId === activeProjectId);
   const allCount = openTasks.length;
 
   const addTrackerTaskQuick = async () => {
@@ -224,7 +234,7 @@ export default function Projects() {
   const PROJECTS_TOUR_STEPS = [
     {
       title: 'Projects',
-      body: 'Your own Kanban board for non-workflow work — recruiting, marketing, tech stack, quarterly initiatives. Not tied to any loan.\n\nColumns: To Do · In Progress · Blocked. Click any task to edit assignee, priority, due date, notes.',
+      body: 'Your own Kanban board for non-workflow work — recruiting, marketing, tech stack, quarterly initiatives. Not tied to any loan.\n\nColumns: To Do · In Progress · Completed. Click any task to edit assignee, priority, due date, notes.',
     },
     {
       title: 'Add a task',
@@ -232,7 +242,7 @@ export default function Projects() {
     },
     {
       title: 'Complete a task',
-      body: 'Open the task, set Status to "Done", Save. The task disappears from the board — the whole point of this page is "what am I working on right now", not a graveyard of completed items.\n\nTo knock out several at once: click "Select multiple" at the top of a column, tap the tasks to select, then "✓ Complete N".',
+      body: 'Open the task, set Status to "Completed", Save. It moves into the Completed column so the team can see what\'s finished (previously the row disappeared — Kim asked for the change 2026-08-24).\n\nTo knock out several at once: click "Select multiple" at the top of a column, tap the tasks to select, then "✓ Complete N". They all slide into Completed.',
     },
     {
       title: 'Manage projects',
@@ -249,7 +259,7 @@ export default function Projects() {
               {allCount} Open Task{allCount === 1 ? '' : 's'}
             </div>
             <div className="section-sub">
-              {projects.length} project{projects.length === 1 ? '' : 's'} · completed tasks disappear from view
+              {projects.length} project{projects.length === 1 ? '' : 's'} · completed tasks land in the Completed column
             </div>
           </div>
           <div data-tour="tracker-tabs" style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,.12)', padding: 4, borderRadius: 8 }}>

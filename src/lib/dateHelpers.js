@@ -21,6 +21,23 @@
 // that day can enter 1/2/1970 — one false-positive for 56 years of
 // history is a fair trade for killing the phantom-birthday class of
 // bug on every current and future client.
+// End-of-calendar-week for a given `today`, defaulting to Saturday
+// (US convention Kim's team uses). Returns midnight at the start of
+// the day AFTER the week-end day so a "due <= end" check catches
+// anything with a due date falling on or before that Saturday.
+//
+// weekEndsOn: 0=Sunday ... 6=Saturday. Change here if the team wants
+// a different week end — no other file references the boundary.
+export function endOfCalendarWeek(today, weekEndsOn = 6) {
+  const base = today instanceof Date ? today : new Date();
+  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  const currentDow = start.getDay(); // 0=Sun..6=Sat
+  let daysToEnd = weekEndsOn - currentDow;
+  if (daysToEnd < 0) daysToEnd += 7;
+  // Return end-of-day for the week-end date so <= comparisons include it.
+  return new Date(start.getFullYear(), start.getMonth(), start.getDate() + daysToEnd, 23, 59, 59, 999);
+}
+
 export function isPlausibleUserDate(d) {
   if (!d || !(d instanceof Date) || Number.isNaN(d.getTime())) return false;
   const y = d.getFullYear();

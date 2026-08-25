@@ -26,8 +26,14 @@ export const TASKS_SEED = [
 export const TASK_STATUSES = [
   {key:'todo', label:'To Do', color:'#888', bg:'#f4f4f6'},
   {key:'inprogress', label:'In Progress', color:'#1976d2', bg:'#e3f2fd'},
+  // Kim's 2026-08-24 request: the team wants to SEE finished work, so
+  // the previous "Blocked" swim-lane became "Completed" and now shows
+  // tasks with status='done'. The 'blocked' entry stays below so any
+  // legacy row that carried it doesn't orphan — the drawer status
+  // picker still lists it, so an existing blocked task can be moved
+  // out of that state. It's just no longer rendered as a board column.
+  {key:'done', label:'Completed', color:'#2e7d32', bg:'#e8f5e9'},
   {key:'blocked', label:'Blocked', color:'#c8102e', bg:'#fff1f3'},
-  {key:'done', label:'Done', color:'#2e7d32', bg:'#e8f5e9'},
 ];
 
 export const TASK_PRIORITIES = [
