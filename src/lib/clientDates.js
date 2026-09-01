@@ -72,6 +72,46 @@ export async function upsertClientDate(clientName, dateLabel, dateValue, opts = 
       .select()
       .single();
     if (error) {
+      // Fallback for the "in-memory DATES map is stale" race — the
+      // natural-key unique index (client_dates_natural_key on
+      // lower(client_name), lower(date_label)) protects the DB, but
+      // the map lookup on line 49 can miss when Kim (or a teammate)
+      // added the row in another tab / session or before this store
+      // had loaded. That surfaced as: New Loan Intake save failing
+      // for an existing borrower with a birthday. Now: if the insert
+      // trips 23505, look the existing row up by natural key,
+      // switch to UPDATE, and index it into the local map. Any
+      // OTHER insert error propagates like before.
+      const isDupe = error.code === '23505'
+        || /duplicate key value/i.test(error.message || '')
+        || /client_dates_natural_key/i.test(error.message || '');
+      if (isDupe) {
+        const { data: found, error: findErr } = await supabase
+          .from('client_dates')
+          .select('*')
+          .ilike('client_name', name)
+          .ilike('date_label', label)
+          .limit(1);
+        const row = Array.isArray(found) && found[0];
+        if (!findErr && row) {
+          const { data: updated, error: updErr } = await supabase
+            .from('client_dates')
+            .update({ date_value: bday, recurring, notes, updated_at: new Date().toISOString() })
+            .eq('id', row.id)
+            .select()
+            .single();
+          if (!updErr) {
+            DATES.set(key(name, label), updated);
+            window.dispatchEvent(new Event('kdt-client-dates-changed'));
+            return updated;
+          }
+          console.warn('[clientDates] duplicate-key recovery update:', updErr.message);
+        } else if (findErr) {
+          console.warn('[clientDates] duplicate-key recovery lookup:', findErr.message);
+        }
+        // Fall through to the standard error surface if recovery
+        // itself failed — better than a silent no-op.
+      }
       console.warn('[clientDates] insert:', error.message);
       showError(`Couldn't save "${label}" for ${name}: ${error.message}`, {
         retry: () => upsertClientDate(clientName, dateLabel, dateValue, opts),
