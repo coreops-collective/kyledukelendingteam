@@ -28,6 +28,7 @@ import {
   createKeyDateType, updateKeyDateType, deleteKeyDateType,
 } from '../lib/keyDateTypes.js';
 import { showError } from '../lib/toaster.js';
+import { endOfCalendarWeek } from '../lib/dateHelpers.js';
 import Tour from '../components/Tour.jsx';
 import RichTextEditor from '../components/RichTextEditor.jsx';
 import { getRoleKeysForWorkflowDropdown, getRoleLabel } from '../lib/jobRoles.js';
@@ -83,7 +84,7 @@ export default function CFL() {
     {
       target: '[data-tour="cfl-buckets"]',
       title: 'Buckets by urgency',
-      body: 'Tasks are grouped Overdue → Today → This Week → This Month → Later. This Month and Later start collapsed so 800 pending items don\'t drown you in noise.\n\nOverdue > 30 days is hidden by default (sending a card 4 years late is worse than not sending it). Toggle "Show ancient" if you want to prove they\'re there.',
+      body: 'Tasks are grouped Overdue → Today → This Week → This Month → Later. This Week means the CURRENT calendar week (through Saturday) — so on a Tuesday the bucket only shows what\'s left this week, not the next 7 days. This Month and Later start collapsed so 800 pending items don\'t drown you in noise.\n\nOverdue > 30 days is hidden by default (sending a card 4 years late is worse than not sending it). Toggle "Show ancient" if you want to prove they\'re there.',
     },
     {
       target: '[data-tour="cfl-task-row"]',
@@ -258,6 +259,12 @@ export default function CFL() {
   });
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Kim's 2026-08-24 request: "This Week" should mean the current
+  // CALENDAR week, not a rolling 7-day window. Anything due on or
+  // before this Saturday (US week end) lands in This Week; anything
+  // beyond flows down into This Month / Later. Change weekEndsOn in
+  // dateHelpers.js#endOfCalendarWeek if the team wants Sunday.
+  const weekEnd = endOfCalendarWeek(today, 6);
   const buckets = [
     { label: 'Overdue', items: [] },
     { label: 'Today', items: [] },
@@ -271,7 +278,7 @@ export default function CFL() {
     if (days < -ANCIENT_DAYS && !showAncient) { ancientHidden += 1; return; }
     if (days < 0) buckets[0].items.push(it);
     else if (days === 0) buckets[1].items.push(it);
-    else if (days <= 7) buckets[2].items.push(it);
+    else if (it.due_date <= weekEnd) buckets[2].items.push(it);
     else if (days <= 31) buckets[3].items.push(it);
     else buckets[4].items.push(it);
   });
@@ -1468,9 +1475,31 @@ export function WorkflowHeader({ workflow, onDelete, bump }) {
           }}
         />
       </div>
-      <button className="form-btn" style={{ color: '#c62828', borderColor: '#f5b8c1' }} onClick={onDelete}>
-        Delete workflow
-      </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {/* Pause / Resume — Kim's 2026-08-24 request: silence a
+            workflow without deleting it. paused_at set by
+            updateWorkflow via migration 052; generateTasksForClient
+            + generateStatusTasks both skip paused workflows so
+            downstream CFL / Tasks tabs stop emitting immediately. */}
+        <button
+          className="form-btn"
+          style={workflow.paused_at
+            ? { color: '#0d47a1', borderColor: '#a3bffa', background: '#eef4ff' }
+            : { color: '#5a4a1a', borderColor: '#e8c97a', background: '#fff8e1' }}
+          onClick={() => {
+            const next = workflow.paused_at ? null : new Date().toISOString();
+            updateWorkflow(workflow.id, { paused_at: next }).then(bump);
+          }}
+          title={workflow.paused_at
+            ? 'Resume this workflow. Task generation restarts on the next render.'
+            : 'Pause this workflow. Its tasks stop appearing on CFL / Tasks until Resume — the workflow and its history are kept.'}
+        >
+          {workflow.paused_at ? '▶ Resume workflow' : '⏸ Pause workflow'}
+        </button>
+        <button className="form-btn" style={{ color: '#c62828', borderColor: '#f5b8c1' }} onClick={onDelete}>
+          Delete workflow
+        </button>
+      </div>
     </div>
   );
 }

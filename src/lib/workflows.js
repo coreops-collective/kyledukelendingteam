@@ -152,6 +152,21 @@ export async function createWorkflow(name, description = '', category = 'Loan') 
 export async function updateWorkflow(id, patch) {
   const { error } = await supabase.from('workflow_templates').update(patch).eq('id', id);
   if (error) {
+    // Graceful downgrade: paused_at was added by migration 052. If
+    // that migration hasn't landed yet on the target Supabase project
+    // (schema-cache miss / column missing), strip and retry so the
+    // rest of the patch lands. Follows the pattern in workflows.js
+    // for loan_id + clientProfiles.js for review_sources.
+    if ('paused_at' in patch
+        && /paused_at/i.test(error.message || '')
+        && (/column\s+.*paused_at.*does not exist/i.test(error.message || '')
+            || /schema cache/i.test(error.message || ''))) {
+      const { paused_at: _drop, ...rest } = patch;
+      if (Object.keys(rest).length) return updateWorkflow(id, rest);
+      console.warn('[workflows] paused_at column missing — run migration 052.');
+      showError('Pause isn\'t available yet — run migration 052 first.');
+      return;
+    }
     console.warn('[workflows] updateWorkflow:', error.message);
     showError(`Couldn't update workflow: ${error.message}`, {
       retry: () => updateWorkflow(id, patch),
@@ -413,7 +428,25 @@ export const CONDITION_FIELDS = [
   // fires until the birthday actually gets recorded — set condition to
   // has_birthday IS NO and it self-completes once Kim enters the date.
   { value: 'has_birthday',         label: 'Client has birthday on file',           type: 'bool', source: 'client' },
+  // Kim's 2026-08-24: gate a task on "the LO has completed Closing
+  // Convo W Borrower". Reads task_completions for any completion of
+  // a workflow_task whose title matches CLOSING_CONVO_TITLE_RE for
+  // this client. Set the gate to IS YES to fire the child task once
+  // the closing convo is logged, or IS NO to fire only while the
+  // convo is still outstanding. Note (per PR body): the "Closing
+  // Convo W Borrower" task itself doesn't exist yet — Kim needs to
+  // add it as a Task in a workflow first (recommended: Loan / New
+  // Contract or Client for Life). Until then this gate always
+  // evaluates false, which is safe.
+  { value: 'lo_completed_closing_convo', label: 'LO has completed "Closing Convo W Borrower"', type: 'bool', source: 'completion' },
 ];
+
+// Match "closing convo w[/./ ]borrower" plus a few phrasings Kim
+// might type. Case-insensitive, whitespace-tolerant. Kept in one
+// place so a rename of the task title anywhere in the workflow
+// editor doesn't split-brain this gate from what Kim sees on the
+// task card.
+const CLOSING_CONVO_TITLE_RE = /closing\s*convo\s*w[\/\.\s]*borrower/i;
 
 export const CONDITION_OPS = {
   bool: [
@@ -430,7 +463,7 @@ export const CONDITION_OPS = {
 //   source='loan'    → the LOANS record (intake answers land here)
 //   source='agent'   → the PARTNERS record (Agent for Life workflows;
 //                      is_vip and has_mailing_address use this)
-function matchesCondition(task, profile, loan, agent, anchors) {
+function matchesCondition(task, profile, loan, agent, anchors, clientName) {
   const field = task.condition_field;
   const op = task.condition_op;
   if (!field || field === 'none' || !op) return true;
@@ -455,6 +488,34 @@ function matchesCondition(task, profile, loan, agent, anchors) {
     // anchor map carries a 'birthday' entry (set from client_dates).
     if (field === 'has_birthday') {
       raw = !!(anchors && anchors.get && anchors.get('birthday'));
+    } else raw = null;
+  } else if (source === 'completion') {
+    // Task-completion-derived: true when a workflow_task whose title
+    // matches the gate's regex has been completed for this client
+    // (any completion — outcome not required). Walks TASKS_BY_WORKFLOW
+    // to find matching task IDs, then checks COMPLETIONS for a
+    // name-keyed hit for `clientName`. Small workflow_tasks set (<200
+    // typical), so the walk is cheap.
+    if (field === 'lo_completed_closing_convo') {
+      const clientLc = (clientName || '').trim().toLowerCase();
+      const matchIds = new Set();
+      TASKS_BY_WORKFLOW.forEach((list) => {
+        list.forEach((t) => {
+          if (CLOSING_CONVO_TITLE_RE.test(t.title || '')) matchIds.add(t.id);
+        });
+      });
+      let hit = false;
+      if (matchIds.size && clientLc) {
+        for (const k of COMPLETIONS.keys()) {
+          // key shape: `${taskId}||name:${lower(name)}||${dueIso}`
+          const [taskId, nameSlot] = k.split('||');
+          if (!matchIds.has(taskId)) continue;
+          if (nameSlot !== `name:${clientLc}`) continue;
+          hit = true;
+          break;
+        }
+      }
+      raw = hit;
     } else raw = null;
   } else {
     raw = profile ? profile[field] : null;
@@ -637,6 +698,7 @@ export function generateTasksForClient(clientName, anchorDates, opts = {}) {
   const agent = opts.agent || null;
   for (const wf of WORKFLOWS) {
     if (wf.active === false) continue;
+    if (wf.paused_at) continue; // Kim's pause — see updateWorkflow / migration 052
     if (categoryFilter && wf.category !== categoryFilter) continue;
     const tasks = TASKS_BY_WORKFLOW.get(wf.id) || [];
     for (const t of tasks) {
@@ -645,7 +707,7 @@ export function generateTasksForClient(clientName, anchorDates, opts = {}) {
       // 'each' or null (legacy default) fires for everyone, which is
       // the right shape for birthdays and personal follow-ups.
       if (t.applies_to === 'primary' && isCoBorrower) continue;
-      if (!matchesCondition(t, profile, null, agent, anchorDates)) continue;
+      if (!matchesCondition(t, profile, null, agent, anchorDates, clientName)) continue;
       // Status-triggered tasks are handled by a separate generator
       // pass (generateStatusTasks). Skip here so we don't double-fire.
       if (t.trigger_kind === 'status') continue;
@@ -752,6 +814,7 @@ export function generateStatusTasks(loans) {
   const out = [];
   for (const wf of WORKFLOWS) {
     if (wf.active === false) continue;
+    if (wf.paused_at) continue; // Kim's pause — see updateWorkflow / migration 052
     const tasks = TASKS_BY_WORKFLOW.get(wf.id) || [];
     for (const t of tasks) {
       if (t.trigger_kind !== 'status') continue;
@@ -766,7 +829,7 @@ export function generateStatusTasks(loans) {
         // Do-not-contact clients get no workflow tasks — same rule as
         // generateTasksForClient. Set from the CFL client card.
         if (profile.cfl_status === 'do_not_contact') continue;
-        if (!matchesCondition(t, profile, l)) continue;
+        if (!matchesCondition(t, profile, l, null, null, l.borrower)) continue;
         // Same decision-branch gating as date-triggered tasks: don't
         // emit a status-triggered branch task until its upstream
         // decision has been answered with the matching outcome for
