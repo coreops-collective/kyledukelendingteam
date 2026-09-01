@@ -194,9 +194,23 @@ exports.handler = async (event) => {
     catch (err) { return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Decryption failed', detail: err.message }) }; }
     if (!appPassword) return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ success: true, sent: 0, reason: 'No app password' }) };
 
+    // Role match with a single semantic override:
+    //   branch_manager IS an account owner for the hub AND still the
+    //   LO on their own deals (Lauren 2026-09-01). Any notification
+    //   rule targeting 'loan_officer' therefore also routes to any
+    //   branch_manager user, in addition to actual role='loan_officer'
+    //   users. Every other role stays an exact match — this override
+    //   is one-way (BM → LO) and does not affect the reverse.
+    const roleMatches = (u, wantedRole) => {
+      if (!u?.role || !wantedRole) return false;
+      if (u.role === wantedRole) return true;
+      if (wantedRole === 'loan_officer' && u.role === 'branch_manager') return true;
+      return false;
+    };
+
     const recipients = new Map();
     for (const r of stageFiltered) {
-      if (r.role) users.filter(u => u.role === r.role).forEach(u => { if (u.email) recipients.set(u.email.toLowerCase(), { email: u.email, rule: r }); });
+      if (r.role) users.filter(u => roleMatches(u, r.role)).forEach(u => { if (u.email) recipients.set(u.email.toLowerCase(), { email: u.email, rule: r }); });
       else if (r.user_id) { const u = users.find(x => x.id === r.user_id); if (u?.email) recipients.set(u.email.toLowerCase(), { email: u.email, rule: r }); }
       else if (r.extra_email) recipients.set(r.extra_email.toLowerCase(), { email: r.extra_email, rule: r });
     }
