@@ -2,6 +2,7 @@ import { LOANS } from '../data/loans.js';
 import { PAST_CLIENTS } from '../data/pastClients.js';
 import { getProfile } from './clientProfiles.js';
 import { parseLocalDate } from './clientDates.js';
+import { resolveLoanContact } from './loanContactFallback.js';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -11,9 +12,15 @@ const MONTH_NAMES = [
 // Project a LOANS row into the PAST_CLIENTS shape so callers can treat
 // the merged list uniformly. Pulls month / year off closeDate so the
 // existing INCOME / All Loans filters keep working.
+//
+// Phone / email pass through resolveLoanContact so a live/imported
+// record whose blob is blank still surfaces the number Kim saved to
+// client_profiles.corrected_* before the 043/044 import flipped the
+// record to _source='loans'. See src/lib/loanContactFallback.js.
 function loanToFundedRecord(l) {
   const d = l.closeDate ? parseLocalDate(l.closeDate) : null;
   const valid = !!d;
+  const { phone, email } = resolveLoanContact(l, getProfile);
   return {
     id: l.id,
     name: l.borrower || '',
@@ -30,8 +37,8 @@ function loanToFundedRecord(l) {
     type: l.type || '',
     rate: l.rate || null,
     agent: l.agent || '',
-    phone: l.phone || '',
-    email: l.email || '',
+    phone,
+    email,
     lo: l.lo || 'Kyle',
     month: valid ? MONTH_NAMES[d.getMonth()] : '',
     year: valid ? d.getFullYear() : null,
