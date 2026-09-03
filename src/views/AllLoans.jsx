@@ -503,12 +503,22 @@ function IdentityEditor({ client, onChange }) {
   const isLive = c._source === 'loans';
   const loan = isLive ? LOANS.find((l) => l.id === c.id) : null;
   const profile = getProfile(c.name) || {};
+  // Same profile-by-seed-name lookup fundedLoans uses so a renamed
+  // imported loan still finds Kim's original contact edits.
+  const seedProfile = (isLive && c.past_client_seed_name && (!c.phone || !c.email))
+    ? (getProfile(c.past_client_seed_name) || {})
+    : {};
 
   // For legacy records, show the correction if one exists; otherwise
   // show the current (potentially wrong) value.
   const displayName = isLive ? c.name : (profile.corrected_name || c.name || '');
-  const displayPhone = isLive ? c.phone : (profile.corrected_phone || c.phone || '');
-  const displayEmail = isLive ? c.email : (profile.corrected_email || c.email || '');
+  // Phone / email fall back to client_profiles.corrected_* even for
+  // live records — Kim's 2026-09-03 bug: contacts entered while the
+  // record was a past client stayed in client_profiles, and the
+  // isLive branch used to short-circuit them to '' after the 043/044
+  // import flipped the record to _source='loans'.
+  const displayPhone = c.phone || profile.corrected_phone || seedProfile.corrected_phone || '';
+  const displayEmail = c.email || profile.corrected_email || seedProfile.corrected_email || '';
   const displayLo = isLive ? (c.lo || '') : (profile.corrected_lo || c.lo || '');
 
   const save = async (field, value) => {
@@ -748,14 +758,17 @@ function PastClientDrawer({ client, refiRate, onClose }) {
     ? profile.past_client_overrides
     : {};
   // Apply legacy-record hydration so the drawer displays the last
-  // saved value. Live loans skip this — they own their own storage.
-  // Name/phone/email/lo persist to dedicated corrected_* columns so
-  // consumers like fundedLoans.js pick them up on their read pass.
-  // Everything else in past_client_overrides.
+  // saved value. Live loans skip this for name / LO — they own their
+  // own storage there. Phone / email fall back to profile whenever
+  // the blob is empty, regardless of _source: Kim's contact edits made
+  // BEFORE migrations 043/044 imported the past client into loans are
+  // sitting in corrected_phone / corrected_email keyed by the ORIGINAL
+  // past-client name; the imported loan row carries them via
+  // past_client_seed_name, so we also consult a profile lookup by
+  // that seed name to catch renamed records. Preserves live-authored
+  // values: if the loan blob already has phone / email, that wins.
   if (!isLive) {
     if (profile.corrected_name) c.name = profile.corrected_name;
-    if (profile.corrected_phone) c.phone = profile.corrected_phone;
-    if (profile.corrected_email) c.email = profile.corrected_email;
     if (profile.corrected_lo) c.lo = profile.corrected_lo;
     for (const [k, v] of Object.entries(overrides)) {
       if (v !== null && v !== undefined && v !== '' && (c[k] == null || c[k] === '')) {
@@ -763,6 +776,12 @@ function PastClientDrawer({ client, refiRate, onClose }) {
       }
     }
   }
+  // Phone / email fallback runs for both legacy and live paths.
+  const seedProfile = (!c.phone || !c.email)
+    ? (c.past_client_seed_name ? getProfile(c.past_client_seed_name) : null)
+    : null;
+  if (!c.phone) c.phone = profile.corrected_phone || seedProfile?.corrected_phone || '';
+  if (!c.email) c.email = profile.corrected_email || seedProfile?.corrected_email || '';
 
   // Field-key → legacy client_profiles column for name/phone/email/lo.
   // Everything else legacy goes into the past_client_overrides jsonb.
