@@ -4,7 +4,7 @@
 // Exits non-zero on failure.
 
 import assert from 'node:assert/strict';
-import { resolveLoanContact } from './loanContactFallback.js';
+import { resolveLoanContact, resolveCoBorrower } from './loanContactFallback.js';
 
 // Fake profileLookup: takes a Map keyed by lowercased name.
 function makeLookup(profilesByLower) {
@@ -125,6 +125,135 @@ it('profile has only phone (no email) — fills phone, leaves email blank', () =
   const out = resolveLoanContact(loan, lookup);
   assert.equal(out.phone, '555-1234');
   assert.equal(out.email, '');
+});
+
+console.log('\nresolveCoBorrower');
+
+it('passes through co-borrower fields when the loan row has all four', () => {
+  const loan = {
+    borrower: 'Winston, Bobby',
+    coFirst: 'Jamie', coLast: 'Winston',
+    coPhone: '(561) 315-3962', coEmail: 'j_bwinston@yahoo.com',
+  };
+  const lookup = makeLookup(new Map([
+    ['winston, bobby', { co_borrower_first: 'IGNORE', co_borrower_phone: 'IGNORE' }],
+  ]));
+  const out = resolveCoBorrower(loan, lookup);
+  assert.equal(out.first, 'Jamie');
+  assert.equal(out.last, 'Winston');
+  assert.equal(out.phone, '(561) 315-3962');
+  assert.equal(out.email, 'j_bwinston@yahoo.com');
+});
+
+it("KIM'S BUG: imported live loan with no co-borrower keys falls back to client_profiles", () => {
+  // 043/044 created these rows with no co* or c2* keys at all.
+  const loan = {
+    borrower: 'Winston, Bobby',
+    past_client_seed_name: 'Winston, Bobby',
+  };
+  const lookup = makeLookup(new Map([
+    ['winston, bobby', {
+      co_borrower_first: 'Jamie', co_borrower_last: 'Winston',
+      co_borrower_phone: '(561) 315-3962', co_borrower_email: 'j_bwinston@yahoo.com',
+    }],
+  ]));
+  const out = resolveCoBorrower(loan, lookup);
+  assert.equal(out.first, 'Jamie');
+  assert.equal(out.last, 'Winston');
+  assert.equal(out.phone, '(561) 315-3962');
+  assert.equal(out.email, 'j_bwinston@yahoo.com');
+});
+
+it('reads the legacy c2* key family, not just the canonical co* names', () => {
+  // NewLoan mirrors every write to both families; older rows only have c2*.
+  const loan = {
+    borrower: 'Kuskie, Kathryn',
+    c2first: 'Kathryn', c2last: 'Kuskie',
+    c2phone: '555-0143', c2email: 'kk@example.com',
+  };
+  const lookup = makeLookup(new Map());
+  const out = resolveCoBorrower(loan, lookup);
+  assert.equal(out.first, 'Kathryn');
+  assert.equal(out.last, 'Kuskie');
+  assert.equal(out.phone, '555-0143');
+  assert.equal(out.email, 'kk@example.com');
+});
+
+it('canonical co* wins over legacy c2* when both are present', () => {
+  const loan = {
+    borrower: 'Gray, James',
+    coFirst: 'Kaytlin', c2first: 'STALE',
+    coLast: 'Gray', c2last: 'STALE',
+  };
+  const out = resolveCoBorrower(loan, makeLookup(new Map()));
+  assert.equal(out.first, 'Kaytlin');
+  assert.equal(out.last, 'Gray');
+});
+
+it('partial row: has co name on the loan, pulls missing phone/email from profile', () => {
+  const loan = {
+    borrower: 'Hayes, Rachel',
+    coFirst: 'Frank', coLast: 'Cagno',
+  };
+  const lookup = makeLookup(new Map([
+    ['hayes, rachel', {
+      co_borrower_first: 'IGNORE-ME', co_borrower_last: 'IGNORE-ME',
+      co_borrower_phone: '(347) 738-7730', co_borrower_email: 'frankie.cag.206@gmail.com',
+    }],
+  ]));
+  const out = resolveCoBorrower(loan, lookup);
+  assert.equal(out.first, 'Frank', 'loan value wins over profile');
+  assert.equal(out.last, 'Cagno');
+  assert.equal(out.phone, '(347) 738-7730');
+  assert.equal(out.email, 'frankie.cag.206@gmail.com');
+});
+
+it('rename-safe: renamed loan finds co-borrower via past_client_seed_name', () => {
+  const loan = {
+    borrower: 'Andrew Clouse',
+    past_client_seed_name: 'Clouse',
+  };
+  const lookup = makeLookup(new Map([
+    ['clouse', { co_borrower_first: 'Dana', co_borrower_last: 'Clouse' }],
+  ]));
+  const out = resolveCoBorrower(loan, lookup);
+  assert.equal(out.first, 'Dana');
+  assert.equal(out.last, 'Clouse');
+});
+
+it('current-name profile wins over seed-name profile', () => {
+  const loan = { borrower: 'Andrew Clouse', past_client_seed_name: 'Clouse' };
+  const lookup = makeLookup(new Map([
+    ['clouse',        { co_borrower_first: 'OLD' }],
+    ['andrew clouse', { co_borrower_first: 'Dana' }],
+  ]));
+  assert.equal(resolveCoBorrower(loan, lookup).first, 'Dana');
+});
+
+it('no co-borrower anywhere — returns all blanks instead of throwing', () => {
+  const out = resolveCoBorrower({ borrower: 'Solo, Case' }, makeLookup(new Map()));
+  assert.deepEqual(out, { first: '', last: '', phone: '', email: '' });
+});
+
+it('null/undefined loan — returns all blanks without throwing', () => {
+  const lookup = makeLookup(new Map());
+  assert.deepEqual(resolveCoBorrower(null, lookup), { first: '', last: '', phone: '', email: '' });
+  assert.deepEqual(resolveCoBorrower(undefined, lookup), { first: '', last: '', phone: '', email: '' });
+});
+
+it('legacy past-client record (no co fields at all) reads straight from profile', () => {
+  // _source==='past' records never carry co* keys; the editor passes
+  // blanks and relies entirely on the profile columns.
+  const record = { borrower: 'Holt, Tamrah Renee', past_client_seed_name: '' };
+  const lookup = makeLookup(new Map([
+    ['holt, tamrah renee', {
+      co_borrower_first: 'William', co_borrower_last: 'Holt',
+      co_borrower_phone: '(440) 479-5611', co_borrower_email: 'toledodad20012000@yahoo.com',
+    }],
+  ]));
+  const out = resolveCoBorrower(record, lookup);
+  assert.equal(out.first, 'William');
+  assert.equal(out.phone, '(440) 479-5611');
 });
 
 console.log(`\n${ran - failed}/${ran} passed`);
