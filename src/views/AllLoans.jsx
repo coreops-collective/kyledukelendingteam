@@ -12,6 +12,7 @@ import {
   loadClientProfiles, getProfile, upsertClientProfile, REVIEW_SOURCES,
   getReviewSources, buildReviewSourcesPatch,
 } from '../lib/clientProfiles.js';
+import { resolveCoBorrower } from '../lib/loanContactFallback.js';
 import Tour from '../components/Tour.jsx';
 import CflStatusRow from '../components/CflStatusRow.jsx';
 
@@ -56,7 +57,7 @@ export default function AllLoans() {
     },
     {
       title: 'Click a client for the drawer',
-      body: 'The drawer shows every field on the past client + client dates (birthday, home anniversary) + a review section for tracking Google / Zillow / Facebook / Yelp reviews — pick as many platforms as apply since some clients review on more than one.\n\nIdentity edits (spelling, phone, email) persist through client_profiles so the corrections stick even if the seed file changes.',
+      body: 'The drawer shows every field on the past client + client dates (birthday, home anniversary) + a review section for tracking Google / Zillow / Facebook / Yelp reviews — pick as many platforms as apply since some clients review on more than one.\n\nIdentity edits (spelling, phone, email) persist through client_profiles so the corrections stick even if the seed file changes.\n\nThe blue Co-borrower panel captures the second borrower\'s name, phone, email, and birthday. Their birthday gets its own CFL client card and birthday task. Both identity and co-borrower details read back from client_profiles whether the record is a legacy past client or a live loan, so anything saved before a client was imported still shows.',
     },
     {
       title: 'CFL status: Do Not Contact / Archive',
@@ -609,22 +610,25 @@ function CoBorrowerEditor({ client, onChange }) {
   const c = client;
   const isLive = c._source === 'loans';
   const loan = isLive ? LOANS.find((l) => l.id === c.id) : null;
-  const profile = getProfile(c.name) || {};
   const [open, setOpen] = useState(false);
 
-  // Seed local state from the appropriate persistence layer.
-  const [coFirst, setCoFirst] = useState(
-    isLive ? (loan?.coFirst || c.coFirst || '') : (profile.co_borrower_first || '')
-  );
-  const [coLast, setCoLast] = useState(
-    isLive ? (loan?.coLast || c.coLast || '') : (profile.co_borrower_last || '')
-  );
-  const [coPhone, setCoPhone] = useState(
-    isLive ? (loan?.coPhone || c.coPhone || '') : (profile.co_borrower_phone || '')
-  );
-  const [coEmail, setCoEmail] = useState(
-    isLive ? (loan?.coEmail || c.coEmail || '') : (profile.co_borrower_email || '')
-  );
+  // Seed local state. Live-record values come off the loan row, but a
+  // blank field falls back to client_profiles.co_borrower_* — the
+  // 043/044 import created loans rows with no co-borrower keys, so
+  // without this the details Kim saved pre-import stay invisible.
+  const liveVal = (k) => (isLive ? (loan?.[k] || c[k] || '') : '');
+  const co = resolveCoBorrower({
+    borrower: c.name,
+    past_client_seed_name: c.past_client_seed_name || '',
+    coFirst: liveVal('coFirst'), coLast: liveVal('coLast'),
+    coPhone: liveVal('coPhone'), coEmail: liveVal('coEmail'),
+    c2first: liveVal('c2first'), c2last: liveVal('c2last'),
+    c2phone: liveVal('c2phone'), c2email: liveVal('c2email'),
+  }, getProfile);
+  const [coFirst, setCoFirst] = useState(co.first);
+  const [coLast, setCoLast] = useState(co.last);
+  const [coPhone, setCoPhone] = useState(co.phone);
+  const [coEmail, setCoEmail] = useState(co.email);
   const coName = `${(coFirst || '').trim()} ${(coLast || '').trim()}`.trim();
   const existingBday = coName ? getDate(coName, 'Birthday') : null;
   const [coBday, setCoBday] = useState(existingBday?.date_value || '');
