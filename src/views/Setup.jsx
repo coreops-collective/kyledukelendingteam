@@ -294,7 +294,7 @@ function SetupInner() {
     {
       target: '.section-card',
       title: 'Users list',
-      body: 'Every current user — name, email, role.\n\nPasswords are bcrypt-hashed server-side and never leave the database. Nobody, not even the Branch Manager, can view them. Use Edit → set a new password to reset for a user; the change takes effect at their next login.\n\nRemoving a user does NOT delete anything they created (loans, tasks, notes stay put) — it just prevents future logins.',
+      body: 'Every current user — name, email, role.\n\nPasswords are hashed and never leave the database. Nobody, not even the Branch Manager, can view them.\n\nYou can change your OWN password under Edit. Setting a password for someone else is temporarily turned off while its security is rebuilt — to reset another user, use Forgot password? on the login screen to send them a reset link, or have them change it themselves.\n\nRemoving a user does NOT delete anything they created (loans, tasks, notes stay put) — it just prevents future logins.',
     },
     {
       title: 'Notification Rules + Webhooks',

@@ -93,9 +93,35 @@ async function checkRateLimit(event) {
   } catch { return true; }
 }
 
+// DISABLED 2026-09-14 — unauthenticated remote account takeover.
+//
+// The caller identity below is read from the `x-kdt-user-email` REQUEST
+// HEADER (see the callerEmail assignment further down). A header is a claim
+// the caller makes about themselves, not proof of anything: anyone could send
+// an admin's address, clear the role check, and have this endpoint set that
+// admin's password via the GoTrue admin API using the service role key. No
+// credentials were required. The allowed-origin check is not a second factor
+// — it returns true for every origin when KDT_ALLOWED_ORIGIN is unset, and
+// Origin is only meaningful inside a browser.
+//
+// Failing closed here rather than deleting the file so the working parts
+// (target lookup, rate limiting, GoTrue call) survive for the rewrite.
+//
+// To re-enable: verify the caller's Supabase JWT — read `Authorization:
+// Bearer <token>`, confirm it against ${SUPABASE_URL}/auth/v1/user, and take
+// the email from the VERIFIED token response, never from a header or body.
+// Then delete this block.
+const DISABLED_REASON = 'Direct password-set is temporarily disabled while its '
+  + 'authentication is rebuilt. Use Forgot password? on the login screen to send '
+  + 'this user a reset link, or have them change it themselves under their own '
+  + 'profile.';
+
 exports.handler = async (event) => {
   const corsHeaders = corsHeadersFor(event);
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: corsHeaders, body: '' };
+  return { statusCode: 503, headers: corsHeaders, body: JSON.stringify({ ok: false, error: DISABLED_REASON }) };
+
+  // eslint-disable-next-line no-unreachable
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ ok: false, error: 'Method not allowed' }) };
   }
