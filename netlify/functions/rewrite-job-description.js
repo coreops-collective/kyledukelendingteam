@@ -11,6 +11,8 @@
  * touches the browser.
  */
 
+const { verifiedCallerProfile } = require('../lib/require-auth.cjs');
+
 const MODEL = 'claude-sonnet-5';
 const MAX_TOKENS = 1400;
 const API_URL = 'https://api.anthropic.com/v1/messages';
@@ -38,7 +40,7 @@ function corsHeadersFor(event) {
   const allowed = isOriginAllowed(origin) ? (origin || '*') : (RAW_ORIGINS[0] || '*');
   return {
     'Access-Control-Allow-Origin': allowed,
-    'Access-Control-Allow-Headers': 'Content-Type, x-kdt-user-email',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json',
     'Vary': 'Origin',
@@ -68,18 +70,15 @@ async function checkRateLimit(event, endpoint, perMinute) {
   } catch { return true; }
 }
 
-async function requireKnownCaller(callerEmail) {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return true; // dev
-  if (!callerEmail) return false;
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/users?select=id&email=eq.${encodeURIComponent(callerEmail)}&limit=1`,
-      { headers: sbHeaders() }
-    );
-    if (!res.ok) return false;
-    const rows = await res.json();
-    return !!rows?.[0]?.id;
-  } catch { return false; }
+// Caller must be a known hub user, proven by their Supabase JWT.
+//
+// Replaces a lookup keyed on a self-asserted x-kdt-user-email header, which
+// let anyone spend this endpoint's Anthropic budget by naming a real user.
+// The old version also began `if (!SUPABASE_URL || !SUPABASE_KEY) return true`
+// — a misconfigured deploy authorized everyone. verifiedCallerProfile fails
+// closed on missing configuration instead.
+async function requireKnownCaller(event) {
+  return !!(await verifiedCallerProfile(event));
 }
 
 // ── Team context ──────────────────────────────────────────────────────
@@ -250,10 +249,8 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || '{}'); }
   catch { return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Malformed JSON body.' }) }; }
 
-  const { role_label, section, responsibilities = [], existing_content = '', reports_to = '', callerEmail } = body;
-  const headerCaller = (event.headers['x-kdt-user-email'] || event.headers['X-KDT-User-Email'] || '').toString().trim().toLowerCase();
-  const caller = headerCaller || String(callerEmail || '').trim().toLowerCase();
-  if (!(await requireKnownCaller(caller))) {
+  const { role_label, section, responsibilities = [], existing_content = '', reports_to = '' } = body;
+  if (!(await requireKnownCaller(event))) {
     return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Sign in first' }) };
   }
   if (!role_label || !section) {

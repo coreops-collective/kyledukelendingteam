@@ -20,6 +20,7 @@
 
 const nodemailer = require('nodemailer');
 const nodeCrypto = require('crypto');
+const { verifiedCallerProfile } = require('../lib/require-auth.cjs');
 
 const ADMIN_EMAIL = process.env.PASSWORD_RESET_ADMIN_EMAIL || 'lauren@coreopscollective.com';
 const BRAND = 'The Kyle Duke Team';
@@ -67,7 +68,7 @@ function corsHeadersFor(event) {
   const allowed = isOriginAllowed(origin) ? (origin || '*') : (RAW_ORIGINS[0] || '*');
   return {
     'Access-Control-Allow-Origin': allowed,
-    'Access-Control-Allow-Headers': 'Content-Type, x-kdt-user-email',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json',
     'Vary': 'Origin',
@@ -94,19 +95,6 @@ async function checkRateLimit(event, endpoint, perMinute) {
     const ok = await res.json();
     return ok === true;
   } catch { return true; }
-}
-
-async function knownEmail(email) {
-  if (!email) return false;
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/users?select=id,name&email=eq.${encodeURIComponent(email)}&limit=1`,
-      { headers: sbHeaders() }
-    );
-    if (!res.ok) return false;
-    const rows = await res.json();
-    return rows?.[0] || false;
-  } catch { return false; }
 }
 
 // Basic HTML escape so a user typing < or > in their report doesn't
@@ -149,7 +137,6 @@ exports.handler = async (event) => {
       // absent.
       url: legacyUrl,
       userAgent: legacyUa,
-      callerEmail,
     } = payload;
 
     const kind = rawKind === 'feature' ? 'feature' : 'bug';
@@ -158,12 +145,16 @@ exports.handler = async (event) => {
     const text = String(message || '').trim();
     if (!text) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Message is required' }) };
 
-    const headerCaller = (event.headers['x-kdt-user-email'] || event.headers['X-KDT-User-Email'] || '').toString().trim().toLowerCase();
-    const caller = headerCaller || String(context.userEmail || callerEmail || '').trim().toLowerCase();
-    const user = await knownEmail(caller);
-    if (!user) {
+    // Reporter identity comes from the verified JWT, never from the payload.
+    // The report is emailed with the reporter's address as replyTo, so a
+    // self-asserted x-kdt-user-email / callerEmail let anyone send mail that
+    // appeared to come from a named staff member.
+    const profile = await verifiedCallerProfile(event);
+    if (!profile) {
       return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Sign in first' }) };
     }
+    const caller = profile.email;
+    const user = { id: profile.appUserId, name: profile.name };
 
     const settingsRes = await fetch(`${SUPABASE_URL}/rest/v1/email_settings?id=eq.1&select=*`, { headers: sbHeaders() });
     const [settings] = await settingsRes.json();

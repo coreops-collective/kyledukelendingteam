@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentUser } from '../lib/auth.js';
+import { authedFetch } from '../lib/authedFetch.js';
 import { getBreadcrumbs } from '../lib/breadcrumbs.js';
 
 // "Report an issue" header chip → opens a modal with a textarea →
@@ -156,12 +157,9 @@ export default function ReportIssueButton() {
       };
       const breadcrumbs = getBreadcrumbs();
 
-      const res = await fetch('/.netlify/functions/report-issue', {
+      const res = await authedFetch('/.netlify/functions/report-issue', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(me?.email ? { 'x-kdt-user-email': me.email } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
           kind,

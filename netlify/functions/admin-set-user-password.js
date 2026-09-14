@@ -43,7 +43,7 @@ function corsHeadersFor(event) {
   const allowed = isOriginAllowed(origin) ? (origin || '*') : (RAW_ORIGINS[0] || '*');
   return {
     'Access-Control-Allow-Origin': allowed,
-    'Access-Control-Allow-Headers': 'Content-Type, x-kdt-user-email',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json',
     'Vary': 'Origin',
