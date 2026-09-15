@@ -393,6 +393,30 @@ export async function markTaskCompleted(taskId, clientName, dueDate, completedBy
     console.warn('[workflows] loan_id column missing — falling back. Run migration 022_task_completion_loan_id.');
     ({ data, error } = await supabase.from('task_completions').insert(baseRow).select().single());
   }
+  // Migration 056 added a unique index on
+  // (task_id, client_name, due_date, coalesce(loan_id,'')), so completing an
+  // already-completed task now raises 23505 instead of inserting a second
+  // row. That state is what the caller wanted, so treat it as success and
+  // index the row that already exists rather than surfacing an error.
+  //
+  // Without this the index would turn a harmless double-click into a red
+  // toast. It is also what keeps the table from regrowing: before the index,
+  // a repeated bulk complete wrote hundreds of redundant rows, which is how
+  // task_completions crossed PostgREST's 1000-row cap and started hiding
+  // completions (see the migration header).
+  if (error && (error.code === '23505' || /duplicate key/i.test(error.message || ''))) {
+    let q = supabase.from('task_completions').select('*')
+      .eq('task_id', taskId)
+      .eq('client_name', clientName);
+    q = dueIso === null ? q.is('due_date', null) : q.eq('due_date', dueIso);
+    q = loanId ? q.eq('loan_id', loanId) : q.is('loan_id', null);
+    const { data: existing } = await q.limit(1).maybeSingle();
+    if (existing) {
+      indexCompletion(existing);
+      window.dispatchEvent(new Event('kdt-workflows-changed'));
+      return;
+    }
+  }
   if (error) {
     console.warn('[workflows] markCompleted:', error.message);
     showError(`Couldn't mark task complete: ${error.message}`, {
