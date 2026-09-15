@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { paginateAll } from './paginate.js';
 import { getDate, parseLocalDate } from './clientDates.js';
 import { isPlausibleUserDate } from './dateHelpers.js';
 import { getProfile } from './clientProfiles.js';
@@ -108,30 +109,6 @@ export function deleteWorkflowCategory(name) {
     window.dispatchEvent(new Event('kdt-workflow-categories-changed'));
     return { ok: true };
   } catch { return { ok: false, reason: 'storage' }; }
-}
-
-// PostgREST caps a single response at 1000 rows. task_completions passed
-// that on 2026-08-17 and the unpaginated read began silently truncating:
-// COMPLETIONS was rebuilt from whichever 1000 rows came back, so every
-// completion past the cap read as unchecked and the task reappeared on the
-// next load. Kim hit this as "tasks keep popping back up after refresh" —
-// and it fed itself, since re-checking inserted another row and pushed more
-// completions past the cap.
-export const COMPLETIONS_PAGE_SIZE = 1000;
-
-// Walks fetchPage(from, to) until it returns a short page. Separated from
-// the Supabase call so the range math and stop condition can be tested
-// directly — an off-by-one here silently drops or double-counts rows, which
-// is the same class of bug this is fixing.
-export async function paginateAll(fetchPage, pageSize = COMPLETIONS_PAGE_SIZE) {
-  const rows = [];
-  for (let from = 0; ; from += pageSize) {
-    const page = await fetchPage(from, from + pageSize - 1);
-    if (!page || !page.length) break;
-    rows.push(...page);
-    if (page.length < pageSize) break;
-  }
-  return rows;
 }
 
 // Throws on any page error rather than returning what it managed to get.
