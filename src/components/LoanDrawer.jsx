@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
+import { OCCUPANCY_OPTIONS } from '../data/occupancy.js';
 import { PARTNERS } from '../data/partners.js';
 import { markLoansDirty } from '../lib/loansStore.js';
 import { fireWebhooks } from '../lib/webhooks.js';
@@ -258,6 +259,9 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
             </Field>
             <Field label="Type">
               <S value={loan.type || ''} options={TYPES} empty="—" onChange={(v) => set('type', v)} />
+            </Field>
+            <Field label="Occupancy">
+              <S value={loan.occupancy || ''} options={OCCUPANCY_OPTIONS} empty="—" onChange={(v) => set('occupancy', v)} />
             </Field>
             <Field label="Rate (%)">
               <I type="number" step="0.001" defaultValue={loan.rate || ''} onBlur={(e) => set('rate', e.target.value === '' ? null : parseFloat(e.target.value))} />

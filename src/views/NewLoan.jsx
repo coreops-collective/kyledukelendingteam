@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { STAGES, REFI_WATCH_STAGE, NURTURE_PA_STAGE, PRE_CONTRACT_STAGES, stageByKey, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
+import { OCCUPANCY_OPTIONS } from '../data/occupancy.js';
 import { LOANS } from '../data/loans.js';
 import { sbInsert } from '../lib/supabase.js';
 import { markLoansDirty, saveLoansNow } from '../lib/loansStore.js';
@@ -20,7 +21,7 @@ const EMPTY_FORM = {
   first: '', last: '', phone: '', email: '', bday: '',
   hasCo: 'No',
   coFirst: '', coLast: '', coPhone: '', coEmail: '', coBday: '',
-  type: 'VA', purpose: 'Purchase', amt: '', fico: '', preapp: '',
+  type: 'VA', occupancy: '', purpose: 'Purchase', amt: '', fico: '', preapp: '',
   agent: '', src: '',
   estClose: '',
   addr: '', locked: '', lockExp: '', rate: '', apprNow: '', apprContact: '', apprNotes: '',
@@ -302,6 +303,7 @@ export default function NewLoan() {
         amount: num(form.amt),
         stage: stageKey,
         type: loanType || 'CONV',
+        occupancy: form.occupancy || '',
         purpose: purposeShort,
         lo: loFirst,
         loa: '',
@@ -500,6 +502,12 @@ export default function NewLoan() {
           <div className="form-field"><label className="req">Purpose</label>
             <select value={form.purpose} onChange={set('purpose')} required>
               <option>Purchase</option><option>Rate/Term Refi</option><option>Cash-Out Refi</option>
+            </select>
+          </div>
+          <div className="form-field"><label>Occupancy</label>
+            <select value={form.occupancy} onChange={set('occupancy')}>
+              <option value="">— Select —</option>
+              {OCCUPANCY_OPTIONS.map((o) => <option key={o}>{o}</option>)}
             </select>
           </div>
           <div className="form-field"><label>Estimated Loan Amount</label><input value={form.amt} onChange={set('amt')} /></div>

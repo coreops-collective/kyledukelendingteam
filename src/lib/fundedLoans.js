@@ -35,6 +35,10 @@ function loanToFundedRecord(l) {
     price: l.price || 0,
     amount: l.amount || 0,
     type: l.type || '',
+    // Carried through explicitly — this mapper builds the record /loans
+    // renders from, so a field missing here reads as blank on every card no
+    // matter what the loan row holds.
+    occupancy: l.occupancy || '',
     rate: l.rate || null,
     agent: l.agent || '',
     phone,
