@@ -163,7 +163,7 @@ export default function Pipeline() {
     {
       target: '.loan-card',
       title: 'Click a card to open the drawer',
-      body: 'The drawer edits every field on the loan — LO, status, deadlines, notes, appraisal / title toggles, and contact details for both the borrower and the co-borrower (name, phone, and email).\n\nEdits auto-save on blur. You\'ll see a green "✓ Saved" pill for a second so you know it stuck.',
+      body: 'The drawer edits every field on the loan — LO, status, occupancy (Primary / Second Home / Investment), deadlines, notes, appraisal / title toggles, and contact details for both the borrower and the co-borrower (name, phone, and email).\n\nEdits auto-save on blur. You\'ll see a green "✓ Saved" pill for a second so you know it stuck.',
     },
     {
       title: 'That\'s the tour',

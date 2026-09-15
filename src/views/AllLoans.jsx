@@ -53,7 +53,7 @@ export default function AllLoans() {
     },
     {
       title: 'Cards vs Table',
-      body: 'Cards view is the browsable read — one card per client with amount, close date, type, and property. Table view is denser for bulk scanning.',
+      body: 'Cards view is the browsable read — one card per client with amount, close date, type, occupancy (Primary / Second Home / Investment), and property. Table view is denser for bulk scanning.\n\nOccupancy is set on the loan itself — open the file in Loan Management or the Pipeline drawer to change it.',
     },
     {
       title: 'Click a client for the drawer',
@@ -260,6 +260,7 @@ export default function AllLoans() {
                   <div><div className="lbl">Closed</div><div className="val">{c.closeDate || '—'}</div></div>
                   <div><div className="lbl">Rate</div><div className="val">{c.rate ? c.rate + '%' : '—'}</div></div>
                   <div><div className="lbl">Type</div><div className="val">{c.type || '—'}</div></div>
+                  <div><div className="lbl">Occupancy</div><div className="val">{c.occupancy || '—'}</div></div>
                   <div><div className="lbl">LO</div><div className="val">{c.lo || '—'}</div></div>
                   <div><div className="lbl">Agent</div><div className="val">{c.agent || '—'}</div></div>
                   <div><div className="lbl">Last Contact</div><div className="val">{c.lastContact || '—'}</div></div>
@@ -929,6 +930,7 @@ function PastClientDrawer({ client, refiRate, onClose }) {
             <Row label="Loan Amount" value={fmt$(c.amount)} />
             <Row label="Purchase Price" value={c.price ? fmt$(c.price) : null} />
             <Row label="Type" value={c.type} />
+            <Row label="Occupancy" value={c.occupancy} />
             <Row label="Rate" value={c.rate ? c.rate + '%' : null} />
           </div>
 

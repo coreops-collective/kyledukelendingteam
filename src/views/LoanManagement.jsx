@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { LOANS } from '../data/loans.js';
 import { LOS_STAGES, STATUS_TO_STAGE, STAGE_TO_STATUS, isArchived } from '../data/stages.js';
+import { OCCUPANCY_OPTIONS } from '../data/occupancy.js';
 import { PARTNERS } from '../data/partners.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
@@ -782,7 +783,7 @@ const COL_DEFAULTS = {
   borrower: 180, closeDate: 130, fundingDate: 130, status: 150, notes: 500, lo: 100, loa: 110,
   saleType: 140, apprOrdered: 80, apprDeadline: 140, apprReceived: 80, titleReceived: 80,
   lockExp: 140, icdDeadline: 140, icdSent: 80, icdSigned: 80, property: 280,
-  price: 140, amount: 140, type: 100, rate: 100, agent: 200, leadSource: 160,
+  price: 140, amount: 140, type: 100, occupancy: 140, rate: 100, agent: 200, leadSource: 160,
   phone: 150, email: 220, coFirst: 140, coLast: 140, coPhone: 150, coEmail: 220,
 };
 
@@ -868,7 +869,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
     'borrower', 'closeDate', 'fundingDate', 'status', 'notes', 'lo', 'loa', 'saleType',
     'apprOrdered', 'apprDeadline', 'apprReceived', 'titleReceived',
     'lockExp', 'icdDeadline', 'icdSent', 'icdSigned',
-    'property', 'price', 'amount', 'type', 'rate', 'agent', 'leadSource',
+    'property', 'price', 'amount', 'type', 'occupancy', 'rate', 'agent', 'leadSource',
     'phone', 'email', 'coFirst', 'coLast', 'coPhone', 'coEmail',
   ];
 
@@ -917,6 +918,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
               {SH('price', 'Purchase Price')}
               {SH('amount', 'Loan Amount')}
               {SH('type', 'Type')}
+              {SH('occupancy', 'Occupancy')}
               {SH('rate', 'Rate')}
               {SH('agent', 'Agent')}
               {SH('leadSource', 'Lead Source')}
@@ -972,6 +974,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                   <td className="money"><EditInput type="number" value={l.price} onChange={(v) => onEdit(l.id, 'price', v)} /></td>
                   <td className="money"><EditInput type="number" value={l.amount} onChange={(v) => onEdit(l.id, 'amount', v)} /></td>
                   <td><EditSelect value={l.type || ''} options={TYPES.filter(x => x !== 'All')} empty="—" onChange={(v) => onEdit(l.id, 'type', v)} /></td>
+                  <td><EditSelect value={l.occupancy || ''} options={OCCUPANCY_OPTIONS} empty="—" onChange={(v) => onEdit(l.id, 'occupancy', v)} /></td>
                   <td><EditInput type="number" value={l.rate} onChange={(v) => onEdit(l.id, 'rate', v)} step="0.001" /></td>
                   <td>
                     <EditSelect
@@ -1038,6 +1041,7 @@ function CardsView({ loans, onOpenNotes, onOpenLoan }) {
               <div><div className="lbl">Closing</div><div className="val">{l.closeDate || '—'}</div></div>
               <div><div className="lbl">Funding</div><div className="val">{l.fundingDate || <span style={{ color: '#c62828', fontWeight: 700 }}>+ needed</span>}</div></div>
               <div><div className="lbl">Sale / Type</div><div className="val">{(l.saleType || '—') + ' · ' + (l.type || '—')}</div></div>
+              <div><div className="lbl">Occupancy</div><div className="val">{l.occupancy || '—'}</div></div>
               <div><div className="lbl">LO</div><div className="val"><span className="lm-card-lo-pill">{l.lo || '—'}</span></div></div>
               <div><div className="lbl">Rate</div><div className="val">{l.rate ? l.rate + '%' : '—'}</div></div>
               <div><div className="lbl">Agent</div><div className="val">{l.agent || '—'}</div></div>
@@ -1151,7 +1155,7 @@ export default function LoanManagement() {
     {
       target: '.lm-view-toggle',
       title: 'Cards vs Spreadsheet',
-      body: 'Cards view is the quick, skimmable read — one card per loan with the key fields. Spreadsheet view is the workhorse: every field in a scrollable table with per-column resize.\n\nSpreadsheet is the fastest way to edit multiple loans in a row — every cell is inline-editable and saves on blur.',
+      body: 'Cards view is the quick, skimmable read — one card per loan with the key fields, including Occupancy (Primary / Second Home / Investment). Spreadsheet view is the workhorse: every field in a scrollable table with per-column resize.\n\nSpreadsheet is the fastest way to edit multiple loans in a row — every cell is inline-editable and saves on blur. Occupancy has its own column next to Type, and can also be set from the drawer.',
     },
     {
       target: '.income-filters',
