@@ -1,7 +1,7 @@
 // Tests for paginateAll — the fix for Kim's 2026-09-15 report,
 // "Client for life tasks keep popping back up after refresh".
 // No test framework in the repo; run with:
-//   node src/lib/workflows.pagination.test.js
+//   node src/lib/paginate.test.js
 // Exits non-zero on failure.
 //
 // Background: task_completions grew past PostgREST's 1000-row response cap
@@ -11,7 +11,7 @@
 // or duplicate rows just as silently, so the loop is tested directly.
 
 import assert from 'node:assert/strict';
-import { paginateAll, COMPLETIONS_PAGE_SIZE } from './workflows.js';
+import { paginateAll, PAGE_SIZE } from './paginate.js';
 
 let ran = 0, failed = 0;
 const tests = [];
@@ -97,7 +97,7 @@ it('propagates an error instead of returning a partial result', async () => {
 });
 
 it('defaults to the 1000-row PostgREST cap', async () => {
-  assert.equal(COMPLETIONS_PAGE_SIZE, 1000);
+  assert.equal(PAGE_SIZE, 1000);
   const src = makeSource(1200, 1000);
   const out = await paginateAll(src.fetchPage); // no explicit size
   assert.equal(out.length, 1200);

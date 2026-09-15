@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { paginateAll } from './paginate.js';
 import { LOANS } from '../data/loans.js';
 import { showError } from './toaster.js';
 
@@ -20,11 +21,28 @@ let saveTimer = null;
 
 export async function loadLoansFromSupabase() {
   try {
-    const { data, error } = await supabase.from('loans').select('id,data');
-    if (error) {
-      console.warn('[loans] load failed, using static seed:', error.message);
-      return { seeded: false };
-    }
+    // Paged. PostgREST caps a response at 1000 rows and says nothing when it
+    // truncates — task_completions crossed that cap and silently hid 888 CFL
+    // completions (#86). `loans` is at ~544 and climbs with every funded
+    // loan; unpaginated, crossing 1000 would drop loans out of every view at
+    // once, with no error to explain it.
+    //
+    // The page fetch throws rather than returning a partial list. That
+    // matters more here than in workflows: the block below replaces LOANS
+    // wholesale, so half a result set would read as "those loans are gone" —
+    // and per the 2026-08-12 note above, a bad in-memory picture of LOANS is
+    // exactly what let a flush overwrite real rows. On a throw we fall to the
+    // catch and leave LOANS untouched.
+    const data = await paginateAll(async (from, to) => {
+      const { data: page, error } = await supabase
+        .from('loans')
+        .select('id,data')
+        // Stable sort so paging can't skip or repeat rows.
+        .order('id')
+        .range(from, to);
+      if (error) throw error;
+      return page || [];
+    });
     // Auto-seed removed on 2026-08-12 after a race between Kim's login
     // and the initial fetch bulk-overwrote 24 loans with the src/data/
     // loans.js seed values, rewinding stages that had legitimately
