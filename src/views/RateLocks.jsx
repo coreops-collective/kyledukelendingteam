@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { LOANS } from '../data/loans.js';
+import { isArchived } from '../data/stages.js';
 import { fmt$ } from '../lib/snapshotHelpers.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
 import { subscribeLoans } from '../lib/loansStore.js';
@@ -64,7 +65,10 @@ export default function RateLocks() {
     const out = [];
     for (const l of LOANS) {
       if (!l) continue;
-      if (l.archived) continue;
+      // isArchived covers both the archived flag and status 'Archived' —
+      // Kim archived a loan from the status dropdown and it kept showing
+      // here, because this only tested the flag.
+      if (isArchived(l)) continue;
       if (l.status === 'Adversed') continue;
       if (l.status === 'Funded') continue;
       if (l.stage === 'funded') continue;

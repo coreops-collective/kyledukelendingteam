@@ -46,6 +46,25 @@ export const LOS_STAGES = ['fresh', 'disclosed', 'processing', 'uw', 'ctcreq', '
 
 export const PRE_CONTRACT_STAGES = ['new', 'applied', 'hotpa', 'nurturepa', 'refiwatch'];
 
+// A loan can be archived two independent ways:
+//   * the `archived` flag, set by the drawer's Archive button
+//   * status 'Archived' (stage 'cold'), picked from the status dropdown
+//
+// Nothing kept those in sync, and each view tested whichever one its author
+// had in mind. Kim archived a loan from the dropdown and it kept appearing on
+// Rate Locks, because that view only checked the flag. The same split meant a
+// status-archived loan didn't show under Loan Management's own Archived
+// filter either.
+//
+// Ask this rather than testing a field, so a loan archived either way counts
+// as archived everywhere.
+export function isArchived(loan) {
+  if (!loan) return false;
+  return loan.archived === true
+    || loan.status === 'Archived'
+    || loan.stage === 'cold';
+}
+
 export function stageByKey(key) {
   return STAGES.find(s => s.key === key)
     || (key === REFI_WATCH_STAGE.key ? REFI_WATCH_STAGE : null)
