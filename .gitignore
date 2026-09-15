@@ -3,3 +3,6 @@ dist
 .env
 .env.local
 .DS_Store
+
+# esbuild output from netlify/lib/*.handler.test.cjs
+.fn-test-*

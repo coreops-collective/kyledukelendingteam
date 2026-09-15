@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { getCurrentUser } from '../lib/auth.js';
+import { authedFetch } from '../lib/authedFetch.js';
 
 export default function EmailDeliverySettings() {
   const [loaded, setLoaded] = useState(false);
@@ -45,14 +46,10 @@ export default function EmailDeliverySettings() {
         replyToEmail: overrides.replyToEmail ?? settings.replyToEmail,
         appPassword: passwordDirty ? (overrides.appPassword ?? settings.appPassword) : '__KEEP__',
       };
-      const caller = getCurrentUser()?.email || '';
-      const res = await fetch('/.netlify/functions/save-email-delivery', {
+      const res = await authedFetch('/.netlify/functions/save-email-delivery', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(caller ? { 'x-kdt-user-email': caller } : {}),
-        },
-        body: JSON.stringify({ ...payload, callerEmail: caller }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
       let data = {};
       try { data = await res.json(); } catch {}

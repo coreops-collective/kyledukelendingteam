@@ -10,6 +10,7 @@
  */
 
 const nodeCrypto = require('crypto');
+const { verifiedAdmin } = require('../lib/require-auth.cjs');
 
 const ENC_PREFIX = 'enc:v1:';
 function getEncKey() {
@@ -61,7 +62,7 @@ function corsHeadersFor(event) {
   const allowed = isOriginAllowed(origin) ? (origin || '*') : (RAW_ORIGINS[0] || '*');
   return {
     'Access-Control-Allow-Origin': allowed,
-    'Access-Control-Allow-Headers': 'Content-Type, x-kdt-user-email',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json',
     'Vary': 'Origin',
@@ -92,22 +93,6 @@ async function checkRateLimit(event, endpoint, perMinute) {
   } catch { return true; }
 }
 
-// Require the caller to identify as an admin/BM. Header wins; body is
-// fallback for older clients during rollout.
-async function requireAdminCaller(callerEmail) {
-  if (!callerEmail) return false;
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/users?select=role&email=eq.${encodeURIComponent(callerEmail)}&limit=1`,
-      { headers: sbHeaders() }
-    );
-    if (!res.ok) return false;
-    const rows = await res.json();
-    const role = rows?.[0]?.role;
-    return role === 'branch_manager' || role === 'admin';
-  } catch { return false; }
-}
-
 exports.handler = async (event) => {
   const corsHeaders = corsHeadersFor(event);
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: corsHeaders, body: '' };
@@ -125,10 +110,12 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { username, appPassword, fromName, replyToEmail, callerEmail } = JSON.parse(event.body || '{}');
-    const headerCaller = (event.headers['x-kdt-user-email'] || event.headers['X-KDT-User-Email'] || '').toString().trim().toLowerCase();
-    const caller = headerCaller || String(callerEmail || '').trim().toLowerCase();
-    if (!(await requireAdminCaller(caller))) {
+    const { username, appPassword, fromName, replyToEmail } = JSON.parse(event.body || '{}');
+    // Identity comes from the caller's verified Supabase JWT. The former
+    // x-kdt-user-email header / callerEmail body field were self-asserted and
+    // are deliberately no longer read — see netlify/lib/require-auth.cjs.
+    const caller = await verifiedAdmin(event);
+    if (!caller) {
       return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Admin access required' }) };
     }
 
