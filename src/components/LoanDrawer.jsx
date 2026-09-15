@@ -51,6 +51,10 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     if (!window.confirm(`Archive loan for ${loan.borrower}? It will be hidden from all views but kept in Supabase — tell Lauren if you ever need it back.`)) return;
     loan.archived = true;
     loan.archivedAt = new Date().toISOString();
+    // Keep both archive representations in step. Setting only the flag is
+    // what let the two drift apart — see isArchived() in data/stages.js.
+    loan.status = 'Archived';
+    loan.stage = 'cold';
     markLoansDirty(loan);
     onSaved?.();
     onClose?.();
@@ -58,6 +62,12 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
   const handleUnarchive = () => {
     loan.archived = false;
     loan.archivedAt = null;
+    // Leaving status on 'Archived' here would make isArchived() still true
+    // and the loan would stay hidden despite being unarchived.
+    if (loan.status === 'Archived') {
+      loan.status = '';
+      loan.stage = 'new';
+    }
     markLoansDirty(loan);
     onSaved?.();
   };
@@ -77,6 +87,17 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
     if (key === 'status') {
       const nextStage = STATUS_TO_STAGE[value];
       if (nextStage) loan.stage = nextStage;
+      // Mirror the status into the archived flag so the two can't disagree.
+      // Picking 'Archived' here used to leave the flag false, which is how
+      // Kim's loan stayed on Rate Locks; moving off 'Archived' has to clear
+      // it again or the loan would stay hidden.
+      if (value === 'Archived') {
+        loan.archived = true;
+        loan.archivedAt = loan.archivedAt || new Date().toISOString();
+      } else if (prevStatus === 'Archived') {
+        loan.archived = false;
+        loan.archivedAt = null;
+      }
     }
     force((n) => n + 1);
     markLoansDirty(loan);

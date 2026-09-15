@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { LOANS } from '../data/loans.js';
-import { LOS_STAGES, STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
+import { LOS_STAGES, STATUS_TO_STAGE, STAGE_TO_STATUS, isArchived } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
 import FilterDropdown from '../components/FilterDropdown.jsx';
 import LoanDrawer from '../components/LoanDrawer.jsx';
@@ -194,7 +194,7 @@ function AbelFundingDateBanner() {
 // no matter what the Status filter is — nothing to chase on a deal that
 // isn't live any more.
 const isLiveForDeadlines = (l) => {
-  if (l.archived) return false;
+  if (isArchived(l)) return false;
   const status = (l.status || '').toLowerCase();
   if (status === 'adversed') return false;
   if (status === 'cancelled' || status === 'canceled') return false;
@@ -1214,8 +1214,12 @@ export default function LoanManagement() {
   // render so realtime echoes that swap loan references in LOANS are
   // picked up.
   const losLoans = LOANS.filter((l) => {
-    if (filters.status === 'Archived') return l.archived;
-    if (l.archived) return false;
+    // Both archive representations count. Before this, a loan archived from
+    // the status dropdown was missing from the Archived filter AND still
+    // listed in the default view — visible where it shouldn't be, absent
+    // where it should.
+    if (filters.status === 'Archived') return isArchived(l);
+    if (isArchived(l)) return false;
     // Funded loans are usually hidden here (they live in All Loans), but
     // the team explicitly picking the Funded filter surfaces them so
     // Kimberly can fix name spellings + backfill co-borrowers on
@@ -1234,7 +1238,7 @@ export default function LoanManagement() {
   const searchQTrim = searchQ.trim();
   const searchActive = searchQTrim !== '';
   const baseSet = searchActive
-    ? LOANS.filter((l) => !l.archived || filters.status === 'Archived')
+    ? LOANS.filter((l) => !isArchived(l) || filters.status === 'Archived')
     : losLoans;
 
   const filtered = baseSet.filter((r) => {
