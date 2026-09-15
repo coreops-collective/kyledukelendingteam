@@ -110,12 +110,53 @@ export function deleteWorkflowCategory(name) {
   } catch { return { ok: false, reason: 'storage' }; }
 }
 
+// PostgREST caps a single response at 1000 rows. task_completions passed
+// that on 2026-08-17 and the unpaginated read began silently truncating:
+// COMPLETIONS was rebuilt from whichever 1000 rows came back, so every
+// completion past the cap read as unchecked and the task reappeared on the
+// next load. Kim hit this as "tasks keep popping back up after refresh" —
+// and it fed itself, since re-checking inserted another row and pushed more
+// completions past the cap.
+export const COMPLETIONS_PAGE_SIZE = 1000;
+
+// Walks fetchPage(from, to) until it returns a short page. Separated from
+// the Supabase call so the range math and stop condition can be tested
+// directly — an off-by-one here silently drops or double-counts rows, which
+// is the same class of bug this is fixing.
+export async function paginateAll(fetchPage, pageSize = COMPLETIONS_PAGE_SIZE) {
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const page = await fetchPage(from, from + pageSize - 1);
+    if (!page || !page.length) break;
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
+// Throws on any page error rather than returning what it managed to get.
+// Partial results are what caused the bug — loadWorkflows must not clear and
+// rebuild the index from an incomplete set.
+async function fetchAllCompletions() {
+  return paginateAll(async (from, to) => {
+    const { data, error } = await supabase
+      .from('task_completions')
+      .select('*')
+      // Explicit order: without one the server may return a different 1000
+      // rows per request, so paging would both miss and repeat rows.
+      .order('id')
+      .range(from, to);
+    if (error) throw error;
+    return data || [];
+  });
+}
+
 export async function loadWorkflows() {
   try {
-    const [{ data: wfs }, { data: ts }, { data: cs }] = await Promise.all([
+    const [{ data: wfs }, { data: ts }, cs] = await Promise.all([
       supabase.from('workflow_templates').select('*').order('position'),
       supabase.from('workflow_tasks').select('*').order('position'),
-      supabase.from('task_completions').select('*'),
+      fetchAllCompletions(),
     ]);
     WORKFLOWS.splice(0, WORKFLOWS.length, ...(wfs || []));
     TASKS_BY_WORKFLOW.clear();
