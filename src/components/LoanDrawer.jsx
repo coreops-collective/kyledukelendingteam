@@ -262,8 +262,11 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
             <Field label="Co-Borrower Last">
               <I defaultValue={loan.c2last || loan.coLast || ''} onBlur={(e) => set('coLast', e.target.value)} />
             </Field>
-            <Field label="Co-Borrower Phone" full>
+            <Field label="Co-Borrower Phone">
               <I type="tel" defaultValue={loan.c2phone || loan.coPhone || ''} onBlur={(e) => set('coPhone', e.target.value)} />
+            </Field>
+            <Field label="Co-Borrower Email">
+              <I type="email" defaultValue={loan.c2email || loan.coEmail || ''} onBlur={(e) => set('coEmail', e.target.value)} />
             </Field>
           </div>
 

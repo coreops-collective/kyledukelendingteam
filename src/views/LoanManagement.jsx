@@ -783,7 +783,7 @@ const COL_DEFAULTS = {
   saleType: 140, apprOrdered: 80, apprDeadline: 140, apprReceived: 80, titleReceived: 80,
   lockExp: 140, icdDeadline: 140, icdSent: 80, icdSigned: 80, property: 280,
   price: 140, amount: 140, type: 100, rate: 100, agent: 200, leadSource: 160,
-  phone: 150, email: 220, coFirst: 140, coLast: 140, coPhone: 150,
+  phone: 150, email: 220, coFirst: 140, coLast: 140, coPhone: 150, coEmail: 220,
 };
 
 // Lock has to be good through funding. Most of the time funding == close,
@@ -869,7 +869,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
     'apprOrdered', 'apprDeadline', 'apprReceived', 'titleReceived',
     'lockExp', 'icdDeadline', 'icdSent', 'icdSigned',
     'property', 'price', 'amount', 'type', 'rate', 'agent', 'leadSource',
-    'phone', 'email', 'coFirst', 'coLast', 'coPhone',
+    'phone', 'email', 'coFirst', 'coLast', 'coPhone', 'coEmail',
   ];
 
   return (
@@ -925,6 +925,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
               {RH('coFirst', 'Co-Borrower First')}
               {RH('coLast', 'Co-Borrower Last')}
               {RH('coPhone', 'Co-Borrower Phone')}
+              {RH('coEmail', 'Co-Borrower Email')}
             </tr>
           </thead>
           <tbody>
@@ -986,6 +987,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                   <td><ZoomEditCell label="Co-Borrower First" value={l.c2first || l.coFirst} onChange={(v) => onEdit(l.id, 'coFirst', v)} /></td>
                   <td><ZoomEditCell label="Co-Borrower Last" value={l.c2last || l.coLast} onChange={(v) => onEdit(l.id, 'coLast', v)} /></td>
                   <td><ZoomEditCell label="Co-Borrower Phone" type="tel" value={l.c2phone || l.coPhone} onChange={(v) => onEdit(l.id, 'coPhone', v)} /></td>
+                  <td><ZoomEditCell label="Co-Borrower Email" type="email" value={l.c2email || l.coEmail} onChange={(v) => onEdit(l.id, 'coEmail', v)} /></td>
                 </tr>
               );
             })}
@@ -1162,7 +1164,7 @@ export default function LoanManagement() {
     },
     {
       title: 'Click any loan for the drawer',
-      body: 'Click a card or a row to open the full Loan Drawer — every field editable, notes history preserved, archive/unarchive available.\n\nThe drawer now has two note surfaces:\n• Notes (static) — standing description of the loan.\n• Comments — threaded ops log with @-mentions. Type @ to nudge a teammate; mentions fire an email if you\'ve wired the mention rule in Setup.\n\nStatus changes made anywhere (drawer, spreadsheet, Pipeline drag) sync in real time across the app.',
+      body: 'Click a card or a row to open the full Loan Drawer — every field editable, notes history preserved, archive/unarchive available.\n\nBorrower and co-borrower contact live here together: name, phone, and email for both. Co-borrower details also appear as their own columns in Spreadsheet view, and the search box matches on them.\n\nThe drawer now has two note surfaces:\n• Notes (static) — standing description of the loan.\n• Comments — threaded ops log with @-mentions. Type @ to nudge a teammate; mentions fire an email if you\'ve wired the mention rule in Setup.\n\nStatus changes made anywhere (drawer, spreadsheet, Pipeline drag) sync in real time across the app.',
     },
   ];
 
@@ -1267,6 +1269,9 @@ export default function LoanManagement() {
       const hay = [
         r.borrower, r.property, r.lo, r.agent, r.id, r.loa, r.email, r.phone,
         r.coFirst, r.coLast, r.c2first, r.c2last,
+        // Co-borrower phone/email too, so searching a co-borrower's contact
+        // details finds the file the same way the borrower's already does.
+        r.coPhone, r.c2phone, r.coEmail, r.c2email,
       ].map((x) => (x == null ? '' : String(x))).join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
