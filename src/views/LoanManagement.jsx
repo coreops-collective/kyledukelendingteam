@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import { HUB_URL } from '../lib/appUrl.js';
 import { LOANS } from '../data/loans.js';
 import { LOS_STAGES, STATUS_TO_STAGE, STAGE_TO_STATUS, isArchived } from '../data/stages.js';
 import { OCCUPANCY_OPTIONS } from '../data/occupancy.js';
@@ -1413,7 +1414,7 @@ export default function LoanManagement() {
         oldText: loan.notes || '', newText: value || '',
         context: {
           borrower: loan.borrower, loan_id: loan.id,
-          dashboard_url: 'https://thekyleduketeam.netlify.app/',
+          dashboard_url: HUB_URL,
           snippet: (value || '').slice(0, 240),
         },
       });

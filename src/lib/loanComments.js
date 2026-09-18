@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { HUB_URL } from './appUrl.js';
 import { showError } from './toaster.js';
 import { getCurrentUser } from './auth.js';
 import { notifyMentions } from './mentions.js';
@@ -54,7 +55,7 @@ export async function addComment(loanId, body, { borrower } = {}) {
       oldText: '', newText: text,
       context: {
         borrower: borrower || '', loan_id: loanId,
-        dashboard_url: 'https://thekyleduketeam.netlify.app/',
+        dashboard_url: HUB_URL,
         snippet: text.slice(0, 240),
       },
     });
@@ -87,7 +88,7 @@ export async function editComment(commentId, prevBody, nextBody, { borrower, loa
       oldText: prevBody || '', newText: text,
       context: {
         borrower: borrower || '', loan_id: loanId || '',
-        dashboard_url: 'https://thekyleduketeam.netlify.app/',
+        dashboard_url: HUB_URL,
         snippet: text.slice(0, 240),
       },
     });

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { HUB_URL } from '../lib/appUrl.js';
 import { STATUS_TO_STAGE, STAGE_TO_STATUS } from '../data/stages.js';
 import { OCCUPANCY_OPTIONS } from '../data/occupancy.js';
 import { PARTNERS } from '../data/partners.js';
@@ -356,7 +357,7 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
                     oldText: prev, newText: next,
                     context: {
                       borrower: loan.borrower, loan_id: loan.id,
-                      dashboard_url: 'https://thekyleduketeam.netlify.app/',
+                      dashboard_url: HUB_URL,
                       snippet: next.slice(0, 240),
                     },
                   });

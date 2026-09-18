@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { HUB_URL } from '../lib/appUrl.js';
 import { useNavigate } from 'react-router-dom';
 import { STAGES, REFI_WATCH_STAGE, NURTURE_PA_STAGE, PRE_CONTRACT_STAGES, stageByKey, STAGE_TO_STATUS } from '../data/stages.js';
 import { PARTNERS } from '../data/partners.js';
@@ -403,7 +404,7 @@ export default function NewLoan() {
             stage: STAGE_TO_STATUS[row.stage] || row.stage, // label ("New Contract")
             stage_key: row.stage,        // key ("fresh") — matches rule filter
             new_stage_key: row.stage,    // same, for filter compatibility
-            dashboard_url: 'https://thekyleduketeam.netlify.app/',
+            dashboard_url: HUB_URL,
           },
         }),
       }).catch(() => { /* silent */ });
