@@ -304,21 +304,27 @@ $$;
 -- ── Table lockdown ─────────────────────────────────────────────────
 -- Writes now only reach public.users through the guarded SECURITY DEFINER
 -- functions above, which bypass these grants.
-revoke insert, update, delete, truncate on public.users from anon, authenticated;
+-- `revoke all` rather than naming privileges: the relacl is arwdDxtm, so
+-- listing insert/update/delete/truncate leaves x (REFERENCES) and t (TRIGGER)
+-- in place. Not reachable over PostgREST today, but a lockdown shouldn't
+-- leave residue. SELECT is re-granted per column below.
+revoke all on public.users from anon, authenticated;
 
 drop policy if exists users_auth_all on public.users;
+drop policy if exists users_auth_select on public.users;
 create policy users_auth_select on public.users
   for select to authenticated using (true);
 
 -- Hide the hashes. A table-level GRANT SELECT covers every column, so the
 -- grant has to be dropped and re-issued per column — revoking the two
--- columns alone would be a no-op.
+-- columns alone would be a no-op. The `revoke all` above already dropped the
+-- table-level SELECT, so this only has to re-issue the columns.
 --
 -- Safe because loadProfileByEmail (src/lib/auth.js:101) selects
 -- id,name,email,role explicitly and is the app's ONLY direct read; list_users
 -- is SECURITY DEFINER and bypasses grants entirely, as do the Netlify
--- functions via the service role.
-revoke select on public.users from anon, authenticated;
+-- functions via the service role. Verified in review: nothing in src/,
+-- netlify/ or scripts/ does select('*') on users.
 grant select (
   id, name, email, role, initials, nmls, phone,
   created_at, updated_at, birthday, spouse_name, spouse_birthday,
