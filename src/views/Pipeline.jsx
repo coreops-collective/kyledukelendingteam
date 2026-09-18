@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
+import { HUB_URL } from '../lib/appUrl.js';
 import { LOANS } from '../data/loans.js';
 import { STAGES, REFI_WATCH_STAGE, NURTURE_PA_STAGE, STAGE_TO_STATUS, stageByKey } from '../data/stages.js';
 import LoanDrawer from '../components/LoanDrawer.jsx';
@@ -280,7 +281,7 @@ export default function Pipeline() {
           amount: loan.amount || '',
           property: loan.property || '',
           closeDate: loan.closeDate || '',
-          dashboard_url: 'https://thekyleduketeam.netlify.app/',
+          dashboard_url: HUB_URL,
         },
       }),
     })
