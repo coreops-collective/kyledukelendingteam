@@ -69,6 +69,19 @@ export function isAdmin() {
   return !!(u && (u.role === 'branch_manager' || u.role === 'admin' || u.role === 'loan_officer_assistant'));
 }
 
+// Who may administer OTHER users — create, delete, change a role or set a
+// password. Deliberately narrower than isAdmin(): that one includes
+// loan_officer_assistant so Abel keeps admin-tier PAGE access, which is what
+// Kim asked for. Administering accounts is a different privilege.
+//
+// This mirrors _require_admin() in migration 058 exactly. If the two ever
+// disagree, the UI offers a control the database refuses and the user gets a
+// permission error instead of simply not being offered it.
+export function canManageUsers() {
+  const u = getCurrentUser();
+  return !!(u && (u.role === 'branch_manager' || u.role === 'admin'));
+}
+
 // Called from App.jsx on mount + on window focus + on a periodic timer.
 // If the session just expired, fires kdt-auth-changed so the router
 // re-renders and returns the user to Login.

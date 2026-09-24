@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { USERS, ROLE_LABELS, sbInsertUser, sbUpdateUser, sbDeleteUser } from '../data/users.js';
-import { getCurrentUser, isAdmin } from '../lib/auth.js';
+import { getCurrentUser, isAdmin, canManageUsers } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 import EmailDeliverySettings from './EmailDeliverySettings.jsx';
 import NotificationRules from './NotificationRules.jsx';
@@ -140,13 +140,31 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
       return;
     }
     u.name = name.trim();
-    u.email = email.trim();
     u.role = role;
     u.initials = u.name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
     onSaved();
+
+    // Await before claiming anything. This used to mutate the row, toast
+    // "User Saved" and close BEFORE the un-awaited write resolved — so a
+    // rejected save still showed the new values on screen. That is the same
+    // divergence that caused the 2026-09-18 lockout, just moved into the
+    // browser.
+    //
+    // `email` is deliberately not sent: migration 058 refuses email changes
+    // through this RPC, because a login address has to move in auth.users and
+    // auth.identities at the same time or the account stops being able to
+    // sign in.
+    const res = await sbUpdateUser(u.id, {
+      name: u.name, role: u.role, initials: u.initials, nmls: u.nmls || '',
+    });
+    if (!res?.ok) {
+      // sbUpdateUser already surfaced the specific error; don't also claim
+      // success. Leave the drawer open so the edit isn't lost.
+      onSaved();
+      return;
+    }
     onClose();
     toast({ title: 'User Saved', msg: `${u.name} updated` });
-    sbUpdateUser(u.id, { name: u.name, email: u.email, role: u.role, initials: u.initials, nmls: u.nmls || '' });
     if (pass) {
       // Two password paths post-Supabase-Auth migration:
       //   - Self-change → supabase.auth.updateUser({password}) writes
@@ -224,7 +242,17 @@ function EditUserDrawer({ me, user, onClose, onSaved, toast }) {
             </div>
             <div className="form-field full" style={{ gridColumn: '1/-1' }}>
               <label className="req">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <input
+                type="email"
+                value={email}
+                readOnly
+                title="Login email can only be changed by an administrator in Supabase Auth"
+                style={{ background: '#f4f4f6', color: '#777', cursor: 'not-allowed' }}
+              />
+              <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+                Login email can't be changed here — it has to move in Supabase Auth at the
+                same time, or the account stops being able to sign in.
+              </div>
             </div>
             <div className="form-field">
               <label>New Password</label>
@@ -313,7 +341,9 @@ function SetupInner() {
             Branch Manager can create any role. Admin can create Admin or Loan Officer.
           </div>
         </div>
-        <button className="form-btn primary" onClick={() => setAdd(true)}>+ Add User</button>
+        {canManageUsers() && (
+          <button className="form-btn primary" onClick={() => setAdd(true)}>+ Add User</button>
+        )}
       </div>
 
       <div className="section-card">
@@ -343,9 +373,11 @@ function SetupInner() {
                   <td>{u.email}</td>
                   <td><span className="status-pill" style={rolePillStyle(u.role)}>{ROLE_LABELS[u.role]}</span></td>
                   <td style={{ textAlign: 'right' }}>
-                    <button className="form-btn secondary" style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setEdit(u)}>
-                      {me && me.id === u.id ? 'Edit (you)' : 'Edit'}
-                    </button>
+                    {canManageUsers() && (
+                      <button className="form-btn secondary" style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setEdit(u)}>
+                        {me && me.id === u.id ? 'Edit (you)' : 'Edit'}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
