@@ -102,10 +102,14 @@ export async function sbChangeMyPassword(email, currentPassword, newPassword) {
   }
 }
 
+// Returns { ok, failed } — `failed` naming which halves didn't stick
+// ('profile', 'role'). Callers must not report success without checking:
+// Setup used to toast "User Saved" before this even resolved.
 export async function sbUpdateUser(id, patch) {
   // Routes through the update_user_profile RPC (RLS blocks direct writes
   // after migration 006). Role changes go through set_user_role. Password
   // changes go through sbSetUserPassword (admin) or sbChangeMyPassword.
+  const failed = [];
   try {
     // Split off role — that goes through its own RPC so role changes are
     // isolatable in a future audit log.
@@ -140,12 +144,18 @@ export async function sbUpdateUser(id, patch) {
         showError(`Couldn't save team member changes: ${error.message}`, {
           retry: () => sbUpdateUser(id, patch),
         });
-        return;
+        // Deliberately NOT returning. This used to bail here, which meant a
+        // failed profile write silently skipped the role change below — an
+        // admin editing both would see a transient error and lose the role
+        // update with no record of it. Record the failure and carry on so
+        // each field's outcome stands on its own.
+        failed.push('profile');
+      } else {
+        const changed = Object.entries(profileArgs)
+          .filter(([k, v]) => k !== 'p_target_id' && v !== null)
+          .map(([k]) => k.replace(/^p_/, ''));
+        audit(ACTIONS.USER_UPDATED, 'user', id, { changed_fields: changed });
       }
-      const changed = Object.entries(profileArgs)
-        .filter(([k, v]) => k !== 'p_target_id' && v !== null)
-        .map(([k]) => k.replace(/^p_/, ''));
-      audit(ACTIONS.USER_UPDATED, 'user', id, { changed_fields: changed });
     }
     if (wantsRole) {
       const { error } = await supabase.rpc('set_user_role', {
@@ -155,6 +165,7 @@ export async function sbUpdateUser(id, patch) {
       if (error) {
         console.warn('sbUpdateUser (role):', error.message);
         showError(`Couldn't update role: ${error.message}`);
+        failed.push('role');
       } else {
         audit(ACTIONS.USER_ROLE_CHANGED, 'user', id, { new_role: patch.role });
       }
@@ -164,7 +175,9 @@ export async function sbUpdateUser(id, patch) {
     showError(`Couldn't save team member changes: ${e.message}`, {
       retry: () => sbUpdateUser(id, patch),
     });
+    failed.push('unexpected');
   }
+  return { ok: failed.length === 0, failed };
 }
 
 export async function sbDeleteUser(id) {
