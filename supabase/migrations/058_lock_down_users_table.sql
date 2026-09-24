@@ -128,8 +128,17 @@ begin
 end;
 $$;
 
-revoke execute on function public._caller_app_user() from anon, authenticated;
-revoke execute on function public._require_admin()   from anon, authenticated;
+-- FROM PUBLIC, not from the named roles. PostgreSQL grants EXECUTE on a newly
+-- created function to PUBLIC by default, and revoking from anon/authenticated
+-- leaves that PUBLIC grant in place — the revoke is a no-op and the helpers
+-- stay callable by everyone. That matters most for _caller_app_user: it is
+-- SECURITY DEFINER and returns a whole public.users row, so it bypasses the
+-- column grants below and would hand a caller their own password_hash.
+--
+-- _is_admin_user from an earlier migration shows the intended end state:
+-- postgres=X | service_role=X, with no PUBLIC entry.
+revoke execute on function public._caller_app_user() from public;
+revoke execute on function public._require_admin()   from public;
 
 -- ── Guards on the four RPCs with no legitimate non-admin use ───────
 create or replace function public.set_user_password(p_target_id text, p_new_password text)
