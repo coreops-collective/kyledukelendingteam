@@ -456,6 +456,22 @@ export async function unmarkTaskCompleted(taskId, clientName, dueDate, loanId) {
 // `source: 'loan'` = pulled from the loan record itself, which is
 // where the intake form's answers land (isLocked, orderAppraisalNow,
 // hasCoBorrower, etc.) alongside the existing loan-level fields.
+// True when a loan is a refinance rather than a purchase.
+//
+// Reads both fields the app populates: `purpose` ("Rate/Term Refi",
+// "Cash-Out Refi") comes from New Loan intake, `saleType` ("REFINANCE")
+// comes from the imported past-client book. Imported rows carry saleType
+// only — purpose is NULL on all 368 of them — so checking one field would
+// miss most of the historical book.
+//
+// Shared by buildAnchorsForClient (which drops the Closing Anniversary
+// anchor for refis) and the is_refinance task condition below, so a change
+// to what counts as a refi can't apply in one place and not the other.
+export function isRefiLoan(loan) {
+  if (!loan) return false;
+  return `${loan.purpose || ''} ${loan.saleType || ''}`.toLowerCase().includes('refi');
+}
+
 export const CONDITION_FIELDS = [
   { value: 'review_left',          label: 'Review left',                          type: 'bool', source: 'profile' },
   { value: 'isLocked',             label: 'Rate is locked (intake)',              type: 'bool', source: 'loan' },
@@ -481,6 +497,11 @@ export const CONDITION_FIELDS = [
   // Contract or Client for Life). Until then this gate always
   // evaluates false, which is safe.
   { value: 'lo_completed_closing_convo', label: 'LO has completed "Closing Convo W Borrower"', type: 'bool', source: 'completion' },
+  // Kim, 2026-09-16: "Have one year closing anniversary task exclude
+  // refinance transactions." Derived from the loan rather than stored, so it
+  // works on historical rows without a backfill. Set a task to
+  // is_refinance IS NO to keep it off refis.
+  { value: 'is_refinance',         label: 'Loan is a refinance',                   type: 'bool', source: 'loan' },
 ];
 
 // Match "closing convo w[/./ ]borrower" plus a few phrasings Kim
@@ -524,7 +545,10 @@ function matchesCondition(task, profile, loan, agent, anchors, clientName) {
     }
     else raw = agent[field];
   } else if (source === 'loan') {
-    raw = loan ? loan[field] : null;
+    // is_refinance is computed, not a column — same shape as the agent-side
+    // derived fields above.
+    if (field === 'is_refinance') raw = isRefiLoan(loan);
+    else raw = loan ? loan[field] : null;
   } else if (source === 'client') {
     // Client-anchor-derived: has_birthday is true when the client's
     // anchor map carries a 'birthday' entry (set from client_dates).
@@ -945,8 +969,7 @@ export function buildAnchorsForClient(clientName, sources) {
   // via loan.purpose ("Refi" / "Refinance") or loan.saleType
   // ("REFINANCE"). The plain "Closing" anchor still fires so
   // post-close-checkin style workflows keep working for refis.
-  const purposeStr = ((loan.purpose || '') + ' ' + (loan.saleType || '')).toLowerCase();
-  const isRefi = purposeStr.includes('refi');
+  const isRefi = isRefiLoan(loan);
   LOAN_DATE_ANCHORS.forEach(([label, field]) => {
     if (isRefi && label === 'Closing Anniversary') return;
     const raw = loan[field];
