@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
+import { POWERED_BY, BROKERAGE, LO_NMLS } from '../data/brand.js';
 import { ROLE_LABELS } from '../data/users.js';
 import { setCurrentUser, isAdmin, isBranchManager, getCurrentUser, signOutSupabase } from '../lib/auth.js';
 import { audit, ACTIONS } from '../lib/audit.js';
@@ -55,7 +56,7 @@ export default function Sidebar({ user, open = false }) {
         </div>
         <div>
           <div className="brand-title">The Kyle Duke Home Loan Team</div>
-          <div className="brand-sub">Powered by Valor Home Loans</div>
+          <div className="brand-sub">{POWERED_BY}</div>
         </div>
       </div>
       <nav className="sidebar-section">
@@ -130,7 +131,7 @@ export default function Sidebar({ user, open = false }) {
           }}
         >Sign Out</button>
         <div className="sidebar-fine">
-          NMLS #2172565 · Valor Home Loans<br />
+          NMLS #{LO_NMLS} · {BROKERAGE}<br />
           Equal Housing Lender · Member FDIC<br />
           Veteran Mortgage Advisor™
         </div>

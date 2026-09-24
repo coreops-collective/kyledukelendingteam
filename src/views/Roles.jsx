@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { POWERED_BY } from '../data/brand.js';
 import {
   loadJobRoles, getJobRoles, createJobRole, updateJobRole, deleteJobRole,
 } from '../lib/jobRoles.js';
@@ -1287,7 +1288,7 @@ function printRole({ role, draft, responsibilities, reportsToLabel }) {
   ${section('90-Day Plan', draft.training_90)}
   ${section('Accountability', draft.accountability)}
 
-  <div class="footer">Confidential · The Kyle Duke Home Loan Team · Powered by Valor Home Loans</div>
+  <div class="footer">Confidential · The Kyle Duke Home Loan Team · ${POWERED_BY}</div>
 </body>
 </html>`;
 

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { POWERED_BY } from '../data/brand.js';
 import { computeClosing, fmt$, LOGO_SVG } from '../lib/mortgage.js';
 
 const EMBED_CODE = `<iframe src="https://thekyleduketeam.com/?embed=closing-calc" width="100%" height="700" frameborder="0" style="border:1px solid #ddd;border-radius:8px;max-width:760px"></iframe>`;
@@ -71,7 +72,7 @@ export default function ClosingCalc() {
       <div id="closeCalcResult" className="calc-result">
         <div style={{ width: 64, height: 64, margin: '0 auto 14px', color: '#fff' }} dangerouslySetInnerHTML={{ __html: LOGO_SVG }} />
         <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', fontSize: 12, color: '#fff', textAlign: 'center', marginBottom: 2 }}>The Kyle Duke Home Loan Team</div>
-        <div style={{ fontSize: 9, color: '#888', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '.8px', marginBottom: 16 }}>Powered by Valor Home Loans</div>
+        <div style={{ fontSize: 9, color: '#888', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '.8px', marginBottom: 16 }}>{POWERED_BY}</div>
         <div className="calc-result-label">Estimated Cash to Close</div>
         <div className="calc-result-value">{fmt$(Math.round(r.totalCash))}</div>
         <div className="calc-result-sub">closing costs + down payment</div>

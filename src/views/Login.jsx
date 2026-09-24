@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { POWERED_BY } from '../data/brand.js';
 import { setCurrentUser, loadProfileByEmail } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 import { audit, ACTIONS } from '../lib/audit.js';
@@ -129,7 +130,7 @@ export default function Login({ onSuccess }) {
           />
         </div>
         <div className="login-title">The Kyle Duke Team</div>
-        <div className="login-sub">Powered by Valor Home Loans</div>
+        <div className="login-sub">{POWERED_BY}</div>
         <form onSubmit={onSubmit}>
           <div className="login-field">
             <label>Email</label>

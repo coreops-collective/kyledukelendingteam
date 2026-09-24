@@ -86,7 +86,7 @@ async function requireKnownCaller(event) {
 // FOR so the output reads like a real Kyle Duke Home Loan Team JD and
 // not a generic mortgage-lender template. Update here if the team
 // identity or focus changes.
-const TEAM_CONTEXT = `You are drafting content for The Kyle Duke Home Loan Team, powered by Valor Home Loans.
+const TEAM_CONTEXT = `You are drafting content for The Kyle Duke Home Loan Team, powered by Nexa Mortgage.
 
 About the team:
 - Led by Kyle Duke, Branch Manager and Veteran Mortgage Advisor™ (NMLS #2172565)
