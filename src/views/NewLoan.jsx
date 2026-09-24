@@ -15,7 +15,15 @@ import {
   loadLeadSources, getLeadSourceLabels, createLeadSource,
 } from '../lib/leadSources.js';
 
-const LO_OPTIONS = ['Kyle Duke', 'Missy'];
+// Kim, 2026-09-17: "Remove Missy's name from LO drop down in loan pipeline
+// new loan intake form."
+//
+// Intake picker only — this stops NEW loans being assigned to her. Her
+// existing loans, the LO filters on Loan Management and Partners, and every
+// commission calculation in Income / NetIncomeCalc (MISSY_OVERRIDE_BPS, her
+// income subtotal, the branch-manager override) are deliberately untouched:
+// historical attribution has to keep working.
+const LO_OPTIONS = ['Kyle Duke'];
 
 const EMPTY_FORM = {
   lo: '', kind: '', existingId: '', status: '',
