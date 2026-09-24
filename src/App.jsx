@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { supabase } from './lib/supabase.js';
 import Sidebar from './components/Sidebar.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import ToasterStack from './components/ToasterStack.jsx';
@@ -107,11 +108,54 @@ export default function App() {
 
   const [usersReady, setUsersReady] = useState(false);
 
-  // Fetch real users + loans from Supabase on mount (same as legacy)
+  // Track the SUPABASE session, not the cached kdt_user profile.
+  //
+  // Every table this screen needs (loans, client_profiles, client_dates,
+  // partners...) has RLS with an `authenticated`-only policy, so an
+  // anonymous read returns ZERO ROWS AND NO ERROR — indistinguishable from
+  // an empty table. loansStore used to take that at face value and blank
+  // LOANS.
+  //
+  // useAuth watches sessionStorage's kdt_user, which is written separately
+  // from the Supabase session and can be present while the session is still
+  // rehydrating (or absent entirely), so it is the wrong thing to gate on
+  // here. The session itself is the thing that decides whether a read
+  // returns rows.
+  const [authUserId, setAuthUserId] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   useEffect(() => {
-    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase(), loadPartnersFromSupabase(), loadWebhookSubscriptions(), loadJobRoles(), loadLeadSources()])
-      .finally(() => setUsersReady(true));
+    let alive = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!alive) return;
+      setAuthUserId(data?.session?.user?.id ?? null);
+      setAuthChecked(true);
+    }).catch(() => { if (alive) setAuthChecked(true); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUserId(session?.user?.id ?? null);
+      setAuthChecked(true);
+    });
+    return () => { alive = false; sub?.subscription?.unsubscribe(); };
   }, []);
+
+  // Load once there is a session, and AGAIN whenever the signed-in user
+  // changes. Previously this ran once on mount with [] deps, above the auth
+  // gate — so on a cold load it fired anonymously, emptied the stores, and
+  // never re-ran after sign-in. That is invisible on an origin where a
+  // session is already persisted, and total data loss on a fresh one: moving
+  // to hub.thekyleduketeam.com gave everyone a new origin with no stored
+  // session, so the first load was genuinely anonymous.
+  //
+  // usersReady still flips either way — it gates the render ABOVE the auth
+  // gate, so leaving it false while signed out would strand the user on a
+  // blank screen instead of the login form.
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!authUserId) { setUsersReady(true); return; }
+    let cancelled = false;
+    Promise.all([loadUsersFromSupabase(), loadLoansFromSupabase(), loadPartnersFromSupabase(), loadWebhookSubscriptions(), loadJobRoles(), loadLeadSources()])
+      .finally(() => { if (!cancelled) setUsersReady(true); });
+    return () => { cancelled = true; };
+  }, [authChecked, authUserId]);
 
   // Refresh preserves the current URL — no forced /snapshot redirect.
   // (Deep links, bookmarks, and browser back/forward all keep working
