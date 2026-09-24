@@ -54,6 +54,24 @@ export async function loadLoansFromSupabase() {
     // one-shot script in supabase/seeds if we ever need to bootstrap
     // a blank project again.
     if (!data || data.length === 0) {
+      // Zero rows has two very different causes and they look identical over
+      // PostgREST. `loans` has RLS with an authenticated-only policy, so an
+      // anonymous read returns an EMPTY SET AND NO ERROR — a permissions
+      // result, not an empty table. Blanking LOANS on that turns "you aren't
+      // signed in yet" into "every loan is gone", which is what emptied the
+      // hub on 2026-09-24 for the first user to land on the new domain with
+      // no persisted session.
+      //
+      // Only trust an empty result when there IS a session behind it.
+      let signedIn = false;
+      try {
+        const { data: s } = await supabase.auth.getSession();
+        signedIn = !!s?.session;
+      } catch { /* treat an unreadable session as not signed in */ }
+      if (!signedIn) {
+        console.warn('[loans] 0 rows with no session — RLS filtered this, not an empty table. Leaving LOANS untouched.');
+        return { seeded: false, skipped: 'unauthenticated' };
+      }
       console.warn('[loans] fetch returned 0 rows — leaving LOANS empty; NOT auto-seeding');
       LOANS.length = 0;
       return { seeded: false };
