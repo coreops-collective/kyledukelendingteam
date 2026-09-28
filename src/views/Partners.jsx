@@ -637,9 +637,20 @@ function NewPartnerDrawer({ onClose, onSubmit }) {
                 style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
               />
             </div>
-            <div className="form-field"><label>Referral Tier</label>
+            <div className="form-field"><label>Category</label>
+              {/* Same list the partner drawer offers. This used to show only
+                  Standard and "VIP (5+ deals/yr)" — Kim, 2026-09-28: "Category
+                  drop-down when initially adding new partner only offers
+                  standard or vip. Need to add the nurture and new agent lead
+                  options too."
+
+                  The old VIP option was also mislabelled as a VALUE: it wrote
+                  the literal string "VIP (5+ deals/yr)", which doesn't match
+                  PREDEFINED_TIERS' "VIP", so a partner added as VIP here never
+                  appeared in the VIP section. Using allKnownTiers() fixes the
+                  value as well as the list. */}
               <select value={f.tier} onChange={set('tier')}>
-                <option>Standard</option><option>VIP (5+ deals/yr)</option>
+                {allKnownTiers().map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div className="form-field" style={{ gridColumn: '1/-1' }}><label>Lead Source</label>
@@ -799,7 +810,6 @@ function PartnerDrawer({ partner, onClose }) {
               >
                 <option value="">— Auto from loans —</option>
                 <option value="Kyle">Kyle</option>
-                <option value="Missy">Missy</option>
               </select>
             </div>
             <div style={{ gridColumn: '1/-1' }}>

@@ -20,6 +20,56 @@ const LO_LIST = ['Kyle','Missy'];
 
 const fmt$ = (n) => (n ? '$' + Math.round(n).toLocaleString() : '—');
 
+// Field / I / S / Chk live at MODULE scope on purpose. Defining them inside
+// LoanDrawer created a brand-new component *type* on every render, so React
+// unmounted and remounted the whole form instead of updating it. The inputs
+// are uncontrolled (defaultValue), so each remount re-applied the original
+// value and dropped focus — Kim, 2026-09-17: "requires multiple clicks in a
+// field in order to type in it because it resets", and the fields visibly
+// jumping "up and down".
+//
+// Every save fires three renders (force, setJustSaved, onSaved), so this hit
+// on essentially every keystroke-then-blur. Hoisting them keeps the identity
+// stable across renders, so React reconciles in place and focus survives.
+//
+// None of them closed over anything in the component, which is what makes
+// moving them out safe.
+const Field = ({ label, children, full }) => (
+  <div className="form-field" style={{ marginBottom: 12, gridColumn: full ? '1/-1' : undefined }}>
+    <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>
+      {label}
+    </label>
+    {children}
+  </div>
+);
+const I = (props) => (
+  <input
+    {...props}
+    style={{
+      width: '100%', padding: '8px 10px', fontSize: 13,
+      border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box',
+    }}
+  />
+);
+const S = ({ value, options, empty, onChange }) => (
+  <select
+    value={value ?? ''}
+    onChange={(e) => onChange(e.target.value)}
+    style={{
+      width: '100%', padding: '8px 10px', fontSize: 13,
+      border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', background: '#fff',
+    }}
+  >
+    {empty !== undefined && <option value="">{empty}</option>}
+    {options.map((o) => <option key={o} value={o}>{o}</option>)}
+  </select>
+);
+const Chk = ({ value, onChange, label }) => (
+  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '8px 10px', border: '1px solid #d0d0d0', borderRadius: 6, cursor: 'pointer' }}>
+    <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} /> {label}
+  </label>
+);
+
 /**
  * Editable loan detail drawer. Mutates the passed `loan` object in place
  * (same pattern as legacy window.openLoan → saves directly to LOANS array)
@@ -137,42 +187,6 @@ export default function LoanDrawer({ loan, onSaved, onClose }) {
   };
 
   const agentOpts = [...PARTNERS].map((p) => p.name).sort((a, b) => a.localeCompare(b));
-
-  const Field = ({ label, children, full }) => (
-    <div className="form-field" style={{ marginBottom: 12, gridColumn: full ? '1/-1' : undefined }}>
-      <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4 }}>
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-  const I = (props) => (
-    <input
-      {...props}
-      style={{
-        width: '100%', padding: '8px 10px', fontSize: 13,
-        border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box',
-      }}
-    />
-  );
-  const S = ({ value, options, empty, onChange }) => (
-    <select
-      value={value ?? ''}
-      onChange={(e) => onChange(e.target.value)}
-      style={{
-        width: '100%', padding: '8px 10px', fontSize: 13,
-        border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', background: '#fff',
-      }}
-    >
-      {empty !== undefined && <option value="">{empty}</option>}
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
-    </select>
-  );
-  const Chk = ({ value, onChange, label }) => (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '8px 10px', border: '1px solid #d0d0d0', borderRadius: 6, cursor: 'pointer' }}>
-      <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} /> {label}
-    </label>
-  );
 
   // Drag-resize handler. Closes over drawerWidthRef so localStorage
   // persists the latest committed width even though we update React
