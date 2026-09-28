@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { PARTNERS } from '../data/partners.js';
 import { LOANS } from '../data/loans.js';
 import { LOS_STAGES } from '../data/stages.js';
@@ -703,19 +703,25 @@ function PartnerDrawer({ partner, onClose }) {
     src: 'lead_source', lead_source: 'src',
     primaryLo: 'primary_lo', primary_lo: 'primaryLo',
   };
-  // update — capture every keystroke into the partner object and reset
-  // the debounce timer. We do NOT force a re-render here, otherwise
-  // EditRow (defined inside this component) would unmount on every key
-  // and the user would lose focus mid-typing.
-  // set — same plus a force re-render, used on blur so dependent UI
-  // (e.g. drawer title) refreshes when the user finishes a field.
-  const update = (key, value) => {
+  // update — capture every keystroke into the partner object and reset the
+  // debounce timer, without forcing a re-render.
+  // set — same plus a force re-render, used on blur so dependent UI (e.g. the
+  // drawer title) refreshes when the user finishes a field.
+  //
+  // The note that used to sit here said update deliberately skipped the
+  // re-render "otherwise EditRow (defined inside this component) would unmount
+  // on every key and the user would lose focus mid-typing". That diagnosis was
+  // right, but it treated the symptom: set() still forced a render on blur, so
+  // focus still went. EditRow is now memoised below, so the remount can't
+  // happen either way. update still skips the render because there's no reason
+  // to re-render per keystroke.
+  const update = useCallback((key, value) => {
     p[key] = value;
     const alias = FIELD_ALIASES[key];
     if (alias) p[alias] = value;
     markPartnerDirty(p);
-  };
-  const set = (key, value) => { update(key, value); force((n) => n + 1); };
+  }, [p]);
+  const set = useCallback((key, value) => { update(key, value); force((n) => n + 1); }, [update]);
   // Force-flush any pending debounced save before the drawer unmounts —
   // mobile users frequently tap Close immediately after typing, and we
   // can't rely on onBlur firing before unmount.
@@ -723,18 +729,23 @@ function PartnerDrawer({ partner, onClose }) {
   const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
   const labelStyle = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4, display: 'block' };
 
-  const EditRow = ({ label, field, type = 'text' }) => (
-    <div style={{ marginBottom: 10 }}>
-      <label style={labelStyle}>{label}</label>
-      <input
-        type={type}
-        defaultValue={p[field] || ''}
-        onChange={(e) => update(field, e.target.value)}
-        onBlur={(e) => set(field, e.target.value)}
-        style={inputStyle}
-      />
-    </div>
-  );
+  // Built once per partner rather than per render — see the note above. The
+  // identity stays stable while editing one partner and changes when a
+  // different one is opened, which is exactly when the fields should reset.
+  const EditRow = useMemo(() => function EditRow({ label, field, type = 'text' }) {
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <label style={labelStyle}>{label}</label>
+        <input
+          type={type}
+          defaultValue={p[field] || ''}
+          onChange={(e) => update(field, e.target.value)}
+          onBlur={(e) => set(field, e.target.value)}
+          style={inputStyle}
+        />
+      </div>
+    );
+  }, [p, update, set]);
   const ReadRow = ({ label, value }) => (
     <div style={{ marginBottom: 10 }}>
       <div style={labelStyle}>{label}</div>
