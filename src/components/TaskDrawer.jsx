@@ -1,5 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { TASK_ROLES } from '../data/workflows.js';
+
+const labelStyle = { display: 'block', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
+const textareaStyle = { ...inputStyle, minHeight: 90, resize: 'vertical', lineHeight: 1.5 };
 
 /**
  * Task detail drawer. Mutates the passed task object in place
@@ -8,21 +12,56 @@ import { TASK_ROLES } from '../data/workflows.js';
  */
 export default function TaskDrawer({ task, kind, parentTitle, editable = true, onSaved, onClose }) {
   const [, force] = useState(0);
+
+  const set = useCallback((key, value) => {
+    task[key] = value;
+    force((n) => n + 1);
+    onSaved?.();
+  }, [task, onSaved]);
+
+  // EditField is built ONCE per task rather than on every render. Defining a
+  // component inside a render creates a new component TYPE each time, which
+  // React cannot reconcile — it unmounts and remounts the subtree. These
+  // inputs are uncontrolled (defaultValue), so a remount re-applies the
+  // original value and drops focus mid-typing. Kim hit the same bug in the
+  // loan drawer: "requires multiple clicks in a field in order to type in it
+  // because it resets."
+  //
+  // useMemo keyed on [task, set] is the right granularity: the identity stays
+  // stable while you edit one task, and deliberately changes when a different
+  // task is opened — which is exactly when the fields SHOULD reset.
+  //
+  // `task` is mutated in place rather than replaced, so its reference is
+  // stable across edits; `set` is useCallback'd for the same reason.
+  const EditField = useMemo(() => function EditField({ label, field, textarea, full }) {
+    return (
+      <div style={{ marginBottom: 14, gridColumn: full ? '1/-1' : undefined }}>
+        <label style={labelStyle}>{label}</label>
+        {textarea ? (
+          <textarea
+            defaultValue={task?.[field] || ''}
+            onBlur={(e) => set(field, e.target.value)}
+            style={textareaStyle}
+          />
+        ) : (
+          <input
+            defaultValue={task?.[field] || ''}
+            onBlur={(e) => set(field, e.target.value)}
+            style={inputStyle}
+          />
+        )}
+      </div>
+    );
+  }, [task, set]);
+
+  // Every hook has now run, so the guard is safe here. It used to sit above
+  // them, which is why they had to move.
   if (!task) return null;
 
   const role = task.role || task.who || 'lo';
   const title = task.text || task.title || 'Task';
   const stage = kind === 'workflow' ? (parentTitle || 'Workflow') : (parentTitle || 'Client For Life');
 
-  const set = (key, value) => {
-    task[key] = value;
-    force((n) => n + 1);
-    onSaved?.();
-  };
-
-  const labelStyle = { display: 'block', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 };
-  const inputStyle = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, boxSizing: 'border-box', fontFamily: 'inherit' };
-  const textareaStyle = { ...inputStyle, minHeight: 90, resize: 'vertical', lineHeight: 1.5 };
 
   const RoField = ({ label, value }) => {
     if (!value) return null;
@@ -34,24 +73,6 @@ export default function TaskDrawer({ task, kind, parentTitle, editable = true, o
     );
   };
 
-  const EditField = ({ label, field, textarea, full }) => (
-    <div style={{ marginBottom: 14, gridColumn: full ? '1/-1' : undefined }}>
-      <label style={labelStyle}>{label}</label>
-      {textarea ? (
-        <textarea
-          defaultValue={task[field] || ''}
-          onBlur={(e) => set(field, e.target.value)}
-          style={textareaStyle}
-        />
-      ) : (
-        <input
-          defaultValue={task[field] || ''}
-          onBlur={(e) => set(field, e.target.value)}
-          style={inputStyle}
-        />
-      )}
-    </div>
-  );
 
   return (
     <>

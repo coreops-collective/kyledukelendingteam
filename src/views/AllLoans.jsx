@@ -16,6 +16,10 @@ import { resolveCoBorrower } from '../lib/loanContactFallback.js';
 import Tour from '../components/Tour.jsx';
 import CflStatusRow from '../components/CflStatusRow.jsx';
 
+// Shared frozen fallback so an absent overrides object doesn't produce a new
+// reference on every render. See the use site in the past-client drawer.
+const EMPTY_OVERRIDES = Object.freeze({});
+
 const MONTHS_FULL = ['All','January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const fmt$ = (n) => (n ? '$' + Math.round(n).toLocaleString() : '—');
@@ -759,9 +763,13 @@ function PastClientDrawer({ client, refiRate, onClose }) {
   if (Array.isArray(profile.note_entries) && profile.note_entries.length && (!c.noteEntries || c.noteEntries.length === 0)) {
     c.noteEntries = profile.note_entries;
   }
+  // EMPTY_OVERRIDES rather than a fresh {} literal: this feeds set()'s
+  // useCallback deps, and a new object every render would make set() unstable,
+  // which would in turn make the Field memo below useless — the remount bug
+  // would still be there, just harder to see.
   const overrides = (profile.past_client_overrides && typeof profile.past_client_overrides === 'object')
     ? profile.past_client_overrides
-    : {};
+    : EMPTY_OVERRIDES;
   // Apply legacy-record hydration so the drawer displays the last
   // saved value. Live loans skip this for name / LO — they own their
   // own storage there. Phone / email fall back to profile whenever
@@ -800,7 +808,7 @@ function PastClientDrawer({ client, refiRate, onClose }) {
   // set() persists to BOTH the in-memory client (so the drawer reflects
   // instantly) AND to Supabase. For live loans that means the loans
   // row; for legacy records that means client_profiles.
-  const set = (key, value) => {
+  const set = useCallback((key, value) => {
     c[key] = value;
     if (isLive) {
       const loan = LOANS.find((l) => l.id === c.id);
@@ -820,7 +828,7 @@ function PastClientDrawer({ client, refiRate, onClose }) {
       upsertClientProfile(profileKey, { past_client_overrides: nextOverrides });
     }
     force((n) => n + 1);
-  };
+  }, [c, isLive, profileKey, overrides]);
   const markContactedToday = () => set('lastContact', new Date().toISOString().slice(0, 10));
 
   const postNote = () => {
@@ -862,31 +870,45 @@ function PastClientDrawer({ client, refiRate, onClose }) {
     fontSize: 10, fontWeight: 700, color: '#888',
     textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 4,
   };
-  const Field = ({ label, k, type = 'text', options }) => (
-    <div style={{ marginBottom: 12 }}>
-      <div style={labelStyle}>{label}</div>
-      {options ? (
-        <select
-          defaultValue={c[k] ?? ''}
-          onChange={(e) => set(k, e.target.value)}
-          style={inputStyle}
-        >
-          <option value="">—</option>
-          {options.map((o) => <option key={o} value={o}>{o}</option>)}
-          {c[k] && !options.includes(c[k]) && (
-            <option value={c[k]}>{c[k]} (custom)</option>
-          )}
-        </select>
-      ) : (
-        <input
-          type={type}
-          defaultValue={c[k] ?? ''}
-          onBlur={(e) => set(k, e.target.value)}
-          style={inputStyle}
-        />
-      )}
-    </div>
-  );
+  // Built once per client rather than on every render. Defining a component
+  // inside a render creates a new component TYPE each time, which React
+  // cannot reconcile — it unmounts and remounts the subtree. These inputs are
+  // uncontrolled (defaultValue), so a remount re-applies the original value
+  // and drops focus mid-typing. That is the bug Kim reported on the loan
+  // drawer ("requires multiple clicks in a field in order to type in it
+  // because it resets"); this drawer had it too.
+  //
+  // Keyed on [c, set]: stable while editing one client, and deliberately
+  // changing when a different client is opened, which is when the fields
+  // SHOULD reset. `c` is mutated in place rather than replaced, so its
+  // reference holds steady across edits.
+  const Field = useMemo(() => function Field({ label, k, type = 'text', options }) {
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <div style={labelStyle}>{label}</div>
+        {options ? (
+          <select
+            defaultValue={c[k] ?? ''}
+            onChange={(e) => set(k, e.target.value)}
+            style={inputStyle}
+          >
+            <option value="">—</option>
+            {options.map((o) => <option key={o} value={o}>{o}</option>)}
+            {c[k] && !options.includes(c[k]) && (
+              <option value={c[k]}>{c[k]} (custom)</option>
+            )}
+          </select>
+        ) : (
+          <input
+            type={type}
+            defaultValue={c[k] ?? ''}
+            onBlur={(e) => set(k, e.target.value)}
+            style={inputStyle}
+          />
+        )}
+      </div>
+    );
+  }, [c, set]);
   const Row = ({ label, value }) => (
     <div style={{ marginBottom: 12 }}>
       <div style={labelStyle}>{label}</div>
