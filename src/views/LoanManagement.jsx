@@ -98,7 +98,11 @@ function statusSlug(s) {
   return (s || '').toLowerCase().replace(/[^a-z]/g, '');
 }
 
-const STATUSES = ['All','New Contract','Disclosed','Processing','Underwriting','CTC Requested','CTC','BTP','Approved','Funded','Adversed','Archived'];
+// 'On Hold' sits with the exception states at the tail rather than in the
+// flow order, because it isn't a step a loan moves through — it's a pause
+// stamped on a loan that keeps whatever stage it was already in. Kim asked
+// for it 2026-10-05; see the On Hold styling in styles.css.
+const STATUSES = ['All','New Contract','Disclosed','Processing','Underwriting','CTC Requested','CTC','BTP','Approved','Funded','On Hold','Adversed','Archived'];
 const LOS_LIST = ['All','Kyle','Missy'];
 const TYPES = ['All','CONV','FHA','VA','Jumbo'];
 const SALE_TYPES = ['All','PURCHASE','REFINANCE'];
@@ -657,6 +661,7 @@ function ColorLegend() {
     { label: 'CTC', bg: '#a5d6a7', bar: '#2e7d32' },
     { label: 'BTP', bg: '#bbdefb', bar: '#1976d2' },
     { label: 'Approved', bg: '#dcedc8', bar: '#2e7d32' },
+    { label: 'On Hold', bg: '#ff6f00', bar: '#bf360c' },
   ];
   const dateSwatches = [
     { label: 'Date overdue', bg: '#ffebee', color: '#c62828' },
@@ -943,7 +948,7 @@ function TableView({ loans, onEdit, onEditStatus, onOpenNotes, onOpenLoan, sort,
                   <td className="date" data-tour="funding-date-cell">
                     <EditInput type="date" value={l.fundingDate} onChange={(v) => onEdit(l.id, 'fundingDate', v)} />
                   </td>
-                  <td>
+                  <td data-tour="status-cell">
                     {/* Fall back to the stage-derived status when the
                         loan record has no `status` string on it (older
                         loans stored only the stage). Prevents the
@@ -1147,6 +1152,11 @@ export default function LoanManagement() {
       target: '[data-tour="funding-date-cell"]',
       title: 'Funding Date column (new)',
       body: 'Right next to Closing Date. Most of the time funding date == closing date, but not always — fill this in on every file. The Lock Expires cell turns bold red as soon as it expires BEFORE the funding date so we can extend the lock or move funding before it costs us. Same red highlight shows on the loan cards too.',
+    },
+    {
+      target: '[data-tour="status-cell"]',
+      title: 'Status — including On Hold',
+      body: 'Set a loan\'s status right in the row. Alongside the normal flow (New Contract → Approved) there is now On Hold, for a file that is parked — waiting on the borrower, a repair, a payoff, anything.\n\nOn Hold rows go bright orange and bold so you cannot scroll past them. The loan keeps the pipeline stage it already had and still counts as an active file: it is paused, not closed. Use Adversed or Archived when a file is actually dead.\n\nFilter the Status dropdown to On Hold to see everything that is parked. Open the Color Key above the table for the full palette.',
     },
     {
       target: '[data-tour="deadlines-panel"]',

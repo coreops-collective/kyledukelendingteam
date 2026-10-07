@@ -5,7 +5,8 @@ import { STAGES, REFI_WATCH_STAGE, NURTURE_PA_STAGE, PRE_CONTRACT_STAGES, stageB
 import { PARTNERS } from '../data/partners.js';
 import { OCCUPANCY_OPTIONS } from '../data/occupancy.js';
 import { LOANS } from '../data/loans.js';
-import { sbInsert } from '../lib/supabase.js';
+import { supabase } from '../lib/supabase.js';
+import { insertTolerant } from '../lib/insertTolerant.js';
 import { markLoansDirty, saveLoansNow } from '../lib/loansStore.js';
 import { getCurrentUser } from '../lib/auth.js';
 import { audit, ACTIONS } from '../lib/audit.js';
@@ -389,7 +390,34 @@ export default function NewLoan() {
     }
 
     const isFresh = stageKey === 'fresh';
-    try { await sbInsert('loan_intakes', row); } catch { /* non-fatal — table may not exist */ }
+    // Archive the raw submission. This is a secondary copy — the loan
+    // itself was already persisted by saveLoansNow() above — so it stays
+    // non-fatal. But it must not fail SILENTLY on a schema gap: PostgREST
+    // rejects the whole insert over one unknown key, which is how this
+    // table sat at zero rows while every intake appeared to succeed.
+    // insertTolerant drops whatever column the error names and retries, so
+    // a field the schema hasn't caught up with costs that one field instead
+    // of the entire record. Migration 059 adds the columns that are
+    // currently missing; this keeps the next added field from breaking it
+    // again the way appraisal_notes broke what migration 053 fixed.
+    try {
+      const { error: intakeErr, dropped } = await insertTolerant(
+        row,
+        (r) => supabase.from('loan_intakes').insert(r).select().single(),
+        {
+          onDrop: (col) => console.warn(
+            `[new-loan] loan_intakes is missing the '${col}' column — archived the submission without it. Run the loan_intakes column migration.`,
+          ),
+        },
+      );
+      if (intakeErr) {
+        console.warn('[new-loan] loan_intakes archive failed:', intakeErr.message || intakeErr);
+      } else if (dropped.length) {
+        console.warn(`[new-loan] loan_intakes archived minus ${dropped.length} column(s):`, dropped.join(', '));
+      }
+    } catch (e) {
+      console.warn('[new-loan] loan_intakes archive error:', e?.message || e);
+    }
     // Fire the notification for New Contract intakes. Fire-and-forget so
     // slow SMTP doesn't hold up the redirect. Context passes stage_key
     // AND label so notification_rules with a stage_filter (which stores

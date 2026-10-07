@@ -33,6 +33,13 @@ export const STAGE_TO_STATUS = {
 // renamed 2026-08-18 per Kim) resolve to the same ctcreq stage so
 // historical loans persisted under the old string still map correctly
 // without a data migration.
+//
+// Statuses deliberately absent from this map: 'On Hold' and 'Adversed'.
+// Both are states stamped ON a loan rather than steps a loan moves
+// through, and callers do `const next = STATUS_TO_STAGE[status]; if (next)
+// ...` — so leaving them out is what preserves the loan's existing stage.
+// An On Hold file stays in its pipeline column and keeps counting as
+// active; it's paused, not gone. Do not add them here.
 export const STATUS_TO_STAGE = {
   'New Lead': 'new', 'HOT PA': 'hotpa', 'Nurture PA': 'nurturepa', 'Applied': 'applied', 'REFI Watch': 'refiwatch', 'New Contract': 'fresh',
   'Disclosed': 'disclosed', 'Processing': 'processing', 'Underwriting': 'uw',
