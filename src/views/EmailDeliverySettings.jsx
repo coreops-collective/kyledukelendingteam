@@ -165,7 +165,7 @@ export default function EmailDeliverySettings() {
           </div>
           <div className="form-field">
             <label>Reply-To</label>
-            <input type="email" value={settings.replyToEmail} onChange={(e) => handleChange('replyToEmail', e.target.value)} placeholder="kyle@valorhl.com" />
+            <input type="email" value={settings.replyToEmail} onChange={(e) => handleChange('replyToEmail', e.target.value)} placeholder="kyle@thekyleduketeam.com" />
             <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>Where replies go when someone hits reply on a notification.</div>
           </div>
         </div>
